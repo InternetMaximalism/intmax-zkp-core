@@ -27,7 +27,6 @@ use crate::{
 
 use super::super::circuits::merge_and_purge::parse_merge_and_purge_public_inputs;
 
-
 #[derive(Clone, Debug)]
 pub struct ProposalBlockProofTarget<
     const D: usize,

@@ -25,7 +25,10 @@ pub struct TokenKind<F: RichField> {
 
 #[test]
 fn test_serde_token_kind() {
-    use plonky2::{field::types::Sample, hash::hash_types::HashOut};
+    use plonky2::{
+        field::{goldilocks_field::GoldilocksField, types::Sample},
+        hash::hash_types::HashOut,
+    };
 
     let kind: TokenKind<GoldilocksField> = TokenKind {
         contract_address: Address::rand(),

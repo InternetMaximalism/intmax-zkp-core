@@ -1,7 +1,7 @@
 use plonky2::{
-    field::{extension::Extendable, types::Field},
+    field::extension::Extendable,
     hash::hash_types::{HashOut, HashOutTarget, RichField},
-    iop::{target::BoolTarget, witness::Witness},
+    iop::witness::Witness,
     plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
 };
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 use crate::sparse_merkle_tree::{
     gadgets::{
         common::{conditionally_select, enforce_equal_if_enabled, logical_and_not},
-        process::process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
+        process::{
+            process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
+            utils::{get_process_merkle_proof_role, ProcessMerkleProofRoleTarget},
+        },
         verify::verify_smt::{SmtInclusionProof, SparseMerkleInclusionProofTarget},
     },
     goldilocks_poseidon::WrappedHashOut,
@@ -37,7 +40,7 @@ pub struct MergeProofTarget<
     const N_LOG_TXS: usize,
     const N_LOG_RECIPIENTS: usize,
 > {
-    pub is_deposit: BoolTarget,
+    // pub is_deposit: BoolTarget,
     pub diff_tree_inclusion_proof: (
         BlockHeaderTarget,
         SparseMerkleInclusionProofTarget<N_LOG_TXS>,
@@ -75,7 +78,7 @@ impl<
         let mut proofs = vec![];
         for _ in 0..N_MERGES {
             let target = MergeProofTarget {
-                is_deposit: builder.add_virtual_bool_target_safe(),
+                // is_deposit: builder.add_virtual_bool_target_safe(),
                 diff_tree_inclusion_proof: (
                     BlockHeaderTarget::add_virtual_to::<F, H, D>(builder),
                     SparseMerkleInclusionProofTarget::add_virtual_to::<F, H, D>(builder),
@@ -148,6 +151,7 @@ impl<
                 );
 
                 let tx_hash = witness.merge_process_proof.new_key;
+                dbg!(tx_hash);
                 assert_eq!(witness.diff_tree_inclusion_proof.2.root, tx_hash);
             }
             assert_eq!(witness.merge_process_proof.old_value, Default::default());
@@ -161,7 +165,7 @@ impl<
             );
             assert_eq!(witness.merge_process_proof.old_root, new_user_asset_root,);
 
-            pw.set_bool_target(target.is_deposit, witness.is_deposit);
+            // pw.set_bool_target(target.is_deposit, witness.is_deposit);
             target
                 .diff_tree_inclusion_proof
                 .0
@@ -194,7 +198,7 @@ impl<
         let default_inclusion_proof = SmtInclusionProof::with_root(Default::default());
         let default_process_proof = SmtProcessProof::with_root(new_user_asset_root);
         for target in self.proofs.iter().skip(proofs.len()) {
-            pw.set_bool_target(target.is_deposit, true);
+            // pw.set_bool_target(target.is_deposit, true);
             target
                 .diff_tree_inclusion_proof
                 .0
@@ -241,27 +245,25 @@ pub fn verify_user_asset_merge_proof<
 
     let mut new_user_asset_root = old_user_asset_root;
     for MergeProofTarget {
-        is_deposit,
+        // is_deposit: actual_is_deposit,
         merge_process_proof,
         diff_tree_inclusion_proof,
         account_tree_inclusion_proof,
     } in proofs
     {
-        let is_not_no_op = diff_tree_inclusion_proof.1.enabled;
-        // let ProcessMerkleProofRoleTarget { is_not_no_op, .. } =
-        //     get_process_merkle_proof_role::<F, D>(builder, merge_process_proof.fnc);
-        let is_not_deposit = builder.not(*is_deposit);
-        builder.connect(
-            is_not_deposit.target,
-            account_tree_inclusion_proof.enabled.target,
-        );
+        let is_deposit = builder.not(account_tree_inclusion_proof.enabled);
+        // builder.connect(is_deposit.target, actual_is_deposit.target);
+
+        // let is_not_no_op = diff_tree_inclusion_proof.1.enabled;
+        let ProcessMerkleProofRoleTarget { is_not_no_op, .. } =
+            get_process_merkle_proof_role::<F, D>(builder, merge_process_proof.fnc);
 
         let block_header_t = diff_tree_inclusion_proof.0.clone();
         let root = conditionally_select(
             builder,
             block_header_t.deposit_digest,
             block_header_t.transactions_digest,
-            *is_deposit,
+            is_deposit,
         ); // XXX: row 2064, column 79 は最初のループのここ
         enforce_equal_if_enabled(
             builder,
@@ -273,7 +275,7 @@ pub fn verify_user_asset_merge_proof<
         let receiving_block_number = diff_tree_inclusion_proof.0.block_number;
         let confirmed_block_number = account_tree_inclusion_proof.value; // 最後に成功した block number
 
-        let check_block_number = logical_and_not(builder, is_not_no_op, *is_deposit);
+        let check_block_number = logical_and_not(builder, is_not_no_op, is_deposit);
         enforce_equal_if_enabled(
             builder,
             confirmed_block_number,

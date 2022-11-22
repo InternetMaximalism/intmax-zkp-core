@@ -43,7 +43,7 @@ fn test_verify_inclusion_proof_by_plonky2() {
     let data = builder.build::<C>();
 
     let mut pw = PartialWitness::new();
-    target.set_witness(&mut pw, &witness);
+    target.set_witness(&mut pw, &witness, true);
     let proof = data.prove(pw).unwrap();
 
     match data.verify(proof) {

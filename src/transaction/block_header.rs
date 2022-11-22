@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
 use plonky2::{
-    field::{goldilocks_field::GoldilocksField, types::Field},
+    field::types::Field,
     hash::{
         hash_types::{HashOut, RichField},
         poseidon::PoseidonHash,
@@ -13,7 +13,7 @@ use serde_hex::{SerHex, StrictPfx};
 
 use crate::{
     merkle_tree::tree::{get_merkle_proof, get_merkle_root},
-    sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
+    sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -28,19 +28,20 @@ pub struct BlockHeader<F: Field> {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SerializableBlockHeader {
+#[serde(bound(deserialize = "WrappedHashOut<F>: Deserialize<'de>"))]
+pub struct SerializableBlockHeader<F: RichField> {
     #[serde(with = "SerHex::<StrictPfx>")]
     pub block_number: u32,
-    pub prev_block_header_digest: GoldilocksHashOut,
-    pub transactions_digest: GoldilocksHashOut,
-    pub deposit_digest: GoldilocksHashOut,
-    pub proposed_world_state_digest: GoldilocksHashOut,
-    pub approved_world_state_digest: GoldilocksHashOut,
-    pub latest_account_digest: GoldilocksHashOut,
+    pub prev_block_header_digest: WrappedHashOut<F>,
+    pub transactions_digest: WrappedHashOut<F>,
+    pub deposit_digest: WrappedHashOut<F>,
+    pub proposed_world_state_digest: WrappedHashOut<F>,
+    pub approved_world_state_digest: WrappedHashOut<F>,
+    pub latest_account_digest: WrappedHashOut<F>,
 }
 
-impl From<SerializableBlockHeader> for BlockHeader<GoldilocksField> {
-    fn from(value: SerializableBlockHeader) -> Self {
+impl<F: RichField> From<SerializableBlockHeader<F>> for BlockHeader<F> {
+    fn from(value: SerializableBlockHeader<F>) -> Self {
         Self {
             block_number: value.block_number,
             prev_block_header_digest: *value.prev_block_header_digest,
@@ -53,7 +54,7 @@ impl From<SerializableBlockHeader> for BlockHeader<GoldilocksField> {
     }
 }
 
-impl<'de> Deserialize<'de> for BlockHeader<GoldilocksField> {
+impl<'de, F: RichField> Deserialize<'de> for BlockHeader<F> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let raw = SerializableBlockHeader::deserialize(deserializer)?;
 
@@ -61,8 +62,8 @@ impl<'de> Deserialize<'de> for BlockHeader<GoldilocksField> {
     }
 }
 
-impl From<BlockHeader<GoldilocksField>> for SerializableBlockHeader {
-    fn from(value: BlockHeader<GoldilocksField>) -> Self {
+impl<F: RichField> From<BlockHeader<F>> for SerializableBlockHeader<F> {
+    fn from(value: BlockHeader<F>) -> Self {
         Self {
             block_number: value.block_number,
             prev_block_header_digest: value.prev_block_header_digest.into(),
@@ -75,7 +76,7 @@ impl From<BlockHeader<GoldilocksField>> for SerializableBlockHeader {
     }
 }
 
-impl Serialize for BlockHeader<GoldilocksField> {
+impl<F: RichField> Serialize for BlockHeader<F> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let raw = SerializableBlockHeader::from(self.clone());
 

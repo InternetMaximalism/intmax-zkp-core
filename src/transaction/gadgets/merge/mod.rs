@@ -1,5 +1,5 @@
 use plonky2::{
-    field::{extension::Extendable, goldilocks_field::GoldilocksField, types::Field},
+    field::{extension::Extendable, types::Field},
     hash::hash_types::{HashOut, HashOutTarget, RichField},
     iop::{target::BoolTarget, witness::Witness},
     plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
@@ -9,82 +9,25 @@ use serde::{Deserialize, Serialize};
 use crate::sparse_merkle_tree::{
     gadgets::{
         common::{conditionally_select, enforce_equal_if_enabled, logical_and_not},
-        process::{
-            process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
-            utils::{get_process_merkle_proof_role, ProcessMerkleProofRoleTarget},
-        },
+        process::process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
         verify::verify_smt::{SmtInclusionProof, SparseMerkleInclusionProofTarget},
     },
     goldilocks_poseidon::WrappedHashOut,
+    proof::ProcessMerkleProofRole,
 };
 
 use super::super::block_header::{BlockHeader, SerializableBlockHeader};
 use super::block_header::BlockHeaderTarget;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MergeProof<F: Field> {
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(bound(
+    deserialize = "SmtInclusionProof<F>: Deserialize<'de>, SmtProcessProof<F>: Deserialize<'de>, SerializableBlockHeader<F>: Deserialize<'de>"
+))]
+pub struct MergeProof<F: RichField> {
     pub is_deposit: bool,
     pub diff_tree_inclusion_proof: (BlockHeader<F>, SmtInclusionProof<F>, SmtInclusionProof<F>),
     pub merge_process_proof: SmtProcessProof<F>,
     pub account_tree_inclusion_proof: SmtInclusionProof<F>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SerializableMergeProof {
-    pub is_deposit: bool,
-    pub diff_tree_inclusion_proof: (
-        SerializableBlockHeader,
-        SmtInclusionProof<GoldilocksField>,
-        SmtInclusionProof<GoldilocksField>,
-    ),
-    pub merge_process_proof: SmtProcessProof<GoldilocksField>,
-    pub account_tree_inclusion_proof: SmtInclusionProof<GoldilocksField>,
-}
-
-impl From<SerializableMergeProof> for MergeProof<GoldilocksField> {
-    fn from(value: SerializableMergeProof) -> Self {
-        Self {
-            is_deposit: value.is_deposit,
-            diff_tree_inclusion_proof: (
-                value.diff_tree_inclusion_proof.0.into(),
-                value.diff_tree_inclusion_proof.1,
-                value.diff_tree_inclusion_proof.2,
-            ),
-            merge_process_proof: value.merge_process_proof,
-            account_tree_inclusion_proof: value.account_tree_inclusion_proof,
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for MergeProof<GoldilocksField> {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = SerializableMergeProof::deserialize(deserializer)?;
-
-        Ok(raw.into())
-    }
-}
-
-impl From<MergeProof<GoldilocksField>> for SerializableMergeProof {
-    fn from(value: MergeProof<GoldilocksField>) -> Self {
-        SerializableMergeProof {
-            is_deposit: value.is_deposit,
-            diff_tree_inclusion_proof: (
-                value.diff_tree_inclusion_proof.0.into(),
-                value.diff_tree_inclusion_proof.1,
-                value.diff_tree_inclusion_proof.2,
-            ),
-            merge_process_proof: value.merge_process_proof,
-            account_tree_inclusion_proof: value.account_tree_inclusion_proof,
-        }
-    }
-}
-
-impl Serialize for MergeProof<GoldilocksField> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let raw = SerializableMergeProof::from(self.clone());
-
-        raw.serialize(serializer)
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -145,7 +88,7 @@ impl<
                     F,
                     H,
                     D,
-                >(builder), // XXX: row 282 の calc_internal_hash
+                >(builder),
             };
 
             proofs.push(target);
@@ -178,8 +121,46 @@ impl<
     ) -> WrappedHashOut<F> {
         pw.set_hash_target(self.old_user_asset_root, old_user_asset_root);
 
+        let first_root = old_user_asset_root.into();
+        if let Some(first_witness) = proofs.first() {
+            assert_eq!(first_witness.merge_process_proof.old_root, first_root);
+        }
+
+        let mut new_user_asset_root = first_root;
         assert!(proofs.len() <= self.proofs.len());
         for (target, witness) in self.proofs.iter().zip(proofs.iter()) {
+            assert_ne!(
+                witness.merge_process_proof.fnc,
+                ProcessMerkleProofRole::ProcessNoOp
+            );
+
+            let block_header = witness.diff_tree_inclusion_proof.0.clone();
+            let root = if witness.is_deposit {
+                block_header.deposit_digest
+            } else {
+                block_header.transactions_digest
+            };
+            assert_eq!(root, *witness.diff_tree_inclusion_proof.1.root);
+            if !witness.is_deposit {
+                assert_eq!(
+                    witness.account_tree_inclusion_proof.value.to_u32(),
+                    witness.diff_tree_inclusion_proof.0.block_number,
+                );
+
+                let tx_hash = witness.merge_process_proof.new_key;
+                assert_eq!(witness.diff_tree_inclusion_proof.2.root, tx_hash);
+            }
+            assert_eq!(witness.merge_process_proof.old_value, Default::default());
+            assert_eq!(
+                witness.merge_process_proof.new_value,
+                witness.diff_tree_inclusion_proof.2.value,
+            );
+            assert_eq!(
+                witness.diff_tree_inclusion_proof.0.latest_account_digest,
+                *witness.account_tree_inclusion_proof.root,
+            );
+            assert_eq!(witness.merge_process_proof.old_root, new_user_asset_root,);
+
             pw.set_bool_target(target.is_deposit, witness.is_deposit);
             target
                 .diff_tree_inclusion_proof
@@ -203,26 +184,17 @@ impl<
             target.account_tree_inclusion_proof.set_witness(
                 pw,
                 &witness.account_tree_inclusion_proof,
-                true,
+                !witness.is_deposit,
             );
-        }
 
-        let first_root = old_user_asset_root.into();
-        if let Some(first_witness) = proofs.first() {
-            assert_eq!(first_witness.merge_process_proof.old_root, first_root);
+            new_user_asset_root = witness.merge_process_proof.new_root
         }
-
-        let new_user_asset_root = if let Some(last_proof) = proofs.last() {
-            last_proof.merge_process_proof.new_root
-        } else {
-            first_root
-        };
 
         let default_header = BlockHeader::default();
         let default_inclusion_proof = SmtInclusionProof::with_root(Default::default());
         let default_process_proof = SmtProcessProof::with_root(new_user_asset_root);
         for target in self.proofs.iter().skip(proofs.len()) {
-            pw.set_bool_target(target.is_deposit, false);
+            pw.set_bool_target(target.is_deposit, true);
             target
                 .diff_tree_inclusion_proof
                 .0
@@ -275,8 +247,14 @@ pub fn verify_user_asset_merge_proof<
         account_tree_inclusion_proof,
     } in proofs
     {
-        let ProcessMerkleProofRoleTarget { is_not_no_op, .. } =
-            get_process_merkle_proof_role::<F, D>(builder, merge_process_proof.fnc);
+        let is_not_no_op = diff_tree_inclusion_proof.1.enabled;
+        // let ProcessMerkleProofRoleTarget { is_not_no_op, .. } =
+        //     get_process_merkle_proof_role::<F, D>(builder, merge_process_proof.fnc);
+        let is_not_deposit = builder.not(*is_deposit);
+        builder.connect(
+            is_not_deposit.target,
+            account_tree_inclusion_proof.enabled.target,
+        );
 
         let block_header_t = diff_tree_inclusion_proof.0.clone();
         let root = conditionally_select(
@@ -284,7 +262,7 @@ pub fn verify_user_asset_merge_proof<
             block_header_t.deposit_digest,
             block_header_t.transactions_digest,
             *is_deposit,
-        );
+        ); // XXX: row 2064, column 79 は最初のループのここ
         enforce_equal_if_enabled(
             builder,
             root,
@@ -296,12 +274,12 @@ pub fn verify_user_asset_merge_proof<
         let confirmed_block_number = account_tree_inclusion_proof.value; // 最後に成功した block number
 
         let check_block_number = logical_and_not(builder, is_not_no_op, *is_deposit);
-        // enforce_equal_if_enabled(
-        //     builder,
-        //     confirmed_block_number,
-        //     HashOutTarget::from_partial(&[receiving_block_number], zero),
-        //     check_block_number,
-        // ); // XXX: row 282
+        enforce_equal_if_enabled(
+            builder,
+            confirmed_block_number,
+            HashOutTarget::from_partial(&[receiving_block_number], zero),
+            check_block_number,
+        );
 
         let tx_hash = diff_tree_inclusion_proof.2.root;
         enforce_equal_if_enabled(
@@ -320,6 +298,18 @@ pub fn verify_user_asset_merge_proof<
             builder,
             merge_process_proof.new_value,
             diff_tree_inclusion_proof.2.value,
+            is_not_no_op,
+        ); // XXX: row 2079, column 3 は最初のループのここ
+        enforce_equal_if_enabled(
+            builder,
+            diff_tree_inclusion_proof.0.latest_account_digest,
+            account_tree_inclusion_proof.root,
+            is_not_no_op,
+        );
+        enforce_equal_if_enabled(
+            builder,
+            merge_process_proof.old_root,
+            new_user_asset_root,
             is_not_no_op,
         );
 

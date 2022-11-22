@@ -185,22 +185,26 @@ impl<
                 .diff_tree_inclusion_proof
                 .0
                 .set_witness(pw, &witness.diff_tree_inclusion_proof.0);
-            target
-                .diff_tree_inclusion_proof
-                .1
-                .set_witness(pw, &witness.diff_tree_inclusion_proof.1);
-            target
-                .diff_tree_inclusion_proof
-                .2
-                .set_witness(pw, &witness.diff_tree_inclusion_proof.2);
+            target.diff_tree_inclusion_proof.1.set_witness(
+                pw,
+                &witness.diff_tree_inclusion_proof.1,
+                true,
+            );
+            target.diff_tree_inclusion_proof.2.set_witness(
+                pw,
+                &witness.diff_tree_inclusion_proof.2,
+                true,
+            );
 
             target
                 .merge_process_proof
                 .set_witness(pw, &witness.merge_process_proof);
 
-            target
-                .account_tree_inclusion_proof
-                .set_witness(pw, &witness.account_tree_inclusion_proof);
+            target.account_tree_inclusion_proof.set_witness(
+                pw,
+                &witness.account_tree_inclusion_proof,
+                true,
+            );
         }
 
         let first_root = old_user_asset_root.into();
@@ -226,11 +230,11 @@ impl<
             target
                 .diff_tree_inclusion_proof
                 .1
-                .set_witness(pw, &default_inclusion_proof);
+                .set_witness(pw, &default_inclusion_proof, false);
             target
                 .diff_tree_inclusion_proof
                 .2
-                .set_witness(pw, &default_inclusion_proof);
+                .set_witness(pw, &default_inclusion_proof, false);
 
             target
                 .merge_process_proof
@@ -238,7 +242,7 @@ impl<
 
             target
                 .account_tree_inclusion_proof
-                .set_witness(pw, &default_inclusion_proof);
+                .set_witness(pw, &default_inclusion_proof, false);
         }
 
         new_user_asset_root
@@ -292,14 +296,12 @@ pub fn verify_user_asset_merge_proof<
         let confirmed_block_number = account_tree_inclusion_proof.value; // 最後に成功した block number
 
         let check_block_number = logical_and_not(builder, is_not_no_op, *is_deposit);
-        enforce_equal_if_enabled(
-            builder,
-            confirmed_block_number,
-            HashOutTarget {
-                elements: [receiving_block_number, zero, zero, zero],
-            },
-            check_block_number,
-        );
+        // enforce_equal_if_enabled(
+        //     builder,
+        //     confirmed_block_number,
+        //     HashOutTarget::from_partial(&[receiving_block_number], zero),
+        //     check_block_number,
+        // ); // XXX: row 282
 
         let tx_hash = diff_tree_inclusion_proof.2.root;
         enforce_equal_if_enabled(

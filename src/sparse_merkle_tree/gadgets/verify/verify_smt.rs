@@ -69,7 +69,12 @@ impl<const N_LEVELS: usize> SparseMerkleInclusionProofTarget<N_LEVELS> {
         }
     }
 
-    pub fn set_witness<F: Field>(&self, pw: &mut impl Witness<F>, witness: &SmtInclusionProof<F>) {
+    pub fn set_witness<F: Field>(
+        &self,
+        pw: &mut impl Witness<F>,
+        witness: &SmtInclusionProof<F>,
+        enabled: bool,
+    ) {
         assert!(witness.siblings.len() < N_LEVELS);
         for i in 0..witness.siblings.len() {
             pw.set_hash_target(self.siblings[i], *witness.siblings[i]);
@@ -82,7 +87,7 @@ impl<const N_LEVELS: usize> SparseMerkleInclusionProofTarget<N_LEVELS> {
         pw.set_hash_target(self.old_value, *witness.not_found_value);
         pw.set_hash_target(self.key, *witness.key);
         pw.set_hash_target(self.value, *witness.value);
-        pw.set_bool_target(self.enabled, true);
+        pw.set_bool_target(self.enabled, enabled);
         pw.set_bool_target(self.is_old0, witness.is_old0);
         pw.set_bool_target(self.fnc, !witness.found); // whether if this is a non-inclusion proof
     }

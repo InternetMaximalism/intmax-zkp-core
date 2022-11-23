@@ -230,7 +230,7 @@ fn main() {
             merge_inclusion_proof2,
         ),
         merge_process_proof,
-        address_list_inclusion_proof: default_inclusion_proof,
+        latest_account_tree_inclusion_proof: default_inclusion_proof,
     };
 
     world_state_tree

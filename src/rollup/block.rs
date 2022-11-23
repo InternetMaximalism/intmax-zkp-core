@@ -7,7 +7,7 @@ use crate::{
     transaction::block_header::BlockHeader,
 };
 
-use super::circuits::proposal_and_approval::LatestAccountInfo;
+use super::circuits::proposal_and_approval::TxHashWithValidity;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct BlockInfo<F: RichField> {
@@ -27,10 +27,10 @@ pub struct BlockInfo<F: RichField> {
     ))]
     pub deposit_list: Vec<DepositInfo<F>>,
     #[serde(bound(
-        serialize = "LatestAccountInfo<F>: Serialize",
-        deserialize = "LatestAccountInfo<F>: Deserialize<'de>"
+        serialize = "TxHashWithValidity<F>: Serialize",
+        deserialize = "TxHashWithValidity<F>: Deserialize<'de>"
     ))]
-    pub address_list: Vec<LatestAccountInfo<F>>,
+    pub address_list: Vec<TxHashWithValidity<F>>,
     // diff_tree_proof
     // world_state_tree_proof
 }

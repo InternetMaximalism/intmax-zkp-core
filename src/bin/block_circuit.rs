@@ -21,9 +21,7 @@ use intmax_zkp_core::{
     merkle_tree::tree::get_merkle_proof,
     rollup::{
         circuits::{
-            merge_and_purge::{
-                make_user_proof_circuit, MergeAndPurgeTransitionProofWithPublicInputs,
-            },
+            merge_and_purge::make_user_proof_circuit,
             proposal_and_approval::make_block_proof_circuit,
         },
         gadgets::{batch::BatchBlockProofTarget, deposit_block::DepositInfo},
@@ -232,7 +230,7 @@ fn main() {
             merge_inclusion_proof2,
         ),
         merge_process_proof,
-        account_tree_inclusion_proof: default_inclusion_proof,
+        address_list_inclusion_proof: default_inclusion_proof,
     };
 
     world_state_tree
@@ -402,21 +400,9 @@ fn main() {
 
     let block_number = 1;
 
-    let accounts_in_block: Vec<(
-        HashOut<F>,
-        Option<_>,
-        MergeAndPurgeTransitionProofWithPublicInputs<F, PoseidonGoldilocksConfig, 2>,
-    )> = vec![
-        (
-            sender1_address,
-            Some(sender1_received_signature),
-            sender1_tx_proof,
-        ),
-        (
-            sender2_address,
-            Some(sender2_received_signature),
-            sender2_tx_proof,
-        ),
+    let accounts_in_block: Vec<(Option<_>, _)> = vec![
+        (Some(sender1_received_signature), sender1_tx_proof),
+        (Some(sender2_received_signature), sender2_tx_proof),
     ];
 
     let mut latest_account_tree: PoseidonSparseMerkleTree<NodeDataMemory> =
@@ -428,12 +414,12 @@ fn main() {
     let mut world_state_revert_proofs = vec![];
     let mut latest_account_tree_process_proofs = vec![];
     let mut received_signatures = vec![];
-    for (user_address, opt_received_signature, user_tx_proof) in accounts_in_block {
-        let latest_account_tree_inclusion_proof =
-            latest_account_tree.find(&user_address.into()).unwrap();
+    for (opt_received_signature, user_tx_proof) in accounts_in_block {
+        let user_address = user_tx_proof.public_inputs.sender_address;
         let (last_block_number, confirmed_user_asset_root) = if opt_received_signature.is_none() {
+            let old_block_number = latest_account_tree.get(&user_address.0.into()).unwrap();
             (
-                latest_account_tree_inclusion_proof.value.to_u32(),
+                old_block_number.to_u32(),
                 user_tx_proof.public_inputs.old_user_asset_root,
             )
         } else {
@@ -445,14 +431,14 @@ fn main() {
         latest_account_tree_process_proofs.push(
             latest_account_tree
                 .set(
-                    user_address.into(),
+                    user_address.0.into(),
                     GoldilocksHashOut::from_u32(last_block_number),
                 )
                 .unwrap(),
         );
 
         let proof = world_state_tree
-            .set(user_address.into(), confirmed_user_asset_root)
+            .set(user_address.0.into(), confirmed_user_asset_root)
             .unwrap();
         world_state_revert_proofs.push(proof);
         received_signatures.push(opt_received_signature);

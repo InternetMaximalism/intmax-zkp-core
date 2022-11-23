@@ -120,6 +120,22 @@ fn test_serde_goldilocks_hashout() {
 }
 
 impl<F: RichField> WrappedHashOut<F> {
+    pub fn read(inputs: &mut core::slice::Iter<F>) -> Self {
+        HashOut {
+            elements: [
+                *inputs.next().unwrap(),
+                *inputs.next().unwrap(),
+                *inputs.next().unwrap(),
+                *inputs.next().unwrap(),
+            ],
+        }
+        .into()
+    }
+
+    pub fn write(&self, inputs: &mut Vec<F>) {
+        inputs.append(&mut self.0.elements.to_vec())
+    }
+
     pub fn rand() -> Self {
         HashOut::rand().into()
     }

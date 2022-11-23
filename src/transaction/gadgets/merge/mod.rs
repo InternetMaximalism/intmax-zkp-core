@@ -30,7 +30,7 @@ pub struct MergeProof<F: RichField> {
     pub is_deposit: bool,
     pub diff_tree_inclusion_proof: (BlockHeader<F>, SmtInclusionProof<F>, SmtInclusionProof<F>),
     pub merge_process_proof: SmtProcessProof<F>,
-    pub account_tree_inclusion_proof: SmtInclusionProof<F>,
+    pub address_list_inclusion_proof: SmtInclusionProof<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -47,7 +47,7 @@ pub struct MergeProofTarget<
         SparseMerkleInclusionProofTarget<N_LOG_RECIPIENTS>,
     ),
     pub merge_process_proof: SparseMerkleProcessProofTarget<N_LOG_MAX_TXS>,
-    pub account_tree_inclusion_proof: SparseMerkleInclusionProofTarget<N_LOG_MAX_USERS>,
+    pub address_list_inclusion_proof: SparseMerkleInclusionProofTarget<N_LOG_MAX_USERS>,
 }
 
 #[derive(Clone, Debug)]
@@ -87,7 +87,7 @@ impl<
                 merge_process_proof: SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(
                     builder,
                 ),
-                account_tree_inclusion_proof: SparseMerkleInclusionProofTarget::add_virtual_to::<
+                address_list_inclusion_proof: SparseMerkleInclusionProofTarget::add_virtual_to::<
                     F,
                     H,
                     D,
@@ -146,7 +146,7 @@ impl<
             assert_eq!(root, *witness.diff_tree_inclusion_proof.1.root);
             if !witness.is_deposit {
                 assert_eq!(
-                    witness.account_tree_inclusion_proof.value.to_u32(),
+                    witness.address_list_inclusion_proof.value.to_u32(),
                     witness.diff_tree_inclusion_proof.0.block_number,
                 );
 
@@ -161,7 +161,7 @@ impl<
             );
             assert_eq!(
                 witness.diff_tree_inclusion_proof.0.latest_account_digest,
-                *witness.account_tree_inclusion_proof.root,
+                *witness.address_list_inclusion_proof.root,
             );
             assert_eq!(witness.merge_process_proof.old_root, new_user_asset_root,);
 
@@ -185,9 +185,9 @@ impl<
                 .merge_process_proof
                 .set_witness(pw, &witness.merge_process_proof);
 
-            target.account_tree_inclusion_proof.set_witness(
+            target.address_list_inclusion_proof.set_witness(
                 pw,
-                &witness.account_tree_inclusion_proof,
+                &witness.address_list_inclusion_proof,
                 !witness.is_deposit,
             );
 
@@ -217,7 +217,7 @@ impl<
                 .set_witness(pw, &default_process_proof);
 
             target
-                .account_tree_inclusion_proof
+                .address_list_inclusion_proof
                 .set_witness(pw, &default_inclusion_proof, false);
         }
 
@@ -248,10 +248,10 @@ pub fn verify_user_asset_merge_proof<
         // is_deposit: actual_is_deposit,
         merge_process_proof,
         diff_tree_inclusion_proof,
-        account_tree_inclusion_proof,
+        address_list_inclusion_proof,
     } in proofs
     {
-        let is_deposit = builder.not(account_tree_inclusion_proof.enabled);
+        let is_deposit = builder.not(address_list_inclusion_proof.enabled);
         // builder.connect(is_deposit.target, actual_is_deposit.target);
 
         // let is_not_no_op = diff_tree_inclusion_proof.1.enabled;
@@ -273,7 +273,7 @@ pub fn verify_user_asset_merge_proof<
         );
 
         let receiving_block_number = diff_tree_inclusion_proof.0.block_number;
-        let confirmed_block_number = account_tree_inclusion_proof.value; // 最後に成功した block number
+        let confirmed_block_number = address_list_inclusion_proof.value; // 最後に成功した block number
 
         let check_block_number = logical_and_not(builder, is_not_no_op, is_deposit);
         enforce_equal_if_enabled(
@@ -305,7 +305,7 @@ pub fn verify_user_asset_merge_proof<
         enforce_equal_if_enabled(
             builder,
             diff_tree_inclusion_proof.0.latest_account_digest,
-            account_tree_inclusion_proof.root,
+            address_list_inclusion_proof.root,
             is_not_no_op,
         );
         enforce_equal_if_enabled(

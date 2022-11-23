@@ -17,7 +17,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     merkle_tree::gadgets::{get_merkle_root_target, MerkleProofTarget},
-    sparse_merkle_tree::gadgets::process::process_smt::SmtProcessProof,
+    sparse_merkle_tree::{
+        gadgets::process::process_smt::SmtProcessProof, goldilocks_poseidon::WrappedHashOut,
+    },
     transaction::gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
     zkdsa::{
         account::Address,
@@ -226,12 +228,10 @@ pub fn make_block_proof_circuit<
         .iter()
         .zip_eq(approval_block_target.received_signatures.iter())
     {
-        let cancel_flag = builder.not(received_signature.enabled);
-
         // publish ID list
         // public_inputs[(5*i)..(5*i+5)]
         builder.register_public_inputs(&user_tx_proof.inner.public_inputs[16..20]); // sender_address
-        builder.register_public_input(cancel_flag.target);
+        builder.register_public_input(received_signature.enabled.target); // not_cancel_flag
     }
 
     for proof_t in deposit_block_target.deposit_process_proofs.iter() {
@@ -331,10 +331,9 @@ pub struct ProposalAndApprovalBlockCircuit<
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound(deserialize = "Address<F>: Deserialize<'de>"))]
-pub struct LatestAccountInfo<F: RichField> {
-    pub account_id: Address<F>,
-    // pub last_block_number: F,
-    pub cancel_flag: bool,
+pub struct TxHashWithValidity<F: RichField> {
+    pub tx_hash: WrappedHashOut<F>,
+    pub is_valid: bool,
 }
 
 pub fn make_address_list<
@@ -345,22 +344,22 @@ pub fn make_address_list<
     user_tx_proofs: &[MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>],
     received_signatures: &[Option<SimpleSignatureProofWithPublicInputs<F, C, D>>],
     num_transactions: usize,
-) -> Vec<LatestAccountInfo<F>> {
+) -> Vec<TxHashWithValidity<F>> {
     let mut address_list = vec![];
     for (user_tx_proof, received_signature) in
         user_tx_proofs.iter().zip_eq(received_signatures.iter())
     {
-        address_list.push(LatestAccountInfo {
-            account_id: user_tx_proof.public_inputs.sender_address,
-            cancel_flag: received_signature.is_none(),
+        address_list.push(TxHashWithValidity {
+            tx_hash: user_tx_proof.public_inputs.tx_hash,
+            is_valid: received_signature.is_some(),
         });
     }
 
     address_list.resize(
         num_transactions,
-        LatestAccountInfo {
-            account_id: Address(HashOut::ZERO),
-            cancel_flag: true,
+        TxHashWithValidity {
+            tx_hash: HashOut::ZERO.into(),
+            is_valid: false,
         },
     );
 
@@ -369,7 +368,7 @@ pub fn make_address_list<
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProposalAndApprovalBlockPublicInputs<F: RichField> {
-    pub address_list: Vec<LatestAccountInfo<F>>,
+    pub address_list: Vec<TxHashWithValidity<F>>,
     pub deposit_list: Vec<DepositInfo<F>>,
     pub old_account_tree_root: HashOut<F>,
     pub new_account_tree_root: HashOut<F>,
@@ -383,15 +382,10 @@ pub struct ProposalAndApprovalBlockPublicInputs<F: RichField> {
 impl<F: RichField> ProposalAndApprovalBlockPublicInputs<F> {
     pub fn encode(&self) -> Vec<F> {
         let mut public_inputs = vec![];
-        for LatestAccountInfo {
-            account_id,
-            // last_block_number,
-            cancel_flag,
-        } in self.address_list.clone()
-        {
-            public_inputs.append(&mut account_id.elements.into());
+        for TxHashWithValidity { tx_hash, is_valid } in self.address_list.clone() {
+            public_inputs.append(&mut tx_hash.0.elements.into());
             // public_inputs.push(last_block_number);
-            public_inputs.push(F::from_bool(cancel_flag));
+            public_inputs.push(F::from_bool(is_valid));
         }
 
         for DepositInfo {
@@ -422,7 +416,7 @@ impl<F: RichField> ProposalAndApprovalBlockPublicInputs<F> {
 
 #[derive(Clone, Debug)]
 pub struct ProposalAndApprovalBlockPublicInputsTarget<const N_TXS: usize, const N_DEPOSITS: usize> {
-    pub address_list: [LatestAccountInfoTarget; N_TXS],
+    pub address_list: [TxHashWithValidityTarget; N_TXS],
     pub deposit_list: [DepositInfoTarget; N_DEPOSITS],
     pub old_account_tree_root: HashOutTarget,
     pub new_account_tree_root: HashOutTarget,
@@ -458,10 +452,10 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct LatestAccountInfoTarget {
+pub struct TxHashWithValidityTarget {
     pub account_id: HashOutTarget,
     // pub last_block_number: Target,
-    pub cancel_flag: BoolTarget,
+    pub is_valid: BoolTarget,
 }
 
 pub fn parse_proposal_and_approval_public_inputs<const N_TXS: usize, const N_DEPOSITS: usize>(
@@ -469,7 +463,7 @@ pub fn parse_proposal_and_approval_public_inputs<const N_TXS: usize, const N_DEP
 ) -> ProposalAndApprovalBlockPublicInputsTarget<N_TXS, N_DEPOSITS> {
     let mut public_inputs_t = public_inputs_t.iter();
     let address_list = (0..N_TXS)
-        .map(|_| LatestAccountInfoTarget {
+        .map(|_| TxHashWithValidityTarget {
             account_id: HashOutTarget {
                 elements: [
                     *public_inputs_t.next().unwrap(),
@@ -479,7 +473,7 @@ pub fn parse_proposal_and_approval_public_inputs<const N_TXS: usize, const N_DEP
                 ],
             },
             // last_block_number: *public_inputs_t.next().unwrap(),
-            cancel_flag: BoolTarget::new_unsafe(*public_inputs_t.next().unwrap()),
+            is_valid: BoolTarget::new_unsafe(*public_inputs_t.next().unwrap()),
         })
         .collect::<Vec<_>>();
 
@@ -607,84 +601,27 @@ impl<
         let proof_with_pis = self.data.prove(inputs)?;
         let mut public_inputs = proof_with_pis.public_inputs.iter();
         let address_list = (0..N_TXS)
-            .map(|_| LatestAccountInfo {
-                account_id: Address::read(&mut public_inputs),
-                // last_block_number: *public_inputs.next().unwrap(),
-                cancel_flag: public_inputs.next().unwrap().is_nonzero(),
+            .map(|_| TxHashWithValidity {
+                tx_hash: WrappedHashOut::read(&mut public_inputs),
+                is_valid: public_inputs.next().unwrap().is_nonzero(),
             })
             .collect::<Vec<_>>();
         let deposit_list = (0..N_DEPOSITS)
             .map(|_| DepositInfo {
                 receiver_address: Address::read(&mut public_inputs),
                 contract_address: Address::read(&mut public_inputs),
-                variable_index: HashOut {
-                    elements: [
-                        *public_inputs.next().unwrap(),
-                        *public_inputs.next().unwrap(),
-                        *public_inputs.next().unwrap(),
-                        *public_inputs.next().unwrap(),
-                    ],
-                },
+                variable_index: *WrappedHashOut::read(&mut public_inputs),
                 amount: *public_inputs.next().unwrap(),
             })
             .collect::<Vec<_>>();
-        let old_account_tree_root = HashOut {
-            elements: [
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-            ],
-        };
-        let new_account_tree_root = HashOut {
-            elements: [
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-            ],
-        };
+        let old_account_tree_root = *WrappedHashOut::read(&mut public_inputs);
+        let new_account_tree_root = *WrappedHashOut::read(&mut public_inputs);
 
-        let old_world_state_root = HashOut {
-            elements: [
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-            ],
-        };
-        let new_world_state_root = HashOut {
-            elements: [
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-            ],
-        };
-        let old_prev_block_header_digest = HashOut {
-            elements: [
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-            ],
-        };
-        let new_prev_block_header_digest = HashOut {
-            elements: [
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-            ],
-        };
-        let block_hash = HashOut {
-            elements: [
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-                *public_inputs.next().unwrap(),
-            ],
-        };
+        let old_world_state_root = *WrappedHashOut::read(&mut public_inputs);
+        let new_world_state_root = *WrappedHashOut::read(&mut public_inputs);
+        let old_prev_block_header_digest = *WrappedHashOut::read(&mut public_inputs);
+        let new_prev_block_header_digest = *WrappedHashOut::read(&mut public_inputs);
+        let block_hash = *WrappedHashOut::read(&mut public_inputs);
 
         assert_eq!(public_inputs.next(), None);
 

@@ -23,9 +23,8 @@ use crate::{
         },
         proof::ProcessMerkleProofRole,
     },
+    transaction::circuits::parse_merge_and_purge_public_inputs,
 };
-
-use super::super::circuits::merge_and_purge::parse_merge_and_purge_public_inputs;
 
 #[derive(Clone, Debug)]
 pub struct ProposalBlockProofTarget<

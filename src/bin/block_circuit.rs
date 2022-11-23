@@ -20,10 +20,7 @@ use plonky2::{
 use intmax_zkp_core::{
     merkle_tree::tree::get_merkle_proof,
     rollup::{
-        circuits::{
-            merge_and_purge::make_user_proof_circuit,
-            proposal_and_approval::make_block_proof_circuit,
-        },
+        circuits::make_block_proof_circuit,
         gadgets::{batch::BatchBlockProofTarget, deposit_block::DepositInfo},
     },
     sparse_merkle_tree::{
@@ -35,6 +32,7 @@ use intmax_zkp_core::{
     },
     transaction::{
         block_header::{get_block_hash, BlockHeader},
+        circuits::make_user_proof_circuit,
         gadgets::merge::MergeProof,
     },
     zkdsa::{

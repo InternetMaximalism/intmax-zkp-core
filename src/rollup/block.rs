@@ -2,12 +2,10 @@ use plonky2::hash::hash_types::RichField;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    rollup::gadgets::deposit_block::DepositInfo,
+    rollup::{circuits::TxHashWithValidity, gadgets::deposit_block::DepositInfo},
     sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
     transaction::block_header::BlockHeader,
 };
-
-use super::circuits::proposal_and_approval::TxHashWithValidity;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct BlockInfo<F: RichField> {

@@ -384,3 +384,52 @@ impl<
         })
     }
 }
+
+/// witness を入力にとり、 user_tx_proof を返す関数
+pub fn prove_user_transaction<
+    const N_LOG_MAX_USERS: usize,
+    const N_LOG_MAX_TXS: usize,
+    const N_LOG_MAX_CONTRACTS: usize,
+    const N_LOG_MAX_VARIABLES: usize,
+    const N_LOG_TXS: usize,
+    const N_LOG_RECIPIENTS: usize,
+    const N_LOG_CONTRACTS: usize,
+    const N_LOG_VARIABLES: usize,
+    const N_DIFFS: usize,
+    const N_MERGES: usize,
+>(
+    sender_address: Address<F>,
+    merge_witnesses: &[MergeProof<F>],
+    purge_input_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
+    purge_output_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
+    old_user_asset_root: HashOut<F>,
+) -> anyhow::Result<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>> {
+    let merge_and_purge_circuit = make_user_proof_circuit::<
+        N_LOG_MAX_USERS,
+        N_LOG_MAX_TXS,
+        N_LOG_MAX_CONTRACTS,
+        N_LOG_MAX_VARIABLES,
+        N_LOG_TXS,
+        N_LOG_RECIPIENTS,
+        N_LOG_CONTRACTS,
+        N_LOG_VARIABLES,
+        N_DIFFS,
+        N_MERGES,
+    >();
+
+    let mut pw = PartialWitness::new();
+    let _public_inputs = merge_and_purge_circuit.targets.set_witness(
+        &mut pw,
+        sender_address,
+        merge_witnesses,
+        purge_input_witnesses,
+        purge_output_witnesses,
+        old_user_asset_root,
+    );
+
+    let user_tx_proof = merge_and_purge_circuit
+        .prove(pw)
+        .map_err(|err| anyhow::anyhow!("fail to prove user transaction: {}", err))?;
+
+    Ok(user_tx_proof)
+}

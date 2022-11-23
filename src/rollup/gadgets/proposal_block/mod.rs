@@ -23,14 +23,13 @@ use crate::{
         },
         proof::ProcessMerkleProofRole,
     },
+    transaction::circuits::parse_merge_and_purge_public_inputs,
 };
-
-use super::super::circuits::merge_and_purge::parse_merge_and_purge_public_inputs;
 
 #[derive(Clone, Debug)]
 pub struct ProposalBlockProofTarget<
     const D: usize,
-    const N_LOG_USERS: usize,
+    const N_LOG_USERS: usize, // N_LOG_MAX_USERS
     const N_LOG_TXS: usize,
     const N_TXS: usize,
 > {
@@ -144,13 +143,14 @@ impl<const D: usize, const N_LOG_USERS: usize, const N_LOG_TXS: usize, const N_T
             p_t.set_witness(pw, &default_proof);
         }
 
+        assert!(!user_tx_proofs.is_empty());
         assert!(user_tx_proofs.len() <= self.user_tx_proofs.len());
         for (r_t, r) in self.user_tx_proofs.iter().zip(user_tx_proofs.iter()) {
-            r_t.set_witness(pw, &r.clone(), true);
+            r_t.set_witness(pw, r, true);
         }
 
         for r_t in self.user_tx_proofs.iter().skip(user_tx_proofs.len()) {
-            r_t.set_witness(pw, &user_tx_proofs.last().unwrap().clone(), false);
+            r_t.set_witness(pw, user_tx_proofs.last().unwrap(), false);
         }
     }
 }

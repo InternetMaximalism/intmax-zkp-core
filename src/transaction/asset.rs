@@ -49,6 +49,7 @@ pub struct Asset<F: RichField> {
     pub amount: u64,
 }
 
+#[allow(clippy::type_complexity)]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(bound(
     serialize = "BlockHeader<F>: Serialize, SmtInclusionProof<F>: Serialize, Asset<F>: Serialize",
@@ -57,6 +58,6 @@ pub struct Asset<F: RichField> {
 pub struct ReceivedAssetProof<F: RichField> {
     pub is_deposit: bool,
     pub diff_tree_inclusion_proof: (BlockHeader<F>, SmtInclusionProof<F>, SmtInclusionProof<F>),
-    pub account_tree_inclusion_proof: SmtInclusionProof<F>,
-    pub asset: Asset<F>,
+    pub latest_account_tree_inclusion_proof: SmtInclusionProof<F>,
+    pub assets: Vec<Asset<F>>,
 }

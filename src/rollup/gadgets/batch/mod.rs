@@ -48,13 +48,14 @@ impl<const D: usize, const N_BLOCKS: usize> BatchBlockProofTarget<D, N_BLOCKS> {
     ) where
         C::Hasher: AlgebraicHasher<F>,
     {
+        assert!(!block_proofs.is_empty());
         assert!(block_proofs.len() <= self.block_proofs.len());
         for (ht, value) in self.block_proofs.iter().zip(block_proofs.iter()) {
             ht.set_witness(pw, value, true);
         }
 
         for ht in self.block_proofs.iter().skip(block_proofs.len()) {
-            ht.set_witness(pw, block_proofs.last().unwrap(), false);
+            ht.set_witness::<F, C>(pw, block_proofs.last().unwrap(), false);
         }
     }
 }

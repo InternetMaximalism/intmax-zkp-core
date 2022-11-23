@@ -19,9 +19,8 @@ use crate::{
         },
         proof::ProcessMerkleProofRole,
     },
+    transaction::circuits::parse_merge_and_purge_public_inputs,
 };
-
-use super::super::circuits::merge_and_purge::parse_merge_and_purge_public_inputs;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct SignedMessage<F: RichField> {
@@ -45,7 +44,7 @@ pub struct ApprovalBlockProofTarget<
 
     pub received_signatures: [RecursiveProofTarget<D>; N_TXS],
 
-    pub account_tree_process_proofs: [SparseMerkleProcessProofTarget<N_LOG_USERS>; N_TXS],
+    pub latest_account_tree_process_proofs: [SparseMerkleProcessProofTarget<N_LOG_USERS>; N_TXS],
 
     pub old_world_state_root: HashOutTarget,
 
@@ -107,10 +106,10 @@ impl<const D: usize, const N_LOG_USERS: usize, const N_LOG_TXS: usize, const N_T
             received_signatures.push(c);
         }
 
-        let mut account_tree_process_proofs = vec![];
+        let mut latest_account_tree_process_proofs = vec![];
         for _ in 0..N_TXS {
             let d = SparseMerkleProcessProofTarget::add_virtual_to::<F, C::Hasher, D>(builder);
-            account_tree_process_proofs.push(d);
+            latest_account_tree_process_proofs.push(d);
         }
 
         let (
@@ -124,7 +123,7 @@ impl<const D: usize, const N_LOG_USERS: usize, const N_LOG_TXS: usize, const N_T
             &world_state_revert_proofs,
             &user_tx_proofs,
             &received_signatures,
-            &account_tree_process_proofs,
+            &latest_account_tree_process_proofs,
         );
 
         Self {
@@ -132,7 +131,9 @@ impl<const D: usize, const N_LOG_USERS: usize, const N_LOG_TXS: usize, const N_T
             world_state_revert_proofs: world_state_revert_proofs.try_into().unwrap(),
             user_tx_proofs: user_tx_proofs.try_into().unwrap(),
             received_signatures: received_signatures.try_into().unwrap(),
-            account_tree_process_proofs: account_tree_process_proofs.try_into().unwrap(),
+            latest_account_tree_process_proofs: latest_account_tree_process_proofs
+                .try_into()
+                .unwrap(),
             old_world_state_root,
             new_world_state_root,
             old_account_tree_root,
@@ -140,14 +141,16 @@ impl<const D: usize, const N_LOG_USERS: usize, const N_LOG_TXS: usize, const N_T
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn set_witness<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>>(
         &self,
         pw: &mut impl Witness<F>,
         current_block_number: u32,
         world_state_revert_proofs: &[SmtProcessProof<F>],
         user_tx_proofs: &[ProofWithPublicInputs<F, C, D>],
-        received_signatures: &[ProofWithPublicInputs<F, C, D>],
-        account_tree_process_proofs: &[SmtProcessProof<F>],
+        received_signatures: &[Option<ProofWithPublicInputs<F, C, D>>],
+        default_simple_signature: &ProofWithPublicInputs<F, C, D>,
+        latest_account_tree_process_proofs: &[SmtProcessProof<F>],
     ) where
         C::Hasher: AlgebraicHasher<F>,
     {
@@ -188,12 +191,13 @@ impl<const D: usize, const N_LOG_USERS: usize, const N_LOG_TXS: usize, const N_T
             p_t.set_witness(pw, &default_proof);
         }
 
+        assert!(!user_tx_proofs.is_empty());
         assert!(user_tx_proofs.len() <= self.user_tx_proofs.len());
         for (r_t, r) in self.user_tx_proofs.iter().zip(user_tx_proofs.iter()) {
-            r_t.set_witness(pw, &r.clone(), true);
+            r_t.set_witness(pw, r, true);
         }
         for r_t in self.user_tx_proofs.iter().skip(user_tx_proofs.len()) {
-            r_t.set_witness(pw, &user_tx_proofs.last().unwrap().clone(), false);
+            r_t.set_witness(pw, user_tx_proofs.last().unwrap(), false);
         }
 
         assert!(received_signatures.len() <= self.received_signatures.len());
@@ -202,26 +206,30 @@ impl<const D: usize, const N_LOG_USERS: usize, const N_LOG_TXS: usize, const N_T
             .iter()
             .zip(received_signatures.iter())
         {
-            r_t.set_witness(pw, r, true);
+            let r: Option<&_> = r.into();
+            r_t.set_witness(pw, r.unwrap_or(default_simple_signature), r.is_some());
         }
         for r_t in self
             .received_signatures
             .iter()
             .skip(received_signatures.len())
         {
-            r_t.set_witness(pw, received_signatures.last().unwrap(), false);
+            r_t.set_witness(pw, default_simple_signature, false);
         }
 
-        assert!(account_tree_process_proofs.len() <= self.account_tree_process_proofs.len());
+        assert!(
+            latest_account_tree_process_proofs.len()
+                <= self.latest_account_tree_process_proofs.len()
+        );
         for (p_t, p) in self
-            .account_tree_process_proofs
+            .latest_account_tree_process_proofs
             .iter()
-            .zip(account_tree_process_proofs.iter())
+            .zip(latest_account_tree_process_proofs.iter())
         {
             p_t.set_witness(pw, p);
         }
 
-        let new_account_tree_root = account_tree_process_proofs.last().unwrap().new_root;
+        let new_account_tree_root = latest_account_tree_process_proofs.last().unwrap().new_root;
 
         let default_hash_out = HashOut {
             elements: [F::ZERO; 4],
@@ -238,9 +246,9 @@ impl<const D: usize, const N_LOG_USERS: usize, const N_LOG_TXS: usize, const N_T
             fnc: ProcessMerkleProofRole::ProcessNoOp,
         };
         for p_t in self
-            .account_tree_process_proofs
+            .latest_account_tree_process_proofs
             .iter()
-            .skip(account_tree_process_proofs.len())
+            .skip(latest_account_tree_process_proofs.len())
         {
             p_t.set_witness(pw, &default_proof);
         }
@@ -260,17 +268,17 @@ pub fn verify_valid_approval_block<
     world_state_revert_proofs: &[SparseMerkleProcessProofTarget<N_LOG_USERS>],
     user_tx_proofs: &[RecursiveProofTarget<D>],
     received_signatures: &[RecursiveProofTarget<D>],
-    account_tree_process_proofs: &[SparseMerkleProcessProofTarget<N_LOG_USERS>],
+    latest_account_tree_process_proofs: &[SparseMerkleProcessProofTarget<N_LOG_USERS>],
 ) -> (HashOutTarget, HashOutTarget, HashOutTarget, HashOutTarget) {
     let zero = builder.zero();
 
     // world state process proof と latest account process proof は正しい遷移になるように並んでいる.
     let mut prev_world_state_root = world_state_revert_proofs[0].new_root;
-    let mut prev_account_tree_root = account_tree_process_proofs[0].new_root;
+    let mut prev_account_tree_root = latest_account_tree_process_proofs[0].new_root;
     for ((world_state_revert_proof, account_tree_process_proof), received_signature) in
         world_state_revert_proofs
             .iter()
-            .zip(account_tree_process_proofs.iter())
+            .zip(latest_account_tree_process_proofs.iter())
             .zip(received_signatures.iter())
             .skip(1)
     {
@@ -292,14 +300,14 @@ pub fn verify_valid_approval_block<
     }
     let old_world_state_root = world_state_revert_proofs.first().unwrap().old_root;
     let new_world_state_root = world_state_revert_proofs.last().unwrap().new_root;
-    let old_account_tree_root = account_tree_process_proofs.first().unwrap().old_root;
-    let new_account_tree_root = account_tree_process_proofs.last().unwrap().new_root;
+    let old_account_tree_root = latest_account_tree_process_proofs.first().unwrap().old_root;
+    let new_account_tree_root = latest_account_tree_process_proofs.last().unwrap().new_root;
 
     for (((w, u), r), a) in world_state_revert_proofs
         .iter()
         .zip(user_tx_proofs.iter())
         .zip(received_signatures.iter())
-        .zip(account_tree_process_proofs.iter())
+        .zip(latest_account_tree_process_proofs.iter())
     {
         // signature is enabled <=> user asset root is not reverted
         let enabled_signature = r.enabled;

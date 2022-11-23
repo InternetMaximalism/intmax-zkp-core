@@ -2,7 +2,7 @@ use plonky2::hash::hash_types::RichField;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    rollup::gadgets::deposit_block::DepositInfo,
+    rollup::{circuits::TxHashWithValidity, gadgets::deposit_block::DepositInfo},
     sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
     transaction::block_header::BlockHeader,
 };
@@ -24,6 +24,11 @@ pub struct BlockInfo<F: RichField> {
         deserialize = "DepositInfo<F>: Deserialize<'de>"
     ))]
     pub deposit_list: Vec<DepositInfo<F>>,
+    #[serde(bound(
+        serialize = "TxHashWithValidity<F>: Serialize",
+        deserialize = "TxHashWithValidity<F>: Deserialize<'de>"
+    ))]
+    pub address_list: Vec<TxHashWithValidity<F>>,
     // diff_tree_proof
     // world_state_tree_proof
 }

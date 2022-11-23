@@ -30,7 +30,9 @@ pub struct MergeProof<F: RichField> {
     pub is_deposit: bool,
     pub diff_tree_inclusion_proof: (BlockHeader<F>, SmtInclusionProof<F>, SmtInclusionProof<F>),
     pub merge_process_proof: SmtProcessProof<F>,
-    pub address_list_inclusion_proof: SmtInclusionProof<F>,
+
+    /// asset を受け取った block の latest account tree から自身の address に関する inclusion proof を出す
+    pub latest_account_tree_inclusion_proof: SmtInclusionProof<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -146,14 +148,20 @@ impl<
             assert_eq!(root, *witness.diff_tree_inclusion_proof.1.root);
             if !witness.is_deposit {
                 assert_eq!(
-                    witness.address_list_inclusion_proof.value.to_u32(),
+                    witness.latest_account_tree_inclusion_proof.value.to_u32(),
                     witness.diff_tree_inclusion_proof.0.block_number,
                 );
-
-                let tx_hash = witness.merge_process_proof.new_key;
-                dbg!(tx_hash);
-                assert_eq!(witness.diff_tree_inclusion_proof.2.root, tx_hash);
+                let tx_hash = witness.latest_account_tree_inclusion_proof.key;
+                assert_eq!(witness.merge_process_proof.new_key, tx_hash);
+                assert_eq!(witness.diff_tree_inclusion_proof.1.value, tx_hash);
             }
+
+            dbg!(witness.diff_tree_inclusion_proof.1.value);
+            dbg!(witness.diff_tree_inclusion_proof.2.root);
+            // assert_eq!(
+            //     witness.diff_tree_inclusion_proof.1.value,
+            //     witness.diff_tree_inclusion_proof.2.root
+            // );
             assert_eq!(witness.merge_process_proof.old_value, Default::default());
             assert_eq!(
                 witness.merge_process_proof.new_value,
@@ -161,9 +169,9 @@ impl<
             );
             assert_eq!(
                 witness.diff_tree_inclusion_proof.0.latest_account_digest,
-                *witness.address_list_inclusion_proof.root,
-            );
-            assert_eq!(witness.merge_process_proof.old_root, new_user_asset_root,);
+                *witness.latest_account_tree_inclusion_proof.root,
+            ); // XXX
+            assert_eq!(witness.merge_process_proof.old_root, new_user_asset_root);
 
             // pw.set_bool_target(target.is_deposit, witness.is_deposit);
             target
@@ -187,7 +195,7 @@ impl<
 
             target.address_list_inclusion_proof.set_witness(
                 pw,
-                &witness.address_list_inclusion_proof,
+                &witness.latest_account_tree_inclusion_proof,
                 !witness.is_deposit,
             );
 

@@ -140,13 +140,15 @@ impl<const D: usize, const N_LOG_USERS: usize, const N_LOG_TXS: usize, const N_T
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn set_witness<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>>(
         &self,
         pw: &mut impl Witness<F>,
         current_block_number: u32,
         world_state_revert_proofs: &[SmtProcessProof<F>],
         user_tx_proofs: &[ProofWithPublicInputs<F, C, D>],
-        received_signatures: &[ProofWithPublicInputs<F, C, D>],
+        received_signatures: &[Option<ProofWithPublicInputs<F, C, D>>],
+        default_simple_signature: &ProofWithPublicInputs<F, C, D>,
         account_tree_process_proofs: &[SmtProcessProof<F>],
     ) where
         C::Hasher: AlgebraicHasher<F>,
@@ -188,12 +190,13 @@ impl<const D: usize, const N_LOG_USERS: usize, const N_LOG_TXS: usize, const N_T
             p_t.set_witness(pw, &default_proof);
         }
 
+        assert!(!user_tx_proofs.is_empty());
         assert!(user_tx_proofs.len() <= self.user_tx_proofs.len());
         for (r_t, r) in self.user_tx_proofs.iter().zip(user_tx_proofs.iter()) {
-            r_t.set_witness(pw, &r.clone(), true);
+            r_t.set_witness(pw, r, true);
         }
         for r_t in self.user_tx_proofs.iter().skip(user_tx_proofs.len()) {
-            r_t.set_witness(pw, &user_tx_proofs.last().unwrap().clone(), false);
+            r_t.set_witness(pw, user_tx_proofs.last().unwrap(), false);
         }
 
         assert!(received_signatures.len() <= self.received_signatures.len());
@@ -202,14 +205,15 @@ impl<const D: usize, const N_LOG_USERS: usize, const N_LOG_TXS: usize, const N_T
             .iter()
             .zip(received_signatures.iter())
         {
-            r_t.set_witness(pw, r, true);
+            let r: Option<&_> = r.into();
+            r_t.set_witness(pw, r.unwrap_or(default_simple_signature), r.is_some());
         }
         for r_t in self
             .received_signatures
             .iter()
             .skip(received_signatures.len())
         {
-            r_t.set_witness(pw, received_signatures.last().unwrap(), false);
+            r_t.set_witness(pw, default_simple_signature, false);
         }
 
         assert!(account_tree_process_proofs.len() <= self.account_tree_process_proofs.len());

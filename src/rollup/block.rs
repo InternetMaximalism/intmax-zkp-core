@@ -4,8 +4,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     rollup::gadgets::deposit_block::DepositInfo,
     sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
-    transaction::block_header::BlockHeader, zkdsa::account::Address,
+    transaction::block_header::BlockHeader,
 };
+
+use super::circuits::proposal_and_approval::LatestAccountInfo;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct BlockInfo<F: RichField> {
@@ -25,10 +27,10 @@ pub struct BlockInfo<F: RichField> {
     ))]
     pub deposit_list: Vec<DepositInfo<F>>,
     #[serde(bound(
-        serialize = "Address<F>: Serialize",
-        deserialize = "Address<F>: Deserialize<'de>"
+        serialize = "LatestAccountInfo<F>: Serialize",
+        deserialize = "LatestAccountInfo<F>: Deserialize<'de>"
     ))]
-    pub address_list: Vec<(Address<F>, bool)>,
+    pub address_list: Vec<LatestAccountInfo<F>>,
     // diff_tree_proof
     // world_state_tree_proof
 }

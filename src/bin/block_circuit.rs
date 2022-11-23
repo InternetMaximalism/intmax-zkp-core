@@ -343,11 +343,9 @@ fn main() {
     user_tx_proofs.push(sender2_tx_proof.clone());
 
     let zkdsa_circuit = make_simple_signature_circuit();
-    let zkdsa_circuit_data = zkdsa_circuit.data;
-    let zkdsa_target = zkdsa_circuit.targets;
 
     let mut pw = PartialWitness::new();
-    zkdsa_target.set_witness(
+    zkdsa_circuit.targets.set_witness(
         &mut pw,
         sender1_account.private_key,
         *world_state_tree.get_root(),
@@ -355,14 +353,14 @@ fn main() {
 
     println!("start proving: sender1_received_signature");
     let start = Instant::now();
-    let sender1_received_signature = zkdsa_circuit_data.prove(pw).unwrap();
+    let sender1_received_signature = zkdsa_circuit.prove(pw).unwrap();
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
     // dbg!(&sender1_received_signature.public_inputs);
 
     let mut pw = PartialWitness::new();
-    zkdsa_target.set_witness(
+    zkdsa_circuit.targets.set_witness(
         &mut pw,
         sender2_account.private_key,
         *world_state_tree.get_root(),
@@ -370,21 +368,37 @@ fn main() {
 
     println!("start proving: sender2_received_signature");
     let start = Instant::now();
-    let sender2_received_signature = zkdsa_circuit_data.prove(pw).unwrap();
+    let sender2_received_signature = zkdsa_circuit.prove(pw).unwrap();
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
     // dbg!(&sender2_received_signature.public_inputs);
 
+    let mut pw = PartialWitness::new();
+    zkdsa_circuit
+        .targets
+        .set_witness(&mut pw, Default::default(), Default::default());
+
+    println!("start proving: default_simple_signature");
+    let start = Instant::now();
+    let default_simple_signature = zkdsa_circuit.prove(pw).unwrap();
+    let end = start.elapsed();
+    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+
     let block_circuit = make_block_proof_circuit::<
         N_LOG_MAX_USERS,
+        N_LOG_MAX_TXS,
+        N_LOG_MAX_CONTRACTS,
+        N_LOG_MAX_VARIABLES,
         N_LOG_TXS,
         N_LOG_RECIPIENTS,
         N_LOG_CONTRACTS,
         N_LOG_VARIABLES,
+        N_DIFFS,
+        N_MERGES,
         N_TXS,
         N_DEPOSITS,
-    >(merge_and_purge_circuit.data, zkdsa_circuit_data);
+    >(merge_and_purge_circuit, zkdsa_circuit);
 
     let block_number = 1;
 
@@ -395,12 +409,12 @@ fn main() {
     )> = vec![
         (
             sender1_address,
-            Some(sender1_received_signature.clone()),
+            Some(sender1_received_signature),
             sender1_tx_proof,
         ),
         (
             sender2_address,
-            Some(sender2_received_signature.clone()),
+            Some(sender2_received_signature),
             sender2_tx_proof,
         ),
     ];
@@ -413,6 +427,7 @@ fn main() {
     // u.enabled かつ w.fnc == NoOp だが revert ではない.
     let mut world_state_revert_proofs = vec![];
     let mut latest_account_tree_process_proofs = vec![];
+    let mut received_signatures = vec![];
     for (user_address, opt_received_signature, user_tx_proof) in accounts_in_block {
         let latest_account_tree_inclusion_proof =
             latest_account_tree.find(&user_address.into()).unwrap();
@@ -440,6 +455,7 @@ fn main() {
             .set(user_address.into(), confirmed_user_asset_root)
             .unwrap();
         world_state_revert_proofs.push(proof);
+        received_signatures.push(opt_received_signature);
     }
 
     let block_headers: Vec<HashOut<F>> = vec![];
@@ -479,7 +495,8 @@ fn main() {
         &deposit_process_proofs,
         &world_state_process_proofs,
         &world_state_revert_proofs,
-        &[sender1_received_signature, sender2_received_signature],
+        &received_signatures,
+        &default_simple_signature,
         &latest_account_tree_process_proofs,
         &block_header_siblings,
         prev_block_hash,

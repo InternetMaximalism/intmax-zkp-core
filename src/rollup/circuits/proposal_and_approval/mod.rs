@@ -13,20 +13,28 @@ use plonky2::{
         proof::{Proof, ProofWithPublicInputs},
     },
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     merkle_tree::gadgets::{get_merkle_root_target, MerkleProofTarget},
     sparse_merkle_tree::gadgets::process::process_smt::SmtProcessProof,
     transaction::gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
-    zkdsa::{account::Address, gadgets::account::AddressTarget},
+    zkdsa::{
+        account::Address,
+        circuits::{SimpleSignatureCircuit, SimpleSignatureProofWithPublicInputs},
+        gadgets::account::AddressTarget,
+    },
 };
 
-use super::super::gadgets::{
-    approval_block::ApprovalBlockProofTarget,
-    deposit_block::{DepositBlockProofTarget, DepositInfo, DepositInfoTarget},
-    proposal_block::ProposalBlockProofTarget,
-};
 use super::merge_and_purge::MergeAndPurgeTransitionProofWithPublicInputs;
+use super::{
+    super::gadgets::{
+        approval_block::ApprovalBlockProofTarget,
+        deposit_block::{DepositBlockProofTarget, DepositInfo, DepositInfoTarget},
+        proposal_block::ProposalBlockProofTarget,
+    },
+    merge_and_purge::MergeAndPurgeTransitionCircuit,
+};
 
 type C = PoseidonGoldilocksConfig;
 type H = <C as GenericConfig<D>>::InnerHasher;
@@ -83,7 +91,8 @@ impl<
         deposit_process_proofs: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
         world_state_process_proofs: &[SmtProcessProof<F>],
         world_state_revert_proofs: &[SmtProcessProof<F>],
-        received_signatures: &[ProofWithPublicInputs<F, C, D>],
+        received_signatures: &[Option<SimpleSignatureProofWithPublicInputs<F, C, D>>],
+        default_simple_signature: &SimpleSignatureProofWithPublicInputs<F, C, D>,
         latest_account_tree_process_proofs: &[SmtProcessProof<F>],
         block_header_siblings: &[HashOut<F>],
         prev_block_hash: HashOut<F>,
@@ -110,7 +119,11 @@ impl<
                 .iter()
                 .map(|p| ProofWithPublicInputs::from(p.clone()))
                 .collect::<Vec<_>>(),
-            received_signatures,
+            &received_signatures
+                .iter()
+                .map(|p| p.clone().map(ProofWithPublicInputs::from))
+                .collect::<Vec<_>>(),
+            &ProofWithPublicInputs::from(default_simple_signature.clone()),
             latest_account_tree_process_proofs,
         );
 
@@ -127,22 +140,52 @@ impl<
         );
 
         pw.set_hash_target(self.prev_block_hash, prev_block_hash);
+
+        // let address_list = make_address_list(user_tx_proofs, received_signatures, N_TXS);
+
+        // ProposalAndApprovalBlockPublicInputs {
+        //     address_list,
+        //     deposit_list: todo!(),
+        //     old_account_tree_root: todo!(),
+        //     new_account_tree_root: todo!(),
+        //     old_world_state_root,
+        //     new_world_state_root: todo!(),
+        //     old_prev_block_header_digest: todo!(),
+        //     new_prev_block_header_digest: todo!(),
+        //     block_hash: todo!(),
+        // }
     }
 }
 
 pub fn make_block_proof_circuit<
-    const N_LOG_USERS: usize,
+    const N_LOG_MAX_USERS: usize,
+    const N_LOG_MAX_TXS: usize,
+    const N_LOG_MAX_CONTRACTS: usize,
+    const N_LOG_MAX_VARIABLES: usize,
     const N_LOG_TXS: usize,
     const N_LOG_RECIPIENTS: usize,
     const N_LOG_CONTRACTS: usize,
     const N_LOG_VARIABLES: usize,
+    const N_DIFFS: usize,
+    const N_MERGES: usize,
     const N_TXS: usize,
     const N_DEPOSITS: usize,
 >(
-    merge_and_purge_circuit_data: CircuitData<F, C, D>,
-    zkdsa_circuit_data: CircuitData<F, C, D>,
+    merge_and_purge_circuit: MergeAndPurgeTransitionCircuit<
+        N_LOG_MAX_USERS,
+        N_LOG_MAX_TXS,
+        N_LOG_MAX_CONTRACTS,
+        N_LOG_MAX_VARIABLES,
+        N_LOG_TXS,
+        N_LOG_RECIPIENTS,
+        N_LOG_CONTRACTS,
+        N_LOG_VARIABLES,
+        N_DIFFS,
+        N_MERGES,
+    >,
+    zkdsa_circuit: SimpleSignatureCircuit,
 ) -> ProposalAndApprovalBlockCircuit<
-    N_LOG_USERS,
+    N_LOG_MAX_USERS,
     N_LOG_TXS,
     N_LOG_RECIPIENTS,
     N_LOG_CONTRACTS,
@@ -164,33 +207,30 @@ pub fn make_block_proof_circuit<
     > = DepositBlockProofTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(&mut builder);
 
     // proposal block
-    let proposal_block_target: ProposalBlockProofTarget<D, N_LOG_USERS, N_LOG_TXS, N_TXS> =
+    let proposal_block_target: ProposalBlockProofTarget<D, N_LOG_MAX_USERS, N_LOG_TXS, N_TXS> =
         ProposalBlockProofTarget::add_virtual_to::<F, C>(
             &mut builder,
-            &merge_and_purge_circuit_data,
+            &merge_and_purge_circuit.data,
         );
 
     // approval block
-    let approval_block_target: ApprovalBlockProofTarget<D, N_LOG_USERS, N_LOG_TXS, N_TXS> =
+    let approval_block_target: ApprovalBlockProofTarget<D, N_LOG_MAX_USERS, N_LOG_TXS, N_TXS> =
         ApprovalBlockProofTarget::add_virtual_to::<F, C>(
             &mut builder,
-            &merge_and_purge_circuit_data,
-            &zkdsa_circuit_data,
+            &merge_and_purge_circuit.data,
+            &zkdsa_circuit.data,
         );
 
-    for (_account_tree_process_proof, received_signature) in approval_block_target
-        .account_tree_process_proofs
+    for (user_tx_proof, received_signature) in proposal_block_target
+        .user_tx_proofs
         .iter()
         .zip_eq(approval_block_target.received_signatures.iter())
     {
-        let account_id = received_signature.inner.public_inputs[4];
-        // let last_block_number = account_tree_process_proof.old_value.elements[0];
         let cancel_flag = builder.not(received_signature.enabled);
 
         // publish ID list
-        // public_inputs[(3*i)..(3*i+3)]
-        builder.register_public_input(account_id);
-        // builder.register_public_input(last_block_number);
+        // public_inputs[(5*i)..(5*i+5)]
+        builder.register_public_inputs(&user_tx_proof.inner.public_inputs[16..20]); // sender_address
         builder.register_public_input(cancel_flag.target);
     }
 
@@ -205,11 +245,11 @@ pub fn make_block_proof_circuit<
         builder.register_public_input(amount_t.elements[0]);
     }
 
-    builder.register_public_inputs(&approval_block_target.old_account_tree_root.elements); // public_inputs[(3*N_TXS)..(3*N_TXS+4)]
-    builder.register_public_inputs(&approval_block_target.new_account_tree_root.elements); // public_inputs[(3*N_TXS+4)..(3*N_TXS+8)]
+    builder.register_public_inputs(&approval_block_target.old_account_tree_root.elements);
+    builder.register_public_inputs(&approval_block_target.new_account_tree_root.elements);
 
-    builder.register_public_inputs(&proposal_block_target.old_world_state_root.elements); // public_inputs[(3*N_TXS+8)..(3*N_TXS+12)]
-    builder.register_public_inputs(&proposal_block_target.new_world_state_root.elements); // public_inputs[(3*N_TXS+12)..(3*N_TXS+16)]
+    builder.register_public_inputs(&proposal_block_target.old_world_state_root.elements);
+    builder.register_public_inputs(&proposal_block_target.new_world_state_root.elements);
 
     // block header
     let block_number = builder.add_virtual_target();
@@ -246,6 +286,10 @@ pub fn make_block_proof_circuit<
     builder.register_public_inputs(&prev_block_header_digest.elements); // new_root
     builder.register_public_inputs(&block_hash.elements);
     let block_circuit_data = builder.build::<C>();
+    assert_eq!(
+        block_circuit_data.prover_only.public_inputs.len(),
+        5 * N_TXS + 13 * N_DEPOSITS + 28
+    );
 
     let targets = OneBlockProofTarget {
         proposal_block_target,
@@ -285,11 +329,42 @@ pub struct ProposalAndApprovalBlockCircuit<
     >,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LatestAccountInfo<F: Field> {
-    pub account_id: F,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(bound(deserialize = "Address<F>: Deserialize<'de>"))]
+pub struct LatestAccountInfo<F: RichField> {
+    pub account_id: Address<F>,
     // pub last_block_number: F,
     pub cancel_flag: bool,
+}
+
+pub fn make_address_list<
+    F: RichField + Extendable<D>,
+    C: GenericConfig<D, F = F>,
+    const D: usize,
+>(
+    user_tx_proofs: &[MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>],
+    received_signatures: &[Option<SimpleSignatureProofWithPublicInputs<F, C, D>>],
+    num_transactions: usize,
+) -> Vec<LatestAccountInfo<F>> {
+    let mut address_list = vec![];
+    for (user_tx_proof, received_signature) in
+        user_tx_proofs.iter().zip_eq(received_signatures.iter())
+    {
+        address_list.push(LatestAccountInfo {
+            account_id: user_tx_proof.public_inputs.sender_address,
+            cancel_flag: received_signature.is_none(),
+        });
+    }
+
+    address_list.resize(
+        num_transactions,
+        LatestAccountInfo {
+            account_id: Address(HashOut::ZERO),
+            cancel_flag: true,
+        },
+    );
+
+    address_list
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -314,7 +389,7 @@ impl<F: RichField> ProposalAndApprovalBlockPublicInputs<F> {
             cancel_flag,
         } in self.address_list.clone()
         {
-            public_inputs.push(account_id);
+            public_inputs.append(&mut account_id.elements.into());
             // public_inputs.push(last_block_number);
             public_inputs.push(F::from_bool(cancel_flag));
         }
@@ -384,7 +459,7 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
 
 #[derive(Clone, Copy, Debug)]
 pub struct LatestAccountInfoTarget {
-    pub account_id: Target,
+    pub account_id: HashOutTarget,
     // pub last_block_number: Target,
     pub cancel_flag: BoolTarget,
 }
@@ -395,7 +470,14 @@ pub fn parse_proposal_and_approval_public_inputs<const N_TXS: usize, const N_DEP
     let mut public_inputs_t = public_inputs_t.iter();
     let address_list = (0..N_TXS)
         .map(|_| LatestAccountInfoTarget {
-            account_id: *public_inputs_t.next().unwrap(),
+            account_id: HashOutTarget {
+                elements: [
+                    *public_inputs_t.next().unwrap(),
+                    *public_inputs_t.next().unwrap(),
+                    *public_inputs_t.next().unwrap(),
+                    *public_inputs_t.next().unwrap(),
+                ],
+            },
             // last_block_number: *public_inputs_t.next().unwrap(),
             cancel_flag: BoolTarget::new_unsafe(*public_inputs_t.next().unwrap()),
         })
@@ -526,7 +608,7 @@ impl<
         let mut public_inputs = proof_with_pis.public_inputs.iter();
         let address_list = (0..N_TXS)
             .map(|_| LatestAccountInfo {
-                account_id: *public_inputs.next().unwrap(),
+                account_id: Address::read(&mut public_inputs),
                 // last_block_number: *public_inputs.next().unwrap(),
                 cancel_flag: public_inputs.next().unwrap().is_nonzero(),
             })
@@ -627,6 +709,7 @@ impl<
         proof_with_pis: ProposalAndApprovalBlockProofWithPublicInputs<F, C, D>,
     ) -> anyhow::Result<()> {
         let public_inputs = proof_with_pis.public_inputs.encode();
+        assert_eq!(public_inputs.len(), 5 * N_TXS + 13 * N_DEPOSITS + 28);
 
         self.data.verify(ProofWithPublicInputs {
             proof: proof_with_pis.proof,

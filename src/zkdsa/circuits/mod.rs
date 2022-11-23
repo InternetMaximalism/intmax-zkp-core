@@ -11,6 +11,8 @@ use plonky2::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut;
+
 use super::gadgets::signature::SimpleSignatureTarget;
 
 type C = PoseidonGoldilocksConfig;
@@ -206,4 +208,32 @@ fn test_verify_simple_signature_by_plonky2() {
         Ok(()) => println!("Ok!"),
         Err(x) => println!("{}", x),
     }
+}
+
+/// witness を入力にとり、 simple_signature を返す関数
+pub fn prove_simple_signature<
+    const N_LOG_MAX_USERS: usize,
+    const N_LOG_MAX_TXS: usize,
+    const N_LOG_MAX_CONTRACTS: usize,
+    const N_LOG_MAX_VARIABLES: usize,
+    const N_LOG_TXS: usize,
+    const N_LOG_RECIPIENTS: usize,
+    const N_LOG_CONTRACTS: usize,
+    const N_LOG_VARIABLES: usize,
+    const N_DIFFS: usize,
+    const N_MERGES: usize,
+>(
+    private_key: WrappedHashOut<F>,
+    message: WrappedHashOut<F>,
+) -> anyhow::Result<SimpleSignatureProofWithPublicInputs<F, C, D>> {
+    let simple_signature_circuit = make_simple_signature_circuit();
+
+    let mut pw = PartialWitness::new();
+    simple_signature_circuit
+        .targets
+        .set_witness(&mut pw, *private_key, *message);
+
+    let simple_signature_proof = simple_signature_circuit.prove(pw).unwrap();
+
+    Ok(simple_signature_proof)
 }

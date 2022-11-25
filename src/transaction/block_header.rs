@@ -118,13 +118,13 @@ pub fn get_block_hash<F: RichField>(block_header: &BlockHeader<F>) -> HashOut<F>
 }
 
 pub fn get_block_header_tree_proof<F: RichField>(
-    block_hashes: &[HashOut<F>],
-    new_block_hash: HashOut<F>,
+    block_hashes: &[WrappedHashOut<F>],
+    new_block_hash: WrappedHashOut<F>,
     depth: usize,
-) -> (Vec<HashOut<F>>, HashOut<F>, HashOut<F>) {
+) -> (Vec<WrappedHashOut<F>>, WrappedHashOut<F>, WrappedHashOut<F>) {
     let current_index = block_hashes.len();
-    let (siblings, old_root) = get_merkle_proof(block_hashes, current_index, depth);
-    let new_root = get_merkle_root(current_index, new_block_hash, &siblings);
+    let old_proof = get_merkle_proof(block_hashes, current_index, depth);
+    let new_root = get_merkle_root(current_index, new_block_hash, &old_proof.siblings);
 
-    (siblings, old_root, new_root)
+    (old_proof.siblings, old_proof.root, new_root)
 }

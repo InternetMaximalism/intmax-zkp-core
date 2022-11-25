@@ -129,9 +129,13 @@ impl<
 
         self.prev_block_header_proof.set_witness(
             pw,
-            F::from_canonical_u32(block_number - 1),
-            prev_block_hash,
-            block_header_siblings,
+            block_number as usize - 1,
+            prev_block_hash.into(),
+            &block_header_siblings
+                .iter()
+                .cloned()
+                .map(|v| v.into())
+                .collect::<Vec<_>>(),
         );
 
         pw.set_target(
@@ -328,9 +332,12 @@ pub struct ProposalAndApprovalBlockCircuit<
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound(deserialize = "Address<F>: Deserialize<'de>"))]
-pub struct TxHashWithValidity<F: RichField> {
-    pub tx_hash: WrappedHashOut<F>,
+#[serde(bound(
+    serialize = "Address<F>: Serialize",
+    deserialize = "Address<F>: Deserialize<'de>"
+))]
+pub struct TransactionSenderWithValidity<F: Field> {
+    pub sender_address: Address<F>,
     pub is_valid: bool,
 }
 
@@ -342,21 +349,21 @@ pub fn make_address_list<
     user_tx_proofs: &[MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>],
     received_signatures: &[Option<SimpleSignatureProofWithPublicInputs<F, C, D>>],
     num_transactions: usize,
-) -> Vec<TxHashWithValidity<F>> {
+) -> Vec<TransactionSenderWithValidity<F>> {
     let mut address_list = vec![];
     for (user_tx_proof, received_signature) in
         user_tx_proofs.iter().zip_eq(received_signatures.iter())
     {
-        address_list.push(TxHashWithValidity {
-            tx_hash: user_tx_proof.public_inputs.tx_hash,
+        address_list.push(TransactionSenderWithValidity {
+            sender_address: user_tx_proof.public_inputs.sender_address,
             is_valid: received_signature.is_some(),
         });
     }
 
     address_list.resize(
         num_transactions,
-        TxHashWithValidity {
-            tx_hash: HashOut::ZERO.into(),
+        TransactionSenderWithValidity {
+            sender_address: Address(HashOut::ZERO),
             is_valid: false,
         },
     );
@@ -366,7 +373,7 @@ pub fn make_address_list<
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProposalAndApprovalBlockPublicInputs<F: RichField> {
-    pub address_list: Vec<TxHashWithValidity<F>>,
+    pub address_list: Vec<TransactionSenderWithValidity<F>>,
     pub deposit_list: Vec<DepositInfo<F>>,
     pub old_account_tree_root: HashOut<F>,
     pub new_account_tree_root: HashOut<F>,
@@ -380,8 +387,12 @@ pub struct ProposalAndApprovalBlockPublicInputs<F: RichField> {
 impl<F: RichField> ProposalAndApprovalBlockPublicInputs<F> {
     pub fn encode(&self) -> Vec<F> {
         let mut public_inputs = vec![];
-        for TxHashWithValidity { tx_hash, is_valid } in self.address_list.clone() {
-            public_inputs.append(&mut tx_hash.0.elements.into());
+        for TransactionSenderWithValidity {
+            sender_address,
+            is_valid,
+        } in self.address_list.clone()
+        {
+            public_inputs.append(&mut sender_address.0.elements.into());
             // public_inputs.push(last_block_number);
             public_inputs.push(F::from_bool(is_valid));
         }
@@ -412,9 +423,15 @@ impl<F: RichField> ProposalAndApprovalBlockPublicInputs<F> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct TransactionSenderWithValidityTarget {
+    pub sender_address: HashOutTarget,
+    pub is_valid: BoolTarget,
+}
+
 #[derive(Clone, Debug)]
 pub struct ProposalAndApprovalBlockPublicInputsTarget<const N_TXS: usize, const N_DEPOSITS: usize> {
-    pub address_list: [TxHashWithValidityTarget; N_TXS],
+    pub address_list: [TransactionSenderWithValidityTarget; N_TXS],
     pub deposit_list: [DepositInfoTarget; N_DEPOSITS],
     pub old_account_tree_root: HashOutTarget,
     pub new_account_tree_root: HashOutTarget,
@@ -449,20 +466,13 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct TxHashWithValidityTarget {
-    pub account_id: HashOutTarget,
-    // pub last_block_number: Target,
-    pub is_valid: BoolTarget,
-}
-
 pub fn parse_proposal_and_approval_public_inputs<const N_TXS: usize, const N_DEPOSITS: usize>(
     public_inputs_t: &[Target],
 ) -> ProposalAndApprovalBlockPublicInputsTarget<N_TXS, N_DEPOSITS> {
     let mut public_inputs_t = public_inputs_t.iter();
     let address_list = (0..N_TXS)
-        .map(|_| TxHashWithValidityTarget {
-            account_id: HashOutTarget {
+        .map(|_| TransactionSenderWithValidityTarget {
+            sender_address: HashOutTarget {
                 elements: [
                     *public_inputs_t.next().unwrap(),
                     *public_inputs_t.next().unwrap(),
@@ -599,8 +609,8 @@ impl<
         let proof_with_pis = self.data.prove(inputs)?;
         let mut public_inputs = proof_with_pis.public_inputs.iter();
         let address_list = (0..N_TXS)
-            .map(|_| TxHashWithValidity {
-                tx_hash: WrappedHashOut::read(&mut public_inputs),
+            .map(|_| TransactionSenderWithValidity {
+                sender_address: Address::read(&mut public_inputs),
                 is_valid: public_inputs.next().unwrap().is_nonzero(),
             })
             .collect::<Vec<_>>();

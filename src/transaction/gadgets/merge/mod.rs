@@ -1,34 +1,45 @@
 use plonky2::{
     field::extension::Extendable,
-    hash::hash_types::{HashOut, HashOutTarget, RichField},
+    hash::{
+        hash_types::{HashOut, HashOutTarget, RichField},
+        poseidon::PoseidonHash,
+    },
     iop::witness::Witness,
-    plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
+    plonk::{
+        circuit_builder::CircuitBuilder,
+        config::{AlgebraicHasher, Hasher},
+    },
 };
 use serde::{Deserialize, Serialize};
 
-use crate::sparse_merkle_tree::{
-    gadgets::{
-        common::{conditionally_select, enforce_equal_if_enabled, logical_and_not},
-        process::{
-            process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
-            utils::{get_process_merkle_proof_role, ProcessMerkleProofRoleTarget},
+use crate::{
+    merkle_tree::{gadgets::MerkleProofTarget, tree::MerkleProof},
+    poseidon::gadgets::poseidon_two_to_one,
+    sparse_merkle_tree::{
+        gadgets::{
+            common::{conditionally_select, enforce_equal_if_enabled},
+            process::{
+                process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
+                utils::{get_process_merkle_proof_role, ProcessMerkleProofRoleTarget},
+            },
+            verify::verify_smt::{SmtInclusionProof, SparseMerkleInclusionProofTarget},
         },
-        verify::verify_smt::{SmtInclusionProof, SparseMerkleInclusionProofTarget},
+        goldilocks_poseidon::WrappedHashOut,
+        proof::ProcessMerkleProofRole,
     },
-    goldilocks_poseidon::WrappedHashOut,
-    proof::ProcessMerkleProofRole,
+    transaction::{
+        block_header::{get_block_hash, BlockHeader},
+        gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
+    },
 };
-
-use super::super::block_header::{BlockHeader, SerializableBlockHeader};
-use super::block_header::BlockHeaderTarget;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(bound(
-    deserialize = "SmtInclusionProof<F>: Deserialize<'de>, SmtProcessProof<F>: Deserialize<'de>, SerializableBlockHeader<F>: Deserialize<'de>"
+    deserialize = "SmtInclusionProof<F>: Deserialize<'de>, SmtProcessProof<F>: Deserialize<'de>, BlockHeader<F>: Deserialize<'de>, MerkleProof<F>: Deserialize<'de>"
 ))]
 pub struct MergeProof<F: RichField> {
     pub is_deposit: bool,
-    pub diff_tree_inclusion_proof: (BlockHeader<F>, SmtInclusionProof<F>, SmtInclusionProof<F>),
+    pub diff_tree_inclusion_proof: (BlockHeader<F>, MerkleProof<F>, SmtInclusionProof<F>),
     pub merge_process_proof: SmtProcessProof<F>,
 
     /// asset を受け取った block の latest account tree から自身の address に関する inclusion proof を出す
@@ -45,7 +56,7 @@ pub struct MergeProofTarget<
     // pub is_deposit: BoolTarget,
     pub diff_tree_inclusion_proof: (
         BlockHeaderTarget,
-        SparseMerkleInclusionProofTarget<N_LOG_TXS>,
+        MerkleProofTarget<N_LOG_TXS>,
         SparseMerkleInclusionProofTarget<N_LOG_RECIPIENTS>,
     ),
     pub merge_process_proof: SparseMerkleProcessProofTarget<N_LOG_MAX_TXS>,
@@ -83,7 +94,7 @@ impl<
                 // is_deposit: builder.add_virtual_bool_target_safe(),
                 diff_tree_inclusion_proof: (
                     BlockHeaderTarget::add_virtual_to::<F, H, D>(builder),
-                    SparseMerkleInclusionProofTarget::add_virtual_to::<F, H, D>(builder),
+                    MerkleProofTarget::add_virtual_to::<F, H, D>(builder),
                     SparseMerkleInclusionProofTarget::add_virtual_to::<F, H, D>(builder),
                 ),
                 merge_process_proof: SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(
@@ -146,22 +157,24 @@ impl<
                 block_header.transactions_digest
             };
             assert_eq!(root, *witness.diff_tree_inclusion_proof.1.root);
-            if !witness.is_deposit {
+            let block_hash = get_block_hash(&witness.diff_tree_inclusion_proof.0);
+            let deposit_tx_hash =
+                PoseidonHash::two_to_one(*witness.diff_tree_inclusion_proof.2.root, block_hash)
+                    .into();
+            let purge_tx_hash = witness.diff_tree_inclusion_proof.2.root;
+            let tx_hash = if witness.is_deposit {
+                deposit_tx_hash
+            } else {
                 assert_eq!(
                     witness.latest_account_tree_inclusion_proof.value.to_u32(),
                     witness.diff_tree_inclusion_proof.0.block_number,
                 );
-                let tx_hash = witness.latest_account_tree_inclusion_proof.key;
-                assert_eq!(witness.merge_process_proof.new_key, tx_hash);
-                assert_eq!(witness.diff_tree_inclusion_proof.1.value, tx_hash);
-            }
 
-            dbg!(witness.diff_tree_inclusion_proof.1.value);
-            dbg!(witness.diff_tree_inclusion_proof.2.root);
-            // assert_eq!(
-            //     witness.diff_tree_inclusion_proof.1.value,
-            //     witness.diff_tree_inclusion_proof.2.root
-            // );
+                purge_tx_hash
+            };
+
+            assert_eq!(witness.merge_process_proof.new_key, tx_hash);
+            assert_eq!(witness.diff_tree_inclusion_proof.1.value, tx_hash);
             assert_eq!(witness.merge_process_proof.old_value, Default::default());
             assert_eq!(
                 witness.merge_process_proof.new_value,
@@ -180,8 +193,9 @@ impl<
                 .set_witness(pw, &witness.diff_tree_inclusion_proof.0);
             target.diff_tree_inclusion_proof.1.set_witness(
                 pw,
-                &witness.diff_tree_inclusion_proof.1,
-                true,
+                witness.diff_tree_inclusion_proof.1.index,
+                witness.diff_tree_inclusion_proof.1.value,
+                &witness.diff_tree_inclusion_proof.1.siblings,
             );
             target.diff_tree_inclusion_proof.2.set_witness(
                 pw,
@@ -214,7 +228,7 @@ impl<
             target
                 .diff_tree_inclusion_proof
                 .1
-                .set_witness(pw, &default_inclusion_proof, false);
+                .set_witness(pw, 0, WrappedHashOut::ZERO, &[]);
             target
                 .diff_tree_inclusion_proof
                 .2
@@ -259,8 +273,7 @@ pub fn verify_user_asset_merge_proof<
         address_list_inclusion_proof,
     } in proofs
     {
-        let is_deposit = builder.not(address_list_inclusion_proof.enabled);
-        // builder.connect(is_deposit.target, actual_is_deposit.target);
+        let is_not_deposit = builder.not(address_list_inclusion_proof.enabled);
 
         // let is_not_no_op = diff_tree_inclusion_proof.1.enabled;
         let ProcessMerkleProofRoleTarget { is_not_no_op, .. } =
@@ -269,9 +282,9 @@ pub fn verify_user_asset_merge_proof<
         let block_header_t = diff_tree_inclusion_proof.0.clone();
         let root = conditionally_select(
             builder,
-            block_header_t.deposit_digest,
             block_header_t.transactions_digest,
-            is_deposit,
+            block_header_t.deposit_digest,
+            is_not_deposit,
         ); // XXX: row 2064, column 79 は最初のループのここ
         enforce_equal_if_enabled(
             builder,
@@ -283,7 +296,7 @@ pub fn verify_user_asset_merge_proof<
         let receiving_block_number = diff_tree_inclusion_proof.0.block_number;
         let confirmed_block_number = address_list_inclusion_proof.value; // 最後に成功した block number
 
-        let check_block_number = logical_and_not(builder, is_not_no_op, is_deposit);
+        let check_block_number = builder.and(is_not_no_op, is_not_deposit);
         enforce_equal_if_enabled(
             builder,
             confirmed_block_number,
@@ -291,7 +304,19 @@ pub fn verify_user_asset_merge_proof<
             check_block_number,
         );
 
-        let tx_hash = diff_tree_inclusion_proof.2.root;
+        // deposit と purge の場合で tx_hash の計算方法が異なる.
+        let block_hash = get_block_hash_target::<F, H, D>(builder, &diff_tree_inclusion_proof.0);
+        let deposit_tx_hash =
+            poseidon_two_to_one::<F, H, D>(builder, diff_tree_inclusion_proof.2.root, block_hash);
+        let purge_tx_hash = diff_tree_inclusion_proof.2.root;
+        let tx_hash = conditionally_select(builder, purge_tx_hash, deposit_tx_hash, is_not_deposit);
+
+        enforce_equal_if_enabled(
+            builder,
+            diff_tree_inclusion_proof.1.value,
+            tx_hash,
+            check_block_number,
+        );
         enforce_equal_if_enabled(
             builder,
             merge_process_proof.new_key,

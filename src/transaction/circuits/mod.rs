@@ -15,6 +15,7 @@ use plonky2::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    poseidon::gadgets::poseidon_two_to_one,
     sparse_merkle_tree::{
         gadgets::process::process_smt::SmtProcessProof, goldilocks_poseidon::WrappedHashOut,
     },
@@ -58,9 +59,6 @@ pub struct MergeAndPurgeTransitionTarget<
         N_LOG_VARIABLES,
         N_DIFFS,
     >,
-    // pub address: AddressTarget,
-    // pub old_user_asset_root: HashOutTarget,
-    // pub new_user_asset_root: HashOutTarget,
 }
 
 impl<
@@ -95,25 +93,28 @@ impl<
         merge_witnesses: &[MergeProof<F>],
         purge_input_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
         purge_output_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
-        old_user_asset_root: HashOut<F>,
+        nonce: WrappedHashOut<F>,
+        old_user_asset_root: WrappedHashOut<F>,
     ) -> MergeAndPurgeTransitionPublicInputs<F> {
         let middle_user_asset_root =
             self.merge_proof_target
-                .set_witness(pw, merge_witnesses, old_user_asset_root);
-        let (new_user_asset_root, tx_diff_root) = self.purge_proof_target.set_witness(
+                .set_witness(pw, merge_witnesses, *old_user_asset_root);
+        let (new_user_asset_root, diff_root, tx_hash) = self.purge_proof_target.set_witness(
             pw,
             sender_address,
             purge_input_witnesses,
             purge_output_witnesses,
-            *middle_user_asset_root,
+            middle_user_asset_root,
+            nonce,
         );
 
         MergeAndPurgeTransitionPublicInputs {
             sender_address,
-            old_user_asset_root: old_user_asset_root.into(),
+            old_user_asset_root,
             middle_user_asset_root,
             new_user_asset_root,
-            tx_hash: tx_diff_root,
+            diff_root,
+            tx_hash,
         }
     }
 }
@@ -170,11 +171,15 @@ pub fn make_user_proof_circuit<
         purge_proof_target.old_user_asset_root,
     );
 
+    let nonce = builder.add_virtual_hash();
+    let tx_hash = poseidon_two_to_one::<F, H, D>(&mut builder, purge_proof_target.diff_root, nonce);
+
     builder.register_public_inputs(&merge_proof_target.old_user_asset_root.elements); // public_inputs[0..4]
     builder.register_public_inputs(&merge_proof_target.new_user_asset_root.elements); // public_inputs[4..8]
     builder.register_public_inputs(&purge_proof_target.new_user_asset_root.elements); // public_inputs[8..12]
-    builder.register_public_inputs(&purge_proof_target.tx_hash.elements); // public_inputs[12..16]
+    builder.register_public_inputs(&purge_proof_target.diff_root.elements); // public_inputs[12..16]
     builder.register_public_inputs(&purge_proof_target.sender_address.0.elements); // public_inputs[16..20]
+    builder.register_public_inputs(&tx_hash.elements); // public_inputs[20..24]
 
     let targets = MergeAndPurgeTransitionTarget {
         // old_user_asset_root: merge_proof_target.old_user_asset_root,
@@ -226,6 +231,7 @@ pub struct MergeAndPurgeTransitionPublicInputs<F: RichField> {
     pub old_user_asset_root: WrappedHashOut<F>,
     pub middle_user_asset_root: WrappedHashOut<F>,
     pub new_user_asset_root: WrappedHashOut<F>,
+    pub diff_root: WrappedHashOut<F>,
     pub tx_hash: WrappedHashOut<F>,
 }
 
@@ -235,8 +241,9 @@ impl<F: RichField> MergeAndPurgeTransitionPublicInputs<F> {
         public_inputs.append(&mut self.old_user_asset_root.elements.into());
         public_inputs.append(&mut self.middle_user_asset_root.elements.into());
         public_inputs.append(&mut self.new_user_asset_root.elements.into());
-        public_inputs.append(&mut self.tx_hash.elements.into());
+        public_inputs.append(&mut self.diff_root.elements.into());
         public_inputs.append(&mut self.sender_address.elements.into());
+        public_inputs.append(&mut self.tx_hash.elements.into());
 
         public_inputs
     }
@@ -248,6 +255,7 @@ pub struct MergeAndPurgeTransitionPublicInputsTarget {
     pub old_user_asset_root: HashOutTarget,
     pub middle_user_asset_root: HashOutTarget,
     pub new_user_asset_root: HashOutTarget,
+    pub diff_root: HashOutTarget,
     pub tx_hash: HashOutTarget,
 }
 
@@ -287,11 +295,14 @@ pub fn parse_merge_and_purge_public_inputs(
     let new_user_asset_root = HashOutTarget {
         elements: public_inputs_t[8..12].try_into().unwrap(),
     };
-    let tx_hash = HashOutTarget {
+    let diff_root = HashOutTarget {
         elements: public_inputs_t[12..16].try_into().unwrap(),
     };
     let sender_address = HashOutTarget {
         elements: public_inputs_t[16..20].try_into().unwrap(),
+    };
+    let tx_hash = HashOutTarget {
+        elements: public_inputs_t[20..24].try_into().unwrap(),
     };
 
     MergeAndPurgeTransitionPublicInputsTarget {
@@ -299,6 +310,7 @@ pub fn parse_merge_and_purge_public_inputs(
         old_user_asset_root,
         middle_user_asset_root,
         new_user_asset_root,
+        diff_root,
         tx_hash,
     }
 }
@@ -352,13 +364,17 @@ impl<
             elements: public_inputs[8..12].try_into().unwrap(),
         }
         .into();
-        let tx_hash = HashOut {
+        let diff_root = HashOut {
             elements: public_inputs[12..16].try_into().unwrap(),
         }
         .into();
         let sender_address = Address(HashOut {
             elements: public_inputs[16..20].try_into().unwrap(),
         });
+        let tx_hash = HashOut {
+            elements: public_inputs[20..24].try_into().unwrap(),
+        }
+        .into();
 
         Ok(MergeAndPurgeTransitionProofWithPublicInputs {
             proof: proof_with_pis.proof,
@@ -367,6 +383,7 @@ impl<
                 old_user_asset_root,
                 middle_user_asset_root,
                 new_user_asset_root,
+                diff_root,
                 tx_hash,
             },
         })
@@ -402,7 +419,8 @@ pub fn prove_user_transaction<
     merge_witnesses: &[MergeProof<F>],
     purge_input_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
     purge_output_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
-    old_user_asset_root: HashOut<F>,
+    nonce: WrappedHashOut<F>,
+    old_user_asset_root: WrappedHashOut<F>,
 ) -> anyhow::Result<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>> {
     let merge_and_purge_circuit = make_user_proof_circuit::<
         N_LOG_MAX_USERS,
@@ -424,6 +442,7 @@ pub fn prove_user_transaction<
         merge_witnesses,
         purge_input_witnesses,
         purge_output_witnesses,
+        nonce,
         old_user_asset_root,
     );
 

@@ -5,6 +5,9 @@ use plonky2::{
     },
     plonk::config::Hasher,
 };
+use serde::{Deserialize, Serialize};
+
+use crate::sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut;
 
 pub fn log2_ceil(value: usize) -> u32 {
     assert!(value != 0, "The first argument must be a positive number.");
@@ -23,19 +26,29 @@ pub fn log2_ceil(value: usize) -> u32 {
     log_value
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(bound(deserialize = "WrappedHashOut<F>: Deserialize<'de>"))]
+pub struct MerkleProof<F: RichField> {
+    pub index: usize,
+    pub value: WrappedHashOut<F>,
+    pub siblings: Vec<WrappedHashOut<F>>,
+    pub root: WrappedHashOut<F>,
+}
+
 /// `2^depth` 個の leaf からなる Merkle tree に `leaves` で与えられた leaf を左から詰め,
 /// 残りは 0 で埋める. Merkle root と与えられた `index` に関する siblings を返す.
 /// ただし, siblings は root から遠い順に並べる.
 /// Returns `(siblings, root)`
 pub fn get_merkle_proof<F: RichField>(
-    leaves: &[HashOut<F>],
+    leaves: &[WrappedHashOut<F>],
     index: usize,
     depth: usize,
-) -> (Vec<HashOut<F>>, HashOut<F>) {
+) -> MerkleProof<F> {
     let num_leaves = leaves.len().max(index).next_power_of_two();
     let log_num_leaves = log2_ceil(num_leaves) as usize;
     let mut nodes = leaves.to_vec();
-    nodes.resize(num_leaves, HashOut::ZERO);
+    let value = leaves[index];
+    nodes.resize(num_leaves, WrappedHashOut::ZERO);
 
     let mut siblings = vec![HashOut::ZERO]; // initialize by zero hashes
     for _ in 1..depth {
@@ -45,11 +58,11 @@ pub fn get_merkle_proof<F: RichField>(
 
     let mut rest_index = index;
     for sibling in siblings.iter_mut().take(log_num_leaves) {
-        let _ = std::mem::replace(sibling, nodes[rest_index ^ 1]);
+        let _ = std::mem::replace(sibling, *nodes[rest_index ^ 1]);
 
-        let mut new_nodes: Vec<HashOut<F>> = vec![];
+        let mut new_nodes: Vec<WrappedHashOut<F>> = vec![];
         for j in 0..(nodes.len() / 2) {
-            new_nodes.push(PoseidonHash::two_to_one(nodes[2 * j], nodes[2 * j + 1]));
+            new_nodes.push(PoseidonHash::two_to_one(*nodes[2 * j], *nodes[2 * j + 1]).into());
         }
 
         rest_index >>= 1;
@@ -60,18 +73,23 @@ pub fn get_merkle_proof<F: RichField>(
     let mut root = nodes[0];
     for sibling in siblings.iter().skip(log_num_leaves) {
         // log_num_leaves 層より上は sibling が必ず右側にくる.
-        root = PoseidonHash::two_to_one(root, *sibling);
+        root = PoseidonHash::two_to_one(*root, *sibling).into();
     }
 
-    (siblings, root)
+    MerkleProof {
+        index,
+        value: value.into(),
+        siblings: siblings.into_iter().map(|v| v.into()).collect::<Vec<_>>(),
+        root: root.into(),
+    }
 }
 
 /// 与えられた leaf `(index, value)` と `siblings` から Merkle root を計算する.
 pub fn get_merkle_root<F: RichField>(
     index: usize,
-    value: HashOut<F>,
-    siblings: &[HashOut<F>],
-) -> HashOut<F> {
+    value: WrappedHashOut<F>,
+    siblings: &[WrappedHashOut<F>],
+) -> WrappedHashOut<F> {
     let mut root = value;
     let mut rest_index = index;
     for sibling in siblings {
@@ -80,7 +98,7 @@ pub fn get_merkle_root<F: RichField>(
         } else {
             (*sibling, root)
         };
-        root = PoseidonHash::two_to_one(left, right);
+        root = PoseidonHash::two_to_one(*left, *right).into();
         rest_index >>= 1;
     }
 

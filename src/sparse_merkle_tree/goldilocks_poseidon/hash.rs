@@ -120,6 +120,8 @@ fn test_serde_goldilocks_hashout() {
 }
 
 impl<F: RichField> WrappedHashOut<F> {
+    pub const ZERO: Self = Wrapper(HashOut::ZERO);
+
     pub fn read(inputs: &mut core::slice::Iter<F>) -> Self {
         HashOut {
             elements: [

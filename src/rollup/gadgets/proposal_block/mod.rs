@@ -15,7 +15,7 @@ use crate::{
     recursion::gadgets::RecursiveProofTarget,
     sparse_merkle_tree::{
         gadgets::{
-            common::{conditionally_select, enforce_equal_if_enabled, logical_or},
+            common::{enforce_equal_if_enabled, logical_or},
             process::{
                 process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
                 utils::{get_process_merkle_proof_role, ProcessMerkleProofRoleTarget},
@@ -240,10 +240,8 @@ pub fn verify_valid_proposal_block<
     let mut leaves = vec![];
     for proof in user_tx_proofs {
         let public_inputs = parse_merge_and_purge_public_inputs(&proof.inner.0.public_inputs);
-        let leaf =
-            conditionally_select(builder, public_inputs.tx_hash, default_hash, proof.enabled);
 
-        leaves.push(leaf);
+        leaves.push(public_inputs.diff_root);
     }
 
     let block_tx_root = get_merkle_root_target_from_leaves::<F, H, D>(builder, leaves);

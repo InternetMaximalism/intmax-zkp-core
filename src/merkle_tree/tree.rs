@@ -1,8 +1,5 @@
 use plonky2::{
-    hash::{
-        hash_types::{HashOut, RichField},
-        poseidon::PoseidonHash,
-    },
+    hash::{hash_types::RichField, poseidon::PoseidonHash},
     plonk::config::Hasher,
 };
 use serde::{Deserialize, Serialize};
@@ -35,6 +32,15 @@ pub struct MerkleProof<F: RichField> {
     pub root: WrappedHashOut<F>,
 }
 
+impl<F: RichField> MerkleProof<F> {
+    pub fn new(depth: usize) -> Self {
+        let index = Default::default();
+        let value = Default::default();
+
+        get_merkle_proof(&[value], index, depth)
+    }
+}
+
 /// `2^depth` 個の leaf からなる Merkle tree に `leaves` で与えられた leaf を左から詰め,
 /// 残りは 0 で埋める. Merkle root と与えられた `index` に関する siblings を返す.
 /// ただし, siblings は root から遠い順に並べる.
@@ -44,21 +50,22 @@ pub fn get_merkle_proof<F: RichField>(
     index: usize,
     depth: usize,
 ) -> MerkleProof<F> {
-    let num_leaves = leaves.len().max(index).next_power_of_two();
+    assert!(index <= leaves.len());
+    let num_leaves = leaves.len().next_power_of_two();
     let log_num_leaves = log2_ceil(num_leaves) as usize;
     let mut nodes = leaves.to_vec();
     let value = leaves[index];
     nodes.resize(num_leaves, WrappedHashOut::ZERO);
 
-    let mut siblings = vec![HashOut::ZERO]; // initialize by zero hashes
+    let mut siblings = vec![WrappedHashOut::ZERO]; // initialize by zero hashes
     for _ in 1..depth {
-        let last_zero: HashOut<F> = *siblings.last().unwrap();
-        siblings.push(PoseidonHash::two_to_one(last_zero, last_zero));
+        let last_zero: WrappedHashOut<F> = *siblings.last().unwrap();
+        siblings.push(PoseidonHash::two_to_one(*last_zero, *last_zero).into());
     }
 
     let mut rest_index = index;
     for sibling in siblings.iter_mut().take(log_num_leaves) {
-        let _ = std::mem::replace(sibling, *nodes[rest_index ^ 1]);
+        let _ = std::mem::replace(sibling, nodes[rest_index ^ 1]);
 
         let mut new_nodes: Vec<WrappedHashOut<F>> = vec![];
         for j in 0..(nodes.len() / 2) {
@@ -71,16 +78,16 @@ pub fn get_merkle_proof<F: RichField>(
 
     assert_eq!(nodes.len(), 1);
     let mut root = nodes[0];
-    for sibling in siblings.iter().skip(log_num_leaves) {
+    for sibling in siblings.iter().cloned().skip(log_num_leaves) {
         // log_num_leaves 層より上は sibling が必ず右側にくる.
         root = PoseidonHash::two_to_one(*root, *sibling).into();
     }
 
     MerkleProof {
         index,
-        value: value.into(),
-        siblings: siblings.into_iter().map(|v| v.into()).collect::<Vec<_>>(),
-        root: root.into(),
+        value,
+        siblings,
+        root,
     }
 }
 
@@ -107,29 +114,44 @@ pub fn get_merkle_root<F: RichField>(
 
 #[test]
 fn test_get_block_hash_tree_proofs() {
-    use plonky2::field::{goldilocks_field::GoldilocksField, types::Field};
+    use plonky2::{
+        field::{goldilocks_field::GoldilocksField, types::Field},
+        hash::hash_types::HashOut,
+    };
 
     type F = GoldilocksField;
 
     let mut leaves = vec![0, 10, 20, 30, 40, 0]
         .into_iter()
-        .map(|i| HashOut {
-            elements: [F::from_canonical_u32(i), F::ZERO, F::ZERO, F::ZERO],
+        .map(|i| {
+            HashOut {
+                elements: [F::from_canonical_u32(i), F::ZERO, F::ZERO, F::ZERO],
+            }
+            .into()
         })
-        .collect::<Vec<HashOut<_>>>();
+        .collect::<Vec<_>>();
     const N_LEVELS: usize = 10;
     let index = leaves.len() - 1;
-    let (siblings, old_root) = get_merkle_proof(&leaves, index, N_LEVELS);
+    let MerkleProof {
+        siblings,
+        root: old_root,
+        ..
+    } = get_merkle_proof(&leaves, index, N_LEVELS);
     dbg!(old_root);
 
     // TODO: `index` 番目の要素が変化しても siblings は同じであることを確かめる.
     let new_leaf = HashOut {
         elements: [F::from_canonical_u32(50), F::ZERO, F::ZERO, F::ZERO],
-    };
+    }
+    .into();
     let new_root = get_merkle_root(index, new_leaf, &siblings);
 
     leaves[index] = new_leaf;
-    let (actual_siblings, actual_new_root) = get_merkle_proof(&leaves, index, N_LEVELS);
+    let MerkleProof {
+        siblings: actual_siblings,
+        root: actual_new_root,
+        ..
+    } = get_merkle_proof(&leaves, index, N_LEVELS);
     assert_eq!(siblings, actual_siblings);
     assert_eq!(new_root, actual_new_root);
 }

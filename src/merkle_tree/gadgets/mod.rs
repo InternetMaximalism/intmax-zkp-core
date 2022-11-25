@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use plonky2::{
     field::extension::Extendable,
     hash::hash_types::{HashOutTarget, RichField},
@@ -20,6 +21,7 @@ pub struct MerkleProofTarget<const N_LEVELS: usize> {
     pub value: HashOutTarget,
     pub siblings: [HashOutTarget; N_LEVELS],
     pub root: HashOutTarget,
+    // pub enabled: BoolTarget
 }
 
 impl<const N_LEVELS: usize> MerkleProofTarget<N_LEVELS> {
@@ -32,12 +34,14 @@ impl<const N_LEVELS: usize> MerkleProofTarget<N_LEVELS> {
         let siblings: [HashOutTarget; N_LEVELS] =
             builder.add_virtual_hashes(N_LEVELS).try_into().unwrap();
         let root = get_merkle_root_target::<F, H, D>(builder, index, value, &siblings);
+        // let enabled = builder.add_virtual_bool_target_safe();
 
         Self {
             index,
             value,
             siblings,
             root,
+            // enabled
         }
     }
 
@@ -47,10 +51,18 @@ impl<const N_LEVELS: usize> MerkleProofTarget<N_LEVELS> {
         index: usize,
         value: WrappedHashOut<F>,
         siblings: &[WrappedHashOut<F>],
+        // enabled: bool,
     ) -> WrappedHashOut<F> {
+        // pw.set_bool_target(self.enabled, enabled);
         pw.set_target(self.index, F::from_canonical_usize(index));
         pw.set_hash_target(self.value, *value);
-        for (sibling_t, sibling) in self.siblings.iter().cloned().zip(siblings.iter().cloned()) {
+
+        for (sibling_t, sibling) in self
+            .siblings
+            .iter()
+            .cloned()
+            .zip_eq(siblings.iter().cloned())
+        {
             pw.set_hash_target(sibling_t, *sibling);
         }
 
@@ -106,6 +118,8 @@ fn test_verify_merkle_proof_by_plonky2() {
     use std::time::Instant;
 
     use plonky2::{
+        field::types::Field,
+        hash::hash_types::HashOut,
         iop::witness::PartialWitness,
         plonk::{
             circuit_builder::CircuitBuilder,
@@ -114,7 +128,7 @@ fn test_verify_merkle_proof_by_plonky2() {
         },
     };
 
-    use super::tree::get_merkle_proof;
+    use super::tree::{get_merkle_proof, MerkleProof};
 
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
@@ -127,24 +141,24 @@ fn test_verify_merkle_proof_by_plonky2() {
     let mut builder = CircuitBuilder::<F, D>::new(config);
     let targets: MerkleProofTarget<10> = MerkleProofTarget::add_virtual_to::<F, H, D>(&mut builder);
     builder.register_public_inputs(&targets.root.elements);
+    builder.register_public_input(targets.index);
+    builder.register_public_inputs(&targets.value.elements);
     let data = builder.build::<C>();
 
     let leaves = vec![0, 10, 20, 30, 40, 0]
         .into_iter()
-        .map(|i| HashOut {
-            elements: [F::from_canonical_u32(i), F::ZERO, F::ZERO, F::ZERO],
+        .map(|i| {
+            HashOut {
+                elements: [F::from_canonical_u32(i), F::ZERO, F::ZERO, F::ZERO],
+            }
+            .into()
         })
-        .collect::<Vec<HashOut<_>>>();
+        .collect::<Vec<_>>();
     let index = leaves.len() - 1;
-    let (siblings, root) = get_merkle_proof(&leaves, index, N_LEVELS);
+    let MerkleProof { siblings, root, .. } = get_merkle_proof(&leaves, index, N_LEVELS);
 
     let mut pw = PartialWitness::new();
-    targets.set_witness(
-        &mut pw,
-        F::from_canonical_usize(index),
-        leaves[index],
-        &siblings,
-    );
+    targets.set_witness(&mut pw, index, leaves[index], &siblings);
 
     println!("start proving");
     let start = Instant::now();

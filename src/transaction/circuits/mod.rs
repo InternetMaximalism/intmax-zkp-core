@@ -86,6 +86,7 @@ impl<
         N_MERGES,
     >
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn set_witness<F: RichField>(
         &self,
         pw: &mut impl Witness<F>,

@@ -155,7 +155,7 @@ impl<
             p2_t.set_witness(pw, w2);
         }
 
-        let first_input_root = old_user_asset_root.into();
+        let first_input_root = old_user_asset_root;
         if let Some(first_input_witness) = input_witness.first() {
             assert_eq!(first_input_witness.0.old_root, first_input_root);
         }
@@ -198,7 +198,7 @@ impl<
             if let Some(last_output_witness) = output_witness.last() {
                 (
                     last_output_witness.0.new_root,
-                    last_output_witness.2.new_root,
+                    last_output_witness.1.new_root,
                     last_output_witness.2.new_root,
                 )
             } else {

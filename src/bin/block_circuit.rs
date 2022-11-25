@@ -18,7 +18,7 @@ use plonky2::{
 };
 
 use intmax_zkp_core::{
-    merkle_tree::tree::get_merkle_proof,
+    merkle_tree::tree::{get_merkle_proof, MerkleProof},
     rollup::{
         circuits::make_block_proof_circuit,
         gadgets::{batch::BatchBlockProofTarget, deposit_block::DepositInfo},
@@ -26,7 +26,7 @@ use intmax_zkp_core::{
     sparse_merkle_tree::{
         goldilocks_poseidon::{
             GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory,
-            PoseidonSparseMerkleTree,
+            PoseidonSparseMerkleTree, WrappedHashOut,
         },
         proof::SparseMerkleInclusionProof,
     },
@@ -168,7 +168,7 @@ fn main() {
         LayeredLayeredPoseidonSparseMerkleTree::new(node_data.clone(), Default::default());
 
     let mut deposit_sender2_tree =
-        LayeredLayeredPoseidonSparseMerkleTree::new(node_data.clone(), Default::default());
+        LayeredLayeredPoseidonSparseMerkleTree::new(node_data, Default::default());
 
     deposit_sender2_tree
         .set(sender2_address.into(), key1.1, key1.2, value1)
@@ -184,13 +184,7 @@ fn main() {
 
     let merge_inclusion_proof2 = deposit_sender2_tree.find(&sender2_address.into()).unwrap();
 
-    let deposit_tx_hash = HashOut::rand();
-    dbg!(&deposit_tx_hash);
-    let mut deposit_tree = PoseidonSparseMerkleTree::new(node_data, Default::default());
-    deposit_tree
-        .set(deposit_tx_hash.into(), sender2_deposit_root)
-        .unwrap();
-    let merge_inclusion_proof1 = deposit_tree.find(&deposit_tx_hash.into()).unwrap();
+    let merge_inclusion_proof1 = get_merkle_proof(&[sender2_deposit_root], 0, N_LOG_TXS);
 
     let merge_process_proof = sender2_user_asset_tree
         .set(key1.0, sender2_deposit_root)
@@ -214,7 +208,7 @@ fn main() {
         prev_block_header_digest: default_hash,
         transactions_digest: default_hash,
         // deposit_digest: *sender2_deposit_root,
-        deposit_digest: *deposit_tree.get_root(),
+        deposit_digest: *merge_inclusion_proof1.root,
         proposed_world_state_digest: default_hash,
         approved_world_state_digest: default_hash,
         latest_account_digest: default_hash,
@@ -258,6 +252,8 @@ fn main() {
     //     serde_json::to_string(&sender2_output_witness).unwrap()
     // );
 
+    let nonce = WrappedHashOut::rand();
+
     let mut pw = PartialWitness::new();
     merge_and_purge_circuit
         .targets
@@ -275,7 +271,8 @@ fn main() {
             sender1_account.address,
             &sender1_input_witness,
             &sender1_output_witness,
-            *sender1_input_witness.first().unwrap().0.old_root,
+            sender1_input_witness.first().unwrap().0.old_root,
+            nonce,
         );
 
     println!("start proving: sender1_tx_proof");
@@ -291,6 +288,8 @@ fn main() {
         Err(x) => println!("{}", x),
     }
 
+    let nonce = WrappedHashOut::rand();
+
     let mut pw = PartialWitness::new();
     merge_and_purge_circuit
         .targets
@@ -304,7 +303,8 @@ fn main() {
             sender2_account.address,
             &sender2_input_witness,
             &sender2_output_witness,
-            *sender2_input_witness.first().unwrap().0.old_root,
+            sender2_input_witness.first().unwrap().0.old_root,
+            nonce,
         );
 
     println!("start proving: sender2_tx_proof");
@@ -445,8 +445,17 @@ fn main() {
     let block_headers: Vec<HashOut<F>> = vec![];
     let prev_block_number = block_number - 1;
     let prev_block_hash = get_block_hash(&prev_block_header); // TODO: `prev_block_number` 番目の block header
-    let (block_header_siblings, _old_block_header_tree_root) =
-        get_merkle_proof(&block_headers, prev_block_number as usize, 32);
+    let MerkleProof {
+        siblings: block_header_siblings,
+        ..
+    } = get_merkle_proof(
+        &block_headers
+            .into_iter()
+            .map(|v| v.into())
+            .collect::<Vec<_>>(),
+        prev_block_number as usize,
+        32,
+    );
 
     let deposit_list: Vec<DepositInfo<F>> = vec![DepositInfo {
         receiver_address: Address(sender2_address),
@@ -482,7 +491,10 @@ fn main() {
         &received_signatures,
         &default_simple_signature,
         &latest_account_tree_process_proofs,
-        &block_header_siblings,
+        &block_header_siblings
+            .into_iter()
+            .map(|v| *v)
+            .collect::<Vec<_>>(),
         prev_block_hash,
         *world_state_process_proofs.first().unwrap().old_root,
     );

@@ -235,6 +235,14 @@ impl<const D: usize, const N_LOG_USERS: usize, const N_TXS: usize>
             pw.set_bool_target(*enabled_t, false);
         }
 
+        for (p_t, p) in self
+            .latest_account_tree_process_proofs
+            .iter()
+            .zip(latest_account_tree_process_proofs.iter())
+        {
+            p_t.set_witness(pw, p);
+        }
+
         let new_account_tree_root = latest_account_tree_process_proofs.last().unwrap().new_root;
 
         let default_proof = SmtProcessProof::with_root(new_account_tree_root);

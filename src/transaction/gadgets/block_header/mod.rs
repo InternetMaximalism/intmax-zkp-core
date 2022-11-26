@@ -9,6 +9,8 @@ use crate::poseidon::gadgets::poseidon_two_to_one;
 
 use super::super::block_header::BlockHeader;
 
+const N_LOG_MAX_BLOCKS: usize = 32;
+
 #[derive(Clone, Debug)]
 pub struct BlockHeaderTarget {
     pub block_number: Target, // u32
@@ -24,10 +26,8 @@ impl BlockHeaderTarget {
     pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
-        const N_LEVELS: usize = 32;
-
         let block_number = builder.add_virtual_target();
-        builder.range_check(block_number, N_LEVELS);
+        builder.range_check(block_number, N_LOG_MAX_BLOCKS);
         let prev_block_header_digest = builder.add_virtual_hash();
         let transactions_digest = builder.add_virtual_hash();
         let deposit_digest = builder.add_virtual_hash();

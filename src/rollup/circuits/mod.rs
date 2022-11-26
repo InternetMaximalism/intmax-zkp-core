@@ -1,6 +1,6 @@
 use itertools::Itertools;
 use plonky2::{
-    field::{extension::Extendable, types::Field},
+    field::extension::Extendable,
     hash::hash_types::{HashOut, HashOutTarget, RichField},
     iop::{
         target::{BoolTarget, Target},
@@ -9,11 +9,10 @@ use plonky2::{
     plonk::{
         circuit_builder::CircuitBuilder,
         circuit_data::{CircuitConfig, CircuitData},
-        config::{AlgebraicHasher, GenericConfig, PoseidonGoldilocksConfig},
+        config::{AlgebraicHasher, GenericConfig},
         proof::{Proof, ProofWithPublicInputs},
     },
 };
-use serde::{Deserialize, Serialize};
 
 use crate::{
     merkle_tree::gadgets::{get_merkle_root_target, MerkleProofTarget},
@@ -36,14 +35,20 @@ use crate::{
     },
 };
 
-type C = PoseidonGoldilocksConfig;
-type H = <C as GenericConfig<D>>::InnerHasher;
-type F = <C as GenericConfig<D>>::F;
-const D: usize = 2;
+use super::{
+    address_list::TransactionSenderWithValidity,
+    gadgets::address_list::TransactionSenderWithValidityTarget,
+};
+
+// type C = PoseidonGoldilocksConfig;
+// type H = <C as GenericConfig<D>>::InnerHasher;
+// type F = <C as GenericConfig<D>>::F;
+// const D: usize = 2;
+const N_LOG_MAX_BLOCKS: usize = 32;
 
 pub struct OneBlockProofTarget<
     const D: usize,
-    const N_LOG_USERS: usize,
+    const N_LOG_USERS: usize, // N_LOG_MAX_USERS
     const N_LOG_TXS: usize,
     const N_LOG_RECIPIENTS: usize,
     const N_LOG_CONTRACTS: usize,
@@ -53,10 +58,10 @@ pub struct OneBlockProofTarget<
 > {
     pub deposit_block_target:
         DepositBlockProofTarget<D, N_LOG_RECIPIENTS, N_LOG_CONTRACTS, N_LOG_VARIABLES, N_DEPOSITS>,
-    pub proposal_block_target: ProposalBlockProofTarget<D, N_LOG_USERS, N_LOG_TXS, N_TXS>,
-    pub approval_block_target: ApprovalBlockProofTarget<D, N_LOG_USERS, N_LOG_TXS, N_TXS>,
+    pub proposal_block_target: ProposalBlockProofTarget<D, N_LOG_USERS, N_TXS>,
+    pub approval_block_target: ApprovalBlockProofTarget<D, N_LOG_USERS, N_TXS>,
     pub block_number: Target,
-    pub prev_block_header_proof: MerkleProofTarget<32>,
+    pub prev_block_header_proof: MerkleProofTarget<N_LOG_MAX_BLOCKS>,
     pub prev_block_hash: HashOutTarget,
     pub block_header: BlockHeaderTarget,
 }
@@ -101,7 +106,7 @@ impl<
         C::Hasher: AlgebraicHasher<F>,
     {
         self.deposit_block_target
-            .set_witness::<F, H>(pw, deposit_process_proofs);
+            .set_witness::<F, C::Hasher>(pw, deposit_process_proofs);
         self.proposal_block_target.set_witness(
             pw,
             world_state_process_proofs,
@@ -117,7 +122,7 @@ impl<
             world_state_revert_proofs,
             &user_tx_proofs
                 .iter()
-                .map(|p| ProofWithPublicInputs::from(p.clone()))
+                .map(|p| p.public_inputs.clone())
                 .collect::<Vec<_>>(),
             &received_signatures
                 .iter()
@@ -129,9 +134,13 @@ impl<
 
         self.prev_block_header_proof.set_witness(
             pw,
-            F::from_canonical_u32(block_number - 1),
-            prev_block_hash,
-            block_header_siblings,
+            block_number as usize - 1,
+            prev_block_hash.into(),
+            &block_header_siblings
+                .iter()
+                .cloned()
+                .map(|v| v.into())
+                .collect::<Vec<_>>(),
         );
 
         pw.set_target(
@@ -158,6 +167,9 @@ impl<
 }
 
 pub fn make_block_proof_circuit<
+    F: RichField + Extendable<D>,
+    C: GenericConfig<D, F = F>,
+    const D: usize,
     const N_LOG_MAX_USERS: usize,
     const N_LOG_MAX_TXS: usize,
     const N_LOG_MAX_CONTRACTS: usize,
@@ -171,7 +183,10 @@ pub fn make_block_proof_circuit<
     const N_TXS: usize,
     const N_DEPOSITS: usize,
 >(
-    merge_and_purge_circuit: MergeAndPurgeTransitionCircuit<
+    merge_and_purge_circuit: &MergeAndPurgeTransitionCircuit<
+        F,
+        C,
+        D,
         N_LOG_MAX_USERS,
         N_LOG_MAX_TXS,
         N_LOG_MAX_CONTRACTS,
@@ -183,8 +198,11 @@ pub fn make_block_proof_circuit<
         N_DIFFS,
         N_MERGES,
     >,
-    zkdsa_circuit: SimpleSignatureCircuit,
+    simple_signature_circuit: &SimpleSignatureCircuit<F, C, D>,
 ) -> ProposalAndApprovalBlockCircuit<
+    F,
+    C,
+    D,
     N_LOG_MAX_USERS,
     N_LOG_TXS,
     N_LOG_RECIPIENTS,
@@ -192,10 +210,13 @@ pub fn make_block_proof_circuit<
     N_LOG_VARIABLES,
     N_TXS,
     N_DEPOSITS,
-> {
+>
+where
+    C::Hasher: AlgebraicHasher<F>,
+{
     let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
-    // builder.debug_gate_row = Some(461); // xors in SparseMerkleProcessProof in DepositBlock
+    // builder.debug_gate_row = Some(529); // xors in SparseMerkleProcessProof in DepositBlock
 
     // deposit block
     let deposit_block_target: DepositBlockProofTarget<
@@ -207,19 +228,12 @@ pub fn make_block_proof_circuit<
     > = DepositBlockProofTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(&mut builder);
 
     // proposal block
-    let proposal_block_target: ProposalBlockProofTarget<D, N_LOG_MAX_USERS, N_LOG_TXS, N_TXS> =
-        ProposalBlockProofTarget::add_virtual_to::<F, C>(
-            &mut builder,
-            &merge_and_purge_circuit.data,
-        );
+    let proposal_block_target: ProposalBlockProofTarget<D, N_LOG_MAX_USERS, N_TXS> =
+        ProposalBlockProofTarget::add_virtual_to(&mut builder, &merge_and_purge_circuit.data);
 
     // approval block
-    let approval_block_target: ApprovalBlockProofTarget<D, N_LOG_MAX_USERS, N_LOG_TXS, N_TXS> =
-        ApprovalBlockProofTarget::add_virtual_to::<F, C>(
-            &mut builder,
-            &merge_and_purge_circuit.data,
-            &zkdsa_circuit.data,
-        );
+    let approval_block_target: ApprovalBlockProofTarget<D, N_LOG_MAX_USERS, N_TXS> =
+        ApprovalBlockProofTarget::add_virtual_to(&mut builder, &simple_signature_circuit.data);
 
     for (user_tx_proof, received_signature) in proposal_block_target
         .user_tx_proofs
@@ -251,7 +265,7 @@ pub fn make_block_proof_circuit<
 
     // block header
     let block_number = builder.add_virtual_target();
-    builder.range_check(block_number, 32);
+    builder.range_check(block_number, N_LOG_MAX_BLOCKS);
     let transactions_digest = proposal_block_target.block_tx_root;
     let deposit_digest = deposit_block_target.deposit_digest;
     let proposed_world_state_digest = proposal_block_target.new_world_state_root;
@@ -259,10 +273,10 @@ pub fn make_block_proof_circuit<
     let latest_account_digest = approval_block_target.new_account_tree_root;
 
     // `block_number -　1` までの block header で block header tree を作る.
-    let prev_block_header_proof: MerkleProofTarget<32> =
-        MerkleProofTarget::add_virtual_to::<F, H, D>(&mut builder);
+    let prev_block_header_proof: MerkleProofTarget<N_LOG_MAX_BLOCKS> =
+        MerkleProofTarget::add_virtual_to::<F, C::Hasher, D>(&mut builder);
     let prev_block_hash = builder.add_virtual_hash();
-    let prev_block_header_digest = get_merkle_root_target::<F, H, D>(
+    let prev_block_header_digest = get_merkle_root_target::<F, C::Hasher, D>(
         &mut builder,
         prev_block_header_proof.index,
         prev_block_hash,
@@ -278,7 +292,7 @@ pub fn make_block_proof_circuit<
         approved_world_state_digest,
         latest_account_digest,
     };
-    let block_hash = get_block_hash_target::<F, H, D>(&mut builder, &block_header);
+    let block_hash = get_block_hash_target::<F, C::Hasher, D>(&mut builder, &block_header);
 
     builder.register_public_inputs(&prev_block_header_proof.root.elements); // old_root
     builder.register_public_inputs(&prev_block_header_digest.elements); // new_root
@@ -306,6 +320,9 @@ pub fn make_block_proof_circuit<
 }
 
 pub struct ProposalAndApprovalBlockCircuit<
+    F: RichField + Extendable<D>,
+    C: GenericConfig<D, F = F>,
+    const D: usize,
     const N_LOG_USERS: usize,
     const N_LOG_TXS: usize,
     const N_LOG_RECIPIENTS: usize,
@@ -327,46 +344,9 @@ pub struct ProposalAndApprovalBlockCircuit<
     >,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound(deserialize = "Address<F>: Deserialize<'de>"))]
-pub struct TxHashWithValidity<F: RichField> {
-    pub tx_hash: WrappedHashOut<F>,
-    pub is_valid: bool,
-}
-
-pub fn make_address_list<
-    F: RichField + Extendable<D>,
-    C: GenericConfig<D, F = F>,
-    const D: usize,
->(
-    user_tx_proofs: &[MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>],
-    received_signatures: &[Option<SimpleSignatureProofWithPublicInputs<F, C, D>>],
-    num_transactions: usize,
-) -> Vec<TxHashWithValidity<F>> {
-    let mut address_list = vec![];
-    for (user_tx_proof, received_signature) in
-        user_tx_proofs.iter().zip_eq(received_signatures.iter())
-    {
-        address_list.push(TxHashWithValidity {
-            tx_hash: user_tx_proof.public_inputs.tx_hash,
-            is_valid: received_signature.is_some(),
-        });
-    }
-
-    address_list.resize(
-        num_transactions,
-        TxHashWithValidity {
-            tx_hash: HashOut::ZERO.into(),
-            is_valid: false,
-        },
-    );
-
-    address_list
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProposalAndApprovalBlockPublicInputs<F: RichField> {
-    pub address_list: Vec<TxHashWithValidity<F>>,
+    pub address_list: Vec<TransactionSenderWithValidity<F>>,
     pub deposit_list: Vec<DepositInfo<F>>,
     pub old_account_tree_root: HashOut<F>,
     pub new_account_tree_root: HashOut<F>,
@@ -380,8 +360,12 @@ pub struct ProposalAndApprovalBlockPublicInputs<F: RichField> {
 impl<F: RichField> ProposalAndApprovalBlockPublicInputs<F> {
     pub fn encode(&self) -> Vec<F> {
         let mut public_inputs = vec![];
-        for TxHashWithValidity { tx_hash, is_valid } in self.address_list.clone() {
-            public_inputs.append(&mut tx_hash.0.elements.into());
+        for TransactionSenderWithValidity {
+            sender_address,
+            is_valid,
+        } in self.address_list.clone()
+        {
+            public_inputs.append(&mut sender_address.0.elements.into());
             // public_inputs.push(last_block_number);
             public_inputs.push(F::from_bool(is_valid));
         }
@@ -414,7 +398,7 @@ impl<F: RichField> ProposalAndApprovalBlockPublicInputs<F> {
 
 #[derive(Clone, Debug)]
 pub struct ProposalAndApprovalBlockPublicInputsTarget<const N_TXS: usize, const N_DEPOSITS: usize> {
-    pub address_list: [TxHashWithValidityTarget; N_TXS],
+    pub address_list: [TransactionSenderWithValidityTarget; N_TXS],
     pub deposit_list: [DepositInfoTarget; N_DEPOSITS],
     pub old_account_tree_root: HashOutTarget,
     pub new_account_tree_root: HashOutTarget,
@@ -449,20 +433,13 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct TxHashWithValidityTarget {
-    pub account_id: HashOutTarget,
-    // pub last_block_number: Target,
-    pub is_valid: BoolTarget,
-}
-
 pub fn parse_proposal_and_approval_public_inputs<const N_TXS: usize, const N_DEPOSITS: usize>(
     public_inputs_t: &[Target],
 ) -> ProposalAndApprovalBlockPublicInputsTarget<N_TXS, N_DEPOSITS> {
     let mut public_inputs_t = public_inputs_t.iter();
     let address_list = (0..N_TXS)
-        .map(|_| TxHashWithValidityTarget {
-            account_id: HashOutTarget {
+        .map(|_| TransactionSenderWithValidityTarget {
+            sender_address: HashOutTarget {
                 elements: [
                     *public_inputs_t.next().unwrap(),
                     *public_inputs_t.next().unwrap(),
@@ -566,6 +543,9 @@ pub fn parse_proposal_and_approval_public_inputs<const N_TXS: usize, const N_DEP
 }
 
 impl<
+        F: RichField + Extendable<D>,
+        C: GenericConfig<D, F = F>,
+        const D: usize,
         const N_LOG_USERS: usize,
         const N_LOG_TXS: usize,
         const N_LOG_RECIPIENTS: usize,
@@ -575,6 +555,9 @@ impl<
         const N_DEPOSITS: usize,
     >
     ProposalAndApprovalBlockCircuit<
+        F,
+        C,
+        D,
         N_LOG_USERS,
         N_LOG_TXS,
         N_LOG_RECIPIENTS,
@@ -599,8 +582,8 @@ impl<
         let proof_with_pis = self.data.prove(inputs)?;
         let mut public_inputs = proof_with_pis.public_inputs.iter();
         let address_list = (0..N_TXS)
-            .map(|_| TxHashWithValidity {
-                tx_hash: WrappedHashOut::read(&mut public_inputs),
+            .map(|_| TransactionSenderWithValidity {
+                sender_address: Address::read(&mut public_inputs),
                 is_valid: public_inputs.next().unwrap().is_nonzero(),
             })
             .collect::<Vec<_>>();

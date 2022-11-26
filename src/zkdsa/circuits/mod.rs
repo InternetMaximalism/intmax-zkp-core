@@ -20,7 +20,7 @@ type H = <C as GenericConfig<D>>::InnerHasher;
 type F = <C as GenericConfig<D>>::F;
 const D: usize = 2;
 
-pub fn make_simple_signature_circuit() -> SimpleSignatureCircuit {
+pub fn make_simple_signature_circuit() -> SimpleSignatureCircuit<F, C, D> {
     // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
     let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
@@ -37,7 +37,11 @@ pub fn make_simple_signature_circuit() -> SimpleSignatureCircuit {
     }
 }
 
-pub struct SimpleSignatureCircuit {
+pub struct SimpleSignatureCircuit<
+    F: RichField + Extendable<D>,
+    C: GenericConfig<D, F = F>,
+    const D: usize,
+> {
     pub data: CircuitData<F, C, D>,
     pub targets: SimpleSignatureTarget,
 }
@@ -137,7 +141,9 @@ pub fn parse_simple_signature_public_inputs(
     }
 }
 
-impl SimpleSignatureCircuit {
+impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
+    SimpleSignatureCircuit<F, C, D>
+{
     pub fn parse_public_inputs(&self) -> SimpleSignaturePublicInputsTarget {
         let public_inputs_t = self.data.prover_only.public_inputs.clone();
 

@@ -2,6 +2,7 @@ use plonky2::hash::hash_types::RichField;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    merkle_tree::tree::MerkleProof,
     sparse_merkle_tree::{
         gadgets::verify::verify_smt::SmtInclusionProof, goldilocks_poseidon::WrappedHashOut,
     },
@@ -57,7 +58,7 @@ pub struct Asset<F: RichField> {
 ))]
 pub struct ReceivedAssetProof<F: RichField> {
     pub is_deposit: bool,
-    pub diff_tree_inclusion_proof: (BlockHeader<F>, SmtInclusionProof<F>, SmtInclusionProof<F>),
+    pub diff_tree_inclusion_proof: (BlockHeader<F>, MerkleProof<F>, SmtInclusionProof<F>),
     pub latest_account_tree_inclusion_proof: SmtInclusionProof<F>,
     pub assets: Vec<Asset<F>>,
 }

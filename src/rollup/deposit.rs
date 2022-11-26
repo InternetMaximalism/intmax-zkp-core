@@ -1,6 +1,7 @@
 use plonky2::{field::goldilocks_field::GoldilocksField, hash::hash_types::HashOut};
 
 use crate::{
+    merkle_tree::tree::{get_merkle_proof, MerkleProof},
     rollup::gadgets::deposit_block::DepositInfo,
     sparse_merkle_tree::{
         gadgets::verify::verify_smt::SmtInclusionProof,
@@ -15,10 +16,11 @@ use crate::{
 pub fn make_deposit_proof(
     deposit_list: &[DepositInfo<GoldilocksField>],
     index: Option<usize>,
+    num_log_txs: usize,
 ) -> (
     WrappedHashOut<GoldilocksField>,
     Option<(
-        SmtInclusionProof<GoldilocksField>,
+        MerkleProof<GoldilocksField>,
         SmtInclusionProof<GoldilocksField>,
     )>,
 ) {
@@ -35,18 +37,12 @@ pub fn make_deposit_proof(
             .unwrap();
     }
 
-    let inner_deposit_root = inner_deposit_tree.get_root();
+    let diff_root = inner_deposit_tree.get_root();
 
-    let mut deposit_tree = PoseidonSparseMerkleTree::<NodeDataMemory>::default();
-    let pseudo_tx_hash = Default::default();
-    deposit_tree
-        .set(pseudo_tx_hash, inner_deposit_root)
-        .unwrap();
-
-    let deposit_root = deposit_tree.get_root();
+    let deposit_proof1 = get_merkle_proof(&[diff_root], index.unwrap_or(0), num_log_txs);
 
     if index.is_none() {
-        return (deposit_root, None);
+        return (deposit_proof1.root, None);
     }
 
     let index = index.unwrap();
@@ -60,9 +56,5 @@ pub fn make_deposit_proof(
 
     debug_assert!(deposit_proof2.found);
 
-    let deposit_proof1 = deposit_tree.find(&pseudo_tx_hash).unwrap();
-
-    debug_assert!(deposit_proof1.found);
-
-    (deposit_root, Some((deposit_proof1, deposit_proof2)))
+    (deposit_proof1.root, Some((deposit_proof1, deposit_proof2)))
 }

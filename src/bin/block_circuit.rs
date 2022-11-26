@@ -6,19 +6,19 @@ use std::{
 use plonky2::{
     field::{
         goldilocks_field::GoldilocksField,
-        types::{Field, Field64, Sample},
+        types::{Field, Field64},
     },
-    hash::hash_types::HashOut,
+    hash::{hash_types::HashOut, poseidon::PoseidonHash},
     iop::witness::PartialWitness,
     plonk::{
         circuit_builder::CircuitBuilder,
         circuit_data::CircuitConfig,
-        config::{GenericConfig, PoseidonGoldilocksConfig},
+        config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
     },
 };
 
 use intmax_zkp_core::{
-    merkle_tree::tree::get_merkle_proof,
+    merkle_tree::tree::{get_merkle_proof, MerkleProof},
     rollup::{
         circuits::make_block_proof_circuit,
         gadgets::{batch::BatchBlockProofTarget, deposit_block::DepositInfo},
@@ -26,7 +26,7 @@ use intmax_zkp_core::{
     sparse_merkle_tree::{
         goldilocks_poseidon::{
             GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory,
-            PoseidonSparseMerkleTree,
+            PoseidonSparseMerkleTree, WrappedHashOut,
         },
         proof::SparseMerkleInclusionProof,
     },
@@ -44,8 +44,8 @@ use intmax_zkp_core::{
 fn main() {
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
-    type H = <C as GenericConfig<D>>::InnerHasher;
     type F = <C as GenericConfig<D>>::F;
+    const N_LOG_MAX_BLOCKS: usize = 32;
     const N_LOG_MAX_USERS: usize = 3;
     const N_LOG_MAX_TXS: usize = 3;
     const N_LOG_MAX_CONTRACTS: usize = 3;
@@ -66,6 +66,9 @@ fn main() {
     );
 
     let merge_and_purge_circuit = make_user_proof_circuit::<
+        F,
+        C,
+        D,
         N_LOG_MAX_USERS,
         N_LOG_MAX_TXS,
         N_LOG_MAX_CONTRACTS,
@@ -155,7 +158,14 @@ fn main() {
     let sender1_input_witness = vec![proof1, proof2];
     let sender1_output_witness = vec![proof3, proof4];
 
-    let sender2_private_key: HashOut<F> = HashOut::rand();
+    let sender2_private_key = HashOut {
+        elements: [
+            GoldilocksField::from_canonical_u64(15657143458229430356),
+            GoldilocksField::from_canonical_u64(6012455030006979790),
+            GoldilocksField::from_canonical_u64(4280058849535143691),
+            GoldilocksField::from_canonical_u64(5153662694263190591),
+        ],
+    };
     dbg!(&sender2_private_key);
     let sender2_account = private_key_to_account(sender2_private_key);
     let sender2_address = sender2_account.address.0;
@@ -168,7 +178,7 @@ fn main() {
         LayeredLayeredPoseidonSparseMerkleTree::new(node_data.clone(), Default::default());
 
     let mut deposit_sender2_tree =
-        LayeredLayeredPoseidonSparseMerkleTree::new(node_data.clone(), Default::default());
+        LayeredLayeredPoseidonSparseMerkleTree::new(node_data, Default::default());
 
     deposit_sender2_tree
         .set(sender2_address.into(), key1.1, key1.2, value1)
@@ -179,46 +189,34 @@ fn main() {
 
     let deposit_sender2_tree: PoseidonSparseMerkleTree<NodeDataMemory> =
         deposit_sender2_tree.into();
-    let sender2_deposit_root = deposit_sender2_tree.get(&sender2_address.into()).unwrap();
-    dbg!(sender2_deposit_root);
 
     let merge_inclusion_proof2 = deposit_sender2_tree.find(&sender2_address.into()).unwrap();
 
-    let deposit_tx_hash = HashOut::rand();
-    dbg!(&deposit_tx_hash);
-    let mut deposit_tree = PoseidonSparseMerkleTree::new(node_data, Default::default());
-    deposit_tree
-        .set(deposit_tx_hash.into(), sender2_deposit_root)
-        .unwrap();
-    let merge_inclusion_proof1 = deposit_tree.find(&deposit_tx_hash.into()).unwrap();
+    let deposit_nonce = HashOut::ZERO;
+    let deposit_diff_root =
+        PoseidonHash::two_to_one(*merge_inclusion_proof2.root, deposit_nonce).into();
 
-    let merge_process_proof = sender2_user_asset_tree
-        .set(key1.0, sender2_deposit_root)
-        .unwrap();
+    let merge_inclusion_proof1 = get_merkle_proof(&[deposit_diff_root], 0, N_LOG_TXS);
 
-    let default_hash = HashOut {
-        elements: [F::ZERO; 4],
-    };
-    let default_inclusion_proof = SparseMerkleInclusionProof {
-        root: default_hash.into(),
-        found: false,
-        key: default_hash.into(),
-        value: default_hash.into(),
-        not_found_key: default_hash.into(),
-        not_found_value: default_hash.into(),
-        siblings: vec![],
-        is_old0: true,
-    };
+    let default_hash = HashOut::ZERO;
+    let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
     let prev_block_header = BlockHeader {
         block_number: 0,
         prev_block_header_digest: default_hash,
         transactions_digest: default_hash,
-        // deposit_digest: *sender2_deposit_root,
-        deposit_digest: *deposit_tree.get_root(),
+        deposit_digest: *merge_inclusion_proof1.root,
         proposed_world_state_digest: default_hash,
         approved_world_state_digest: default_hash,
         latest_account_digest: default_hash,
     };
+
+    let block_hash = get_block_hash(&prev_block_header);
+
+    let deposit_tx_hash = PoseidonHash::two_to_one(*deposit_diff_root, block_hash).into();
+
+    let merge_process_proof = sender2_user_asset_tree
+        .set(deposit_tx_hash, merge_inclusion_proof2.value)
+        .unwrap();
 
     let merge_proof = MergeProof {
         is_deposit: true,
@@ -229,6 +227,7 @@ fn main() {
         ),
         merge_process_proof,
         latest_account_tree_inclusion_proof: default_inclusion_proof,
+        nonce: deposit_nonce.into(),
     };
 
     world_state_tree
@@ -238,10 +237,10 @@ fn main() {
     let mut sender2_user_asset_tree: LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory> =
         sender2_user_asset_tree.into();
     let proof1 = sender2_user_asset_tree
-        .set(key1.0, key2.1, key2.2, zero)
+        .set(deposit_tx_hash, key2.1, key2.2, zero)
         .unwrap();
     let proof2 = sender2_user_asset_tree
-        .set(key1.0, key1.1, key1.2, zero)
+        .set(deposit_tx_hash, key1.1, key1.2, zero)
         .unwrap();
 
     let proof3 = sender2_tx_diff_tree
@@ -257,6 +256,8 @@ fn main() {
     //     serde_json::to_string(&sender2_input_witness).unwrap(),
     //     serde_json::to_string(&sender2_output_witness).unwrap()
     // );
+
+    let sender1_nonce = WrappedHashOut::rand();
 
     let mut pw = PartialWitness::new();
     merge_and_purge_circuit
@@ -275,7 +276,8 @@ fn main() {
             sender1_account.address,
             &sender1_input_witness,
             &sender1_output_witness,
-            *sender1_input_witness.first().unwrap().0.old_root,
+            sender1_input_witness.first().unwrap().0.old_root,
+            sender1_nonce,
         );
 
     println!("start proving: sender1_tx_proof");
@@ -291,6 +293,8 @@ fn main() {
         Err(x) => println!("{}", x),
     }
 
+    let sender2_nonce = WrappedHashOut::rand();
+
     let mut pw = PartialWitness::new();
     merge_and_purge_circuit
         .targets
@@ -304,7 +308,8 @@ fn main() {
             sender2_account.address,
             &sender2_input_witness,
             &sender2_output_witness,
-            *sender2_input_witness.first().unwrap().0.old_root,
+            sender2_input_witness.first().unwrap().0.old_root,
+            sender2_nonce,
         );
 
     println!("start proving: sender2_tx_proof");
@@ -382,6 +387,9 @@ fn main() {
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
     let block_circuit = make_block_proof_circuit::<
+        F,
+        C,
+        D,
         N_LOG_MAX_USERS,
         N_LOG_MAX_TXS,
         N_LOG_MAX_CONTRACTS,
@@ -394,7 +402,7 @@ fn main() {
         N_MERGES,
         N_TXS,
         N_DEPOSITS,
-    >(merge_and_purge_circuit, zkdsa_circuit);
+    >(&merge_and_purge_circuit, &zkdsa_circuit);
 
     let block_number = 1;
 
@@ -442,11 +450,20 @@ fn main() {
         received_signatures.push(opt_received_signature);
     }
 
-    let block_headers: Vec<HashOut<F>> = vec![];
+    let block_headers = vec![HashOut::ZERO];
     let prev_block_number = block_number - 1;
     let prev_block_hash = get_block_hash(&prev_block_header); // TODO: `prev_block_number` 番目の block header
-    let (block_header_siblings, _old_block_header_tree_root) =
-        get_merkle_proof(&block_headers, prev_block_number as usize, 32);
+    let MerkleProof {
+        siblings: block_header_siblings,
+        ..
+    } = get_merkle_proof(
+        &block_headers
+            .into_iter()
+            .map(|v| v.into())
+            .collect::<Vec<_>>(),
+        prev_block_number as usize,
+        N_LOG_MAX_BLOCKS,
+    );
 
     let deposit_list: Vec<DepositInfo<F>> = vec![DepositInfo {
         receiver_address: Address(sender2_address),
@@ -482,7 +499,10 @@ fn main() {
         &received_signatures,
         &default_simple_signature,
         &latest_account_tree_process_proofs,
-        &block_header_siblings,
+        &block_header_siblings
+            .into_iter()
+            .map(|v| *v)
+            .collect::<Vec<_>>(),
         prev_block_hash,
         *world_state_process_proofs.first().unwrap().old_root,
     );
@@ -501,7 +521,7 @@ fn main() {
     let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
     let block_proof_targets: BatchBlockProofTarget<D, N_BLOCKS> =
-        BatchBlockProofTarget::add_virtual_to::<F, H, C>(&mut builder, &block_circuit.data);
+        BatchBlockProofTarget::add_virtual_to::<F, C>(&mut builder, &block_circuit.data);
     let batch_block_circuit_data = builder.build::<C>();
 
     let mut pw = PartialWitness::new();

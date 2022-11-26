@@ -2,7 +2,7 @@ use plonky2::{
     field::extension::Extendable,
     fri::proof::FriProofTarget,
     gadgets::polynomial::PolynomialCoeffsExtTarget,
-    hash::hash_types::{HashOutTarget, MerkleCapTarget, RichField},
+    hash::hash_types::{MerkleCapTarget, RichField},
     iop::{target::BoolTarget, witness::Witness},
     plonk::{
         circuit_builder::CircuitBuilder,
@@ -23,9 +23,10 @@ impl<T> std::ops::Deref for Wrapper<T> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct RecursiveProofTarget<const D: usize> {
     pub inner: Wrapper<ProofWithPublicInputsTarget<D>>,
+    pub verifier_only_data: VerifierCircuitTarget,
     pub enabled: BoolTarget,
 }
 
@@ -56,14 +57,14 @@ impl<const D: usize> Clone for Wrapper<ProofWithPublicInputsTarget<D>> {
     }
 }
 
-impl Clone for Wrapper<VerifierCircuitTarget> {
-    fn clone(&self) -> Self {
-        Wrapper(VerifierCircuitTarget {
-            constants_sigmas_cap: self.0.constants_sigmas_cap.clone(),
-            circuit_digest: self.0.circuit_digest,
-        })
-    }
-}
+// impl Clone for Wrapper<VerifierCircuitTarget> {
+//     fn clone(&self) -> Self {
+//         Wrapper(VerifierCircuitTarget {
+//             constants_sigmas_cap: self.0.constants_sigmas_cap.clone(),
+//             circuit_digest: self.0.circuit_digest,
+//         })
+//     }
+// }
 
 impl<const D: usize> RecursiveProofTarget<D> {
     pub fn add_virtual_to<F, C>(
@@ -81,33 +82,32 @@ impl<const D: usize> RecursiveProofTarget<D> {
         //         .add_virtual_cap(circuit_data.common.config.fri_config.cap_height),
         // };
 
+        let constants_sigmas_cap = MerkleCapTarget(
+            circuit_data
+                .verifier_only
+                .constants_sigmas_cap
+                .0
+                .iter()
+                .cloned()
+                .map(|t| builder.constant_hash(t))
+                .collect::<Vec<_>>(),
+        );
+
+        let circuit_digest = builder.constant_hash(circuit_data.verifier_only.circuit_digest);
         let vd_target = VerifierCircuitTarget {
-            constants_sigmas_cap: MerkleCapTarget(
-                circuit_data
-                    .verifier_only
-                    .constants_sigmas_cap
-                    .0
-                    .iter()
-                    .map(|t| HashOutTarget {
-                        elements: [
-                            builder.constant(t.elements[0]),
-                            builder.constant(t.elements[1]),
-                            builder.constant(t.elements[2]),
-                            builder.constant(t.elements[3]),
-                        ],
-                    })
-                    .collect::<Vec<_>>(),
-            ),
-            circuit_digest: builder.add_virtual_hash(),
+            constants_sigmas_cap,
+            // circuit_digest: builder.add_virtual_hash(),
+            circuit_digest,
         };
 
         let wrapped_proof_t = Wrapper(proof_t);
-        builder.verify_proof::<C>(wrapped_proof_t.clone().0, &vd_target, &circuit_data.common); // TODO
+        builder.verify_proof::<C>(wrapped_proof_t.clone().0, &vd_target, &circuit_data.common);
 
         let enabled = builder.add_virtual_bool_target_safe();
 
         RecursiveProofTarget {
             inner: wrapped_proof_t,
+            verifier_only_data: vd_target,
             enabled,
         }
     }
@@ -116,6 +116,7 @@ impl<const D: usize> RecursiveProofTarget<D> {
         &self,
         pw: &mut impl Witness<F>,
         proof: &ProofWithPublicInputs<F, C, D>,
+        // verifier_only_data: &VerifierOnlyCircuitData<C, D>,
         enabled: bool,
     ) where
         F: RichField + Extendable<D>,
@@ -123,6 +124,134 @@ impl<const D: usize> RecursiveProofTarget<D> {
         C::Hasher: AlgebraicHasher<F>,
     {
         pw.set_proof_with_pis_target(&self.inner, proof);
+        // pw.set_cap_target(
+        //     &self.verifier_only_data.constants_sigmas_cap,
+        //     &verifier_only_data.constants_sigmas_cap,
+        // );
+        // pw.set_hash_target(
+        //     self.verifier_only_data.circuit_digest,
+        //     verifier_only_data.circuit_digest,
+        // );
         pw.set_bool_target(self.enabled, enabled);
+    }
+}
+
+#[test]
+fn test_recursion_simple_signature() {
+    use std::time::Instant;
+
+    use plonky2::{
+        field::types::Sample,
+        hash::hash_types::HashOut,
+        iop::witness::PartialWitness,
+        plonk::{
+            circuit_builder::CircuitBuilder,
+            circuit_data::CircuitConfig,
+            config::{GenericConfig, PoseidonGoldilocksConfig},
+        },
+    };
+
+    use crate::zkdsa::circuits::make_simple_signature_circuit;
+
+    const D: usize = 2;
+    type C = PoseidonGoldilocksConfig;
+    type F = <C as GenericConfig<D>>::F;
+
+    let private_key = HashOut::rand();
+    let message = HashOut::rand();
+    let zkdsa_circuit = make_simple_signature_circuit();
+
+    let mut pw = PartialWitness::new();
+    zkdsa_circuit
+        .targets
+        .set_witness(&mut pw, private_key, message);
+
+    println!("start proving: sender2_received_signature");
+    let start = Instant::now();
+    let signature = zkdsa_circuit.prove(pw).unwrap();
+    let end = start.elapsed();
+    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+
+    // proposal block
+    let config = CircuitConfig::standard_recursion_config();
+    let mut builder = CircuitBuilder::<F, D>::new(config);
+    let recursion_target = RecursiveProofTarget::add_virtual_to(&mut builder, &zkdsa_circuit.data);
+    let circuit_data = builder.build::<C>();
+
+    let mut pw = PartialWitness::new();
+    recursion_target.set_witness(
+        &mut pw,
+        &signature.into(),
+        // &zkdsa_circuit.data.verifier_only,
+        true,
+    );
+
+    println!("start proving: block_proof");
+    let start = Instant::now();
+    let proof = circuit_data.prove(pw).unwrap();
+    let end = start.elapsed();
+    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+
+    match circuit_data.verify(proof) {
+        Ok(()) => println!("Ok!"),
+        Err(x) => println!("{}", x),
+    }
+}
+
+#[test]
+fn test_recursion_default_simple_signature() {
+    use std::time::Instant;
+
+    use plonky2::{
+        iop::witness::PartialWitness,
+        plonk::{
+            circuit_builder::CircuitBuilder,
+            circuit_data::CircuitConfig,
+            config::{GenericConfig, PoseidonGoldilocksConfig},
+        },
+    };
+
+    use crate::zkdsa::circuits::make_simple_signature_circuit;
+
+    const D: usize = 2;
+    type C = PoseidonGoldilocksConfig;
+    type F = <C as GenericConfig<D>>::F;
+
+    let zkdsa_circuit = make_simple_signature_circuit();
+
+    let mut pw = PartialWitness::new();
+    zkdsa_circuit
+        .targets
+        .set_witness(&mut pw, Default::default(), Default::default());
+
+    println!("start proving: sender2_received_signature");
+    let start = Instant::now();
+    let default_signature = zkdsa_circuit.prove(pw).unwrap();
+    let end = start.elapsed();
+    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+
+    // proposal block
+    let config = CircuitConfig::standard_recursion_config();
+    let mut builder = CircuitBuilder::<F, D>::new(config);
+    let recursion_target = RecursiveProofTarget::add_virtual_to(&mut builder, &zkdsa_circuit.data);
+    let circuit_data = builder.build::<C>();
+
+    let mut pw = PartialWitness::new();
+    recursion_target.set_witness(
+        &mut pw,
+        &default_signature.into(),
+        // &zkdsa_circuit.verifier_only,
+        false,
+    );
+
+    println!("start proving: block_proof");
+    let start = Instant::now();
+    let proof = circuit_data.prove(pw).unwrap();
+    let end = start.elapsed();
+    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+
+    match circuit_data.verify(proof) {
+        Ok(()) => println!("Ok!"),
+        Err(x) => println!("{}", x),
     }
 }

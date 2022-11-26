@@ -19,7 +19,7 @@ use crate::sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut;
 pub type SecretKey<F> = HashOut<F>;
 pub type PublicKey<F> = HashOut<F>;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Address<F: Field>(pub HashOut<F>);
 

@@ -1,8 +1,14 @@
 use plonky2::{
-    field::{extension::Extendable, types::Field},
-    hash::hash_types::{HashOut, HashOutTarget, RichField},
+    field::extension::Extendable,
+    hash::{
+        hash_types::{HashOutTarget, RichField},
+        poseidon::PoseidonHash,
+    },
     iop::witness::Witness,
-    plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
+    plonk::{
+        circuit_builder::CircuitBuilder,
+        config::{AlgebraicHasher, Hasher},
+    },
 };
 
 use crate::{
@@ -32,20 +38,27 @@ pub struct PurgeTransitionTarget<
     const LOG_N_VARIABLES: usize,
     const N_DIFFS: usize,
 > {
-    pub sender_address: AddressTarget,
+    pub sender_address: AddressTarget, // input
     pub input_proofs: [(
         SparseMerkleProcessProofTarget<LOG_MAX_N_BLOCKS>,
         SparseMerkleProcessProofTarget<LOG_MAX_N_CONTRACTS>,
         SparseMerkleProcessProofTarget<LOG_MAX_N_VARIABLES>,
-    ); N_DIFFS],
+    ); N_DIFFS], // input
     pub output_proofs: [(
         SparseMerkleProcessProofTarget<N_LOG_RECIPIENTS>,
         SparseMerkleProcessProofTarget<LOG_N_CONTRACTS>,
         SparseMerkleProcessProofTarget<LOG_N_VARIABLES>,
-    ); N_DIFFS],
-    pub old_user_asset_root: HashOutTarget,
-    pub new_user_asset_root: HashOutTarget,
-    pub tx_hash: HashOutTarget,
+    ); N_DIFFS], // input
+    pub old_user_asset_root: HashOutTarget, // input
+    pub new_user_asset_root: HashOutTarget, // output
+    pub diff_root: HashOutTarget,      // output
+
+    /// tx_hash が被らないようにするための値.
+    pub nonce: HashOutTarget, // input
+
+    /// `hash(diff_root, nonce)` で計算される transaction ごとに unique な値
+    /// NOTICE: deposit の場合は計算方法が異なる.
+    pub tx_hash: HashOutTarget, // output
 }
 
 impl<
@@ -72,6 +85,7 @@ impl<
     ) -> Self {
         let sender_address = AddressTarget::add_virtual_to(builder);
         let old_user_asset_root = builder.add_virtual_hash();
+        let nonce = builder.add_virtual_hash();
         let input_proofs_t = (0..N_DIFFS)
             .map(|_| {
                 let proof0_t = SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder);
@@ -90,7 +104,7 @@ impl<
             })
             .collect::<Vec<_>>();
 
-        let (new_user_asset_root, tx_hash) = verify_user_asset_purge_proof::<
+        let (new_user_asset_root, diff_root, tx_hash) = verify_user_asset_purge_proof::<
             F,
             H,
             D,
@@ -102,10 +116,10 @@ impl<
             N_LOG_VARIABLES,
         >(
             builder,
-            sender_address,
             &input_proofs_t,
             &output_proofs_t,
             old_user_asset_root,
+            nonce,
         );
 
         Self {
@@ -114,21 +128,25 @@ impl<
             output_proofs: output_proofs_t.try_into().unwrap(),
             old_user_asset_root,
             new_user_asset_root,
+            diff_root,
+            nonce,
             tx_hash,
         }
     }
 
     /// Returns (new_user_asset_root, tx_diff_root)
-    pub fn set_witness<F: Field>(
+    pub fn set_witness<F: RichField>(
         &self,
         pw: &mut impl Witness<F>,
         sender_address: Address<F>,
         input_witness: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
         output_witness: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
-        old_user_asset_root: HashOut<F>,
-    ) -> (WrappedHashOut<F>, WrappedHashOut<F>) {
+        old_user_asset_root: WrappedHashOut<F>,
+        nonce: WrappedHashOut<F>,
+    ) -> (WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>) {
         self.sender_address.set_witness(pw, sender_address);
-        pw.set_hash_target(self.old_user_asset_root, old_user_asset_root);
+        pw.set_hash_target(self.old_user_asset_root, *old_user_asset_root);
+        pw.set_hash_target(self.nonce, *nonce);
         assert!(input_witness.len() <= self.input_proofs.len());
         for ((p0_t, p1_t, p2_t), (w0, w1, w2)) in self.input_proofs.iter().zip(input_witness.iter())
         {
@@ -137,7 +155,7 @@ impl<
             p2_t.set_witness(pw, w2);
         }
 
-        let first_input_root = old_user_asset_root.into();
+        let first_input_root = old_user_asset_root;
         if let Some(first_input_witness) = input_witness.first() {
             assert_eq!(first_input_witness.0.old_root, first_input_root);
         }
@@ -180,7 +198,7 @@ impl<
             if let Some(last_output_witness) = output_witness.last() {
                 (
                     last_output_witness.0.new_root,
-                    last_output_witness.2.new_root,
+                    last_output_witness.1.new_root,
                     last_output_witness.2.new_root,
                 )
             } else {
@@ -197,7 +215,11 @@ impl<
             p2_t.set_witness(pw, &default_witness2);
         }
 
-        (last_input_root0, last_output_root0)
+        let new_user_asset_root = last_input_root0;
+        let diff_root = last_output_root0;
+        let tx_hash = PoseidonHash::two_to_one(*diff_root, *nonce).into();
+
+        (new_user_asset_root, diff_root, tx_hash)
     }
 }
 
@@ -214,7 +236,6 @@ pub fn verify_user_asset_purge_proof<
     const N_LOG_VARIABLES: usize,
 >(
     builder: &mut CircuitBuilder<F, D>,
-    sender_address: AddressTarget,
     input_proofs_t: &[(
         SparseMerkleProcessProofTarget<N_LOG_MAX_TXS>,
         SparseMerkleProcessProofTarget<N_LOG_MAX_CONTRACTS>,
@@ -226,7 +247,8 @@ pub fn verify_user_asset_purge_proof<
         SparseMerkleProcessProofTarget<N_LOG_VARIABLES>,
     )],
     old_user_asset_root: HashOutTarget,
-) -> (HashOutTarget, HashOutTarget) {
+    nonce: HashOutTarget,
+) -> (HashOutTarget, HashOutTarget, HashOutTarget) {
     let constant_true = builder.constant_bool(true);
     let constant_false = builder.constant_bool(false);
     let zero = builder.zero();
@@ -347,9 +369,9 @@ pub fn verify_user_asset_purge_proof<
     let new_user_asset_root = input_proofs_t.last().unwrap().0.new_root;
     builder.connect_hashes(output_proofs_t.first().unwrap().0.old_root, default_hash);
     let diff_root = output_proofs_t.last().unwrap().0.new_root;
-    let tx_hash = poseidon_two_to_one::<F, H, D>(builder, diff_root, sender_address.0);
+    let tx_hash = poseidon_two_to_one::<F, H, D>(builder, diff_root, nonce);
 
-    (new_user_asset_root, tx_hash)
+    (new_user_asset_root, diff_root, tx_hash)
 }
 
 #[test]
@@ -456,6 +478,7 @@ fn test_purge_proof_by_plonky2() {
     let sender_address = Address::rand();
     let input_witness = vec![proof1, proof2];
     let output_witness = vec![proof3, proof4];
+    let nonce = WrappedHashOut::rand();
 
     let mut pw = PartialWitness::new();
     target.set_witness(
@@ -463,7 +486,8 @@ fn test_purge_proof_by_plonky2() {
         sender_address,
         &input_witness,
         &output_witness,
-        *input_witness.first().unwrap().0.old_root,
+        input_witness.first().unwrap().0.old_root,
+        nonce,
     );
 
     println!("start proving");

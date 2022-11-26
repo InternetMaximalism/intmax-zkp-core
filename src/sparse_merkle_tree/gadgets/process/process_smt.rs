@@ -167,7 +167,7 @@ pub fn verify_smt_process_proof<
         .elements
         .into_iter()
         .flat_map(|e| builder.split_le(e, 64))
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>(); // XXX: 529-530
 
     // component smtLevIns = SMTLevIns(nLevels);
     // for (i=0; i<nLevels; i++) smtLevIns.siblings[i] <== siblings[i];

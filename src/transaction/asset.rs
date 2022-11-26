@@ -61,4 +61,5 @@ pub struct ReceivedAssetProof<F: RichField> {
     pub diff_tree_inclusion_proof: (BlockHeader<F>, MerkleProof<F>, SmtInclusionProof<F>),
     pub latest_account_tree_inclusion_proof: SmtInclusionProof<F>,
     pub assets: Vec<Asset<F>>,
+    pub nonce: WrappedHashOut<F>,
 }

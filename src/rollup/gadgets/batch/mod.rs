@@ -12,19 +12,15 @@ use plonky2::{
 
 use crate::recursion::gadgets::RecursiveProofTarget;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct BatchBlockProofTarget<const D: usize, const N_BLOCKS: usize> {
     pub block_proofs: [RecursiveProofTarget<D>; N_BLOCKS],
 }
 
 impl<const D: usize, const N_BLOCKS: usize> BatchBlockProofTarget<D, N_BLOCKS> {
-    pub fn add_virtual_to<
-        F: RichField + Extendable<D>,
-        H: AlgebraicHasher<F>,
-        C: GenericConfig<D, F = F>,
-    >(
+    pub fn add_virtual_to<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>>(
         builder: &mut CircuitBuilder<F, D>,
-        block_proof_circuit_data: &CircuitData<F, C, D>,
+        block_circuit_data: &CircuitData<F, C, D>,
     ) -> Self
     where
         C::Hasher: AlgebraicHasher<F>,
@@ -32,12 +28,16 @@ impl<const D: usize, const N_BLOCKS: usize> BatchBlockProofTarget<D, N_BLOCKS> {
         let mut block_proofs = vec![];
 
         for _ in 0..N_BLOCKS {
-            let target = RecursiveProofTarget::add_virtual_to(builder, block_proof_circuit_data);
+            let target: RecursiveProofTarget<D> =
+                RecursiveProofTarget::add_virtual_to::<F, C>(builder, block_circuit_data);
             block_proofs.push(target);
         }
 
         Self {
-            block_proofs: block_proofs.try_into().unwrap(),
+            block_proofs: block_proofs
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("fail to convert vector to constant size array"))
+                .unwrap(),
         }
     }
 
@@ -55,7 +55,7 @@ impl<const D: usize, const N_BLOCKS: usize> BatchBlockProofTarget<D, N_BLOCKS> {
         }
 
         for ht in self.block_proofs.iter().skip(block_proofs.len()) {
-            ht.set_witness::<F, C>(pw, block_proofs.last().unwrap(), false);
+            ht.set_witness(pw, block_proofs.last().unwrap(), false);
         }
     }
 }

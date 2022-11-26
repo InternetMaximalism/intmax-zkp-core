@@ -14,10 +14,12 @@ use crate::{
     },
 };
 
+const N_LOG_MAX_BLOCKS: usize = 32;
+
 #[derive(Clone, Debug)]
 pub struct BlockProofTarget {
     pub block_header: BlockHeaderTarget,
-    pub prev_block_header_proof: MerkleProofTarget<32>,
+    pub prev_block_header_proof: MerkleProofTarget<N_LOG_MAX_BLOCKS>,
     pub prev_block_hash: HashOutTarget,
     pub prev_block_header_digest: HashOutTarget,
     pub block_hash: HashOutTarget,
@@ -30,8 +32,7 @@ impl BlockProofTarget {
         let block_header = BlockHeaderTarget::add_virtual_to::<F, H, D>(builder);
 
         // `block_number -　1` までの block header で block header tree を作る.
-        let prev_block_header_proof: MerkleProofTarget<32> =
-            MerkleProofTarget::add_virtual_to::<F, H, D>(builder);
+        let prev_block_header_proof = MerkleProofTarget::add_virtual_to::<F, H, D>(builder);
         let prev_block_hash = builder.add_virtual_hash();
         let prev_block_header_digest = get_merkle_root_target::<F, H, D>(
             builder,

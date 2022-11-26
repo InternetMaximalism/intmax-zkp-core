@@ -139,7 +139,8 @@ fn test_verify_merkle_proof_by_plonky2() {
     let config = CircuitConfig::standard_recursion_config();
 
     let mut builder = CircuitBuilder::<F, D>::new(config);
-    let targets: MerkleProofTarget<10> = MerkleProofTarget::add_virtual_to::<F, H, D>(&mut builder);
+    let targets: MerkleProofTarget<N_LEVELS> =
+        MerkleProofTarget::add_virtual_to::<F, H, D>(&mut builder);
     builder.register_public_inputs(&targets.root.elements);
     builder.register_public_input(targets.index);
     builder.register_public_inputs(&targets.value.elements);

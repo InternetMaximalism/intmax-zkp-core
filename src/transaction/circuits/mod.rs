@@ -8,7 +8,7 @@ use plonky2::{
     plonk::{
         circuit_builder::CircuitBuilder,
         circuit_data::{CircuitConfig, CircuitData},
-        config::{GenericConfig, PoseidonGoldilocksConfig},
+        config::{AlgebraicHasher, GenericConfig},
         proof::{Proof, ProofWithPublicInputs},
     },
 };
@@ -26,10 +26,10 @@ use crate::{
     zkdsa::account::Address,
 };
 
-type C = PoseidonGoldilocksConfig;
-type H = <C as GenericConfig<D>>::InnerHasher;
-type F = <C as GenericConfig<D>>::F;
-const D: usize = 2;
+// type C = PoseidonGoldilocksConfig;
+// type H = <C as GenericConfig<D>>::InnerHasher;
+// type F = <C as GenericConfig<D>>::F;
+// const D: usize = 2;
 
 pub struct MergeAndPurgeTransitionTarget<
     const N_LOG_MAX_USERS: usize,
@@ -121,6 +121,9 @@ impl<
 }
 
 pub fn make_user_proof_circuit<
+    F: RichField + Extendable<D>,
+    C: GenericConfig<D, F = F>,
+    const D: usize,
     const N_LOG_MAX_USERS: usize,
     const N_LOG_MAX_TXS: usize,
     const N_LOG_MAX_CONTRACTS: usize,
@@ -133,6 +136,9 @@ pub fn make_user_proof_circuit<
     const N_MERGES: usize,
 >(// zkdsa_circuit: SimpleSignatureCircuit,
 ) -> MergeAndPurgeTransitionCircuit<
+    F,
+    C,
+    D,
     N_LOG_MAX_USERS,
     N_LOG_MAX_TXS,
     N_LOG_MAX_CONTRACTS,
@@ -143,7 +149,10 @@ pub fn make_user_proof_circuit<
     N_LOG_VARIABLES,
     N_DIFFS,
     N_MERGES,
-> {
+>
+where
+    C::Hasher: AlgebraicHasher<F>,
+{
     // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
     let config = CircuitConfig::standard_recursion_config();
 
@@ -156,7 +165,7 @@ pub fn make_user_proof_circuit<
         N_LOG_TXS,
         N_LOG_RECIPIENTS,
         N_MERGES,
-    > = MergeTransitionTarget::add_virtual_to::<F, H, D>(&mut builder);
+    > = MergeTransitionTarget::add_virtual_to::<F, C::Hasher, D>(&mut builder);
 
     let purge_proof_target: PurgeTransitionTarget<
         N_LOG_MAX_TXS,
@@ -166,14 +175,17 @@ pub fn make_user_proof_circuit<
         N_LOG_CONTRACTS,
         N_LOG_VARIABLES,
         N_DIFFS,
-    > = PurgeTransitionTarget::add_virtual_to::<F, H, D>(&mut builder);
+    > = PurgeTransitionTarget::add_virtual_to::<F, C::Hasher, D>(&mut builder);
     builder.connect_hashes(
         merge_proof_target.new_user_asset_root,
         purge_proof_target.old_user_asset_root,
     );
 
-    let nonce = builder.add_virtual_hash();
-    let tx_hash = poseidon_two_to_one::<F, H, D>(&mut builder, purge_proof_target.diff_root, nonce);
+    let tx_hash = poseidon_two_to_one::<F, C::Hasher, D>(
+        &mut builder,
+        purge_proof_target.diff_root,
+        purge_proof_target.nonce,
+    );
 
     builder.register_public_inputs(&merge_proof_target.old_user_asset_root.elements); // public_inputs[0..4]
     builder.register_public_inputs(&merge_proof_target.new_user_asset_root.elements); // public_inputs[4..8]
@@ -199,6 +211,9 @@ pub fn make_user_proof_circuit<
 }
 
 pub struct MergeAndPurgeTransitionCircuit<
+    F: RichField + Extendable<D>,
+    C: GenericConfig<D, F = F>,
+    const D: usize,
     const N_LOG_MAX_USERS: usize,
     const N_LOG_MAX_TXS: usize,
     const N_LOG_MAX_CONTRACTS: usize,
@@ -225,7 +240,7 @@ pub struct MergeAndPurgeTransitionCircuit<
     >,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound(deserialize = "Address<F>: Deserialize<'de>, WrappedHashOut<F>: Deserialize<'de>"))]
 pub struct MergeAndPurgeTransitionPublicInputs<F: RichField> {
     pub sender_address: Address<F>,
@@ -258,6 +273,44 @@ pub struct MergeAndPurgeTransitionPublicInputsTarget {
     pub new_user_asset_root: HashOutTarget,
     pub diff_root: HashOutTarget,
     pub tx_hash: HashOutTarget,
+}
+
+impl MergeAndPurgeTransitionPublicInputsTarget {
+    pub fn add_virtual_to<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+    ) -> Self {
+        let sender_address = builder.add_virtual_hash();
+        let old_user_asset_root = builder.add_virtual_hash();
+        let middle_user_asset_root = builder.add_virtual_hash();
+        let new_user_asset_root = builder.add_virtual_hash();
+        let diff_root = builder.add_virtual_hash();
+        let tx_hash = builder.add_virtual_hash();
+
+        Self {
+            sender_address,
+            old_user_asset_root,
+            middle_user_asset_root,
+            new_user_asset_root,
+            diff_root,
+            tx_hash,
+        }
+    }
+
+    pub fn set_witness<F: RichField>(
+        &self,
+        pw: &mut impl Witness<F>,
+        public_inputs: &MergeAndPurgeTransitionPublicInputs<F>,
+    ) {
+        pw.set_hash_target(self.sender_address, *public_inputs.sender_address);
+        pw.set_hash_target(self.old_user_asset_root, *public_inputs.old_user_asset_root);
+        pw.set_hash_target(
+            self.middle_user_asset_root,
+            *public_inputs.middle_user_asset_root,
+        );
+        pw.set_hash_target(self.new_user_asset_root, *public_inputs.new_user_asset_root);
+        pw.set_hash_target(self.diff_root, *public_inputs.diff_root);
+        pw.set_hash_target(self.tx_hash, *public_inputs.tx_hash);
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -317,6 +370,9 @@ pub fn parse_merge_and_purge_public_inputs(
 }
 
 impl<
+        F: RichField + Extendable<D>,
+        C: GenericConfig<D, F = F>,
+        const D: usize,
         const N_LOG_MAX_USERS: usize,
         const N_LOG_MAX_TXS: usize,
         const N_LOG_MAX_CONTRACTS: usize,
@@ -329,6 +385,9 @@ impl<
         const N_MERGES: usize,
     >
     MergeAndPurgeTransitionCircuit<
+        F,
+        C,
+        D,
         N_LOG_MAX_USERS,
         N_LOG_MAX_TXS,
         N_LOG_MAX_CONTRACTS,
@@ -405,6 +464,9 @@ impl<
 
 /// witness を入力にとり、 user_tx_proof を返す関数
 pub fn prove_user_transaction<
+    F: RichField + Extendable<D>,
+    C: GenericConfig<D, F = F>,
+    const D: usize,
     const N_LOG_MAX_USERS: usize,
     const N_LOG_MAX_TXS: usize,
     const N_LOG_MAX_CONTRACTS: usize,
@@ -422,8 +484,14 @@ pub fn prove_user_transaction<
     purge_output_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
     nonce: WrappedHashOut<F>,
     old_user_asset_root: WrappedHashOut<F>,
-) -> anyhow::Result<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>> {
+) -> anyhow::Result<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>>
+where
+    C::Hasher: AlgebraicHasher<F>,
+{
     let merge_and_purge_circuit = make_user_proof_circuit::<
+        F,
+        C,
+        D,
         N_LOG_MAX_USERS,
         N_LOG_MAX_TXS,
         N_LOG_MAX_CONTRACTS,

@@ -2,7 +2,7 @@ use plonky2::hash::hash_types::RichField;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    rollup::{circuits::TransactionSenderWithValidity, gadgets::deposit_block::DepositInfo},
+    rollup::{address_list::TransactionSenderWithValidity, gadgets::deposit_block::DepositInfo},
     sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
     transaction::block_header::BlockHeader,
 };

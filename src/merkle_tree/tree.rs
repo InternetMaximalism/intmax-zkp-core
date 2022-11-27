@@ -44,17 +44,23 @@ impl<F: RichField> MerkleProof<F> {
 /// `2^depth` 個の leaf からなる Merkle tree に `leaves` で与えられた leaf を左から詰め,
 /// 残りは 0 で埋める. Merkle root と与えられた `index` に関する siblings を返す.
 /// ただし, siblings は root から遠い順に並べる.
+/// leaves に 1 つも leaf を与えなかったり, leaves の個数が 2 のべきでなかった場合,
+/// もとの個数より小さくない最小の 2 のべきになるように 0 を埋める.
 /// Returns `(siblings, root)`
 pub fn get_merkle_proof<F: RichField>(
     leaves: &[WrappedHashOut<F>],
     index: usize,
     depth: usize,
 ) -> MerkleProof<F> {
-    assert!(index <= leaves.len());
-    let num_leaves = leaves.len().next_power_of_two();
+    let mut nodes = if leaves.is_empty() {
+        vec![Default::default()]
+    } else {
+        leaves.to_vec()
+    };
+    assert!(index < nodes.len());
+    let num_leaves = nodes.len().next_power_of_two();
     let log_num_leaves = log2_ceil(num_leaves) as usize;
-    let mut nodes = leaves.to_vec();
-    let value = leaves[index];
+    let value = nodes[index];
     nodes.resize(num_leaves, WrappedHashOut::ZERO);
 
     let mut siblings = vec![WrappedHashOut::ZERO]; // initialize by zero hashes

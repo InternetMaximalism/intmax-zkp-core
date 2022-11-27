@@ -12,8 +12,8 @@ itertools = "0.10.5"
 num = "0.4"
 num-bigint = "0.4.3"
 num-traits = "0.2"
-plonky2 = { git = "https://github.com/mir-protocol/plonky2"}
-plonky2_ecdsa = { git = "https://github.com/mir-protocol/plonky2"}
+plonky2 = { git = "https://github.com/mir-protocol/plonky2", rev = "d527073416dd8cbc04457b8cb856b2fec3fa0e6c" }
+plonky2_ecdsa = { git = "https://github.com/mir-protocol/plonky2", rev = "d527073416dd8cbc04457b8cb856b2fec3fa0e6c" }
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde-hex = "0.1.0"

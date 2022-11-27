@@ -182,10 +182,11 @@ impl<
             assert_eq!(witness.diff_tree_inclusion_proof.1.value, tx_hash);
 
             let merge_key = if witness.is_deposit {
-                println!("deposit");
+                // println!("deposit");
                 PoseidonHash::two_to_one(*tx_hash, block_hash)
                     .into()
             } else {
+                // println!("purge");
                 tx_hash
             };
 
@@ -247,7 +248,7 @@ impl<
             new_user_asset_root = witness.merge_process_proof.new_root
         }
 
-        let default_header = BlockHeader::default();
+        let default_header = BlockHeader::with_tree_depth(N_LOG_TXS);
         let default_merkle_proof = MerkleProof::new(N_LOG_TXS);
         let default_inclusion_proof = SmtInclusionProof::with_root(Default::default());
         let default_process_proof = SmtProcessProof::with_root(new_user_asset_root);
@@ -387,7 +388,7 @@ pub fn verify_user_asset_merge_proof<
             merge_process_proof.new_value,
             diff_tree_inclusion_proof.2.value,
             is_not_no_op,
-        ); // XXX
+        );
         enforce_equal_if_enabled(
             builder,
             diff_tree_inclusion_proof.0.latest_account_digest,
@@ -520,10 +521,11 @@ fn test_merge_proof_by_plonky2() {
 
     let default_hash = HashOut::ZERO;
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
+        let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
     let prev_block_header = BlockHeader {
         block_number: 0,
         prev_block_header_digest: default_hash,
-        transactions_digest: default_hash,
+        transactions_digest: *default_merkle_root,
         deposit_digest: *merge_inclusion_proof1.root,
         proposed_world_state_digest: default_hash,
         approved_world_state_digest: default_hash,

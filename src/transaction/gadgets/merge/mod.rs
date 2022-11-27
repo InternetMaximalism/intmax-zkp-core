@@ -175,20 +175,21 @@ impl<
             if witness.is_deposit {
                 assert_eq!(witness.nonce, Default::default());
             };
-            let diff_root =
-                PoseidonHash::two_to_one(*witness.diff_tree_inclusion_proof.2.root, *witness.nonce)
+            let diff_root = witness.diff_tree_inclusion_proof.2.root;
+            let tx_hash =
+                PoseidonHash::two_to_one(*diff_root, *witness.nonce)
                     .into();
-            assert_eq!(witness.diff_tree_inclusion_proof.1.value, diff_root);
+            assert_eq!(witness.diff_tree_inclusion_proof.1.value, tx_hash);
 
-            let tx_hash = if witness.is_deposit {
+            let merge_key = if witness.is_deposit {
                 println!("deposit");
-                PoseidonHash::two_to_one(*witness.diff_tree_inclusion_proof.1.value, block_hash)
+                PoseidonHash::two_to_one(*tx_hash, block_hash)
                     .into()
             } else {
-                witness.diff_tree_inclusion_proof.1.value
+                tx_hash
             };
 
-            assert_eq!(witness.merge_process_proof.new_key, tx_hash);
+            assert_eq!(witness.merge_process_proof.new_key, merge_key);
             assert_eq!(witness.merge_process_proof.old_value, Default::default());
             assert_eq!(
                 witness.merge_process_proof.new_value,
@@ -360,20 +361,21 @@ pub fn verify_user_asset_merge_proof<
             );
         }
 
-        // deposit と purge の場合で tx_hash の計算方法が異なる.
+        // deposit と purge の場合で merge の計算方法が異なる.
         let block_hash = get_block_hash_target::<F, H, D>(builder, &diff_tree_inclusion_proof.0);
-        let tx_hash = {
-            let deposit_tx_hash = poseidon_two_to_one::<F, H, D>(
+        let merge_key = {
+            let tx_hash = diff_tree_inclusion_proof.1.value;
+            let deposit_merge_key = poseidon_two_to_one::<F, H, D>(
                 builder,
-                diff_tree_inclusion_proof.1.value,
+                tx_hash,
                 block_hash,
             );
-            let purge_tx_hash = diff_tree_inclusion_proof.1.value;
+            let purge_merge_key = tx_hash;
 
-            conditionally_select(builder, purge_tx_hash, deposit_tx_hash, is_not_deposit)
+            conditionally_select(builder, purge_merge_key, deposit_merge_key, is_not_deposit)
         };
 
-        // enforce_equal_if_enabled(builder, merge_process_proof.new_key, tx_hash, is_not_no_op); // XXX
+        // enforce_equal_if_enabled(builder, merge_process_proof.new_key, merge_key, is_not_no_op); // XXX
         enforce_equal_if_enabled(
             builder,
             merge_process_proof.old_value,
@@ -511,10 +513,10 @@ fn test_merge_proof_by_plonky2() {
     let merge_inclusion_proof2 = deposit_sender2_tree.find(&sender2_address.into()).unwrap();
 
     let deposit_nonce = HashOut::ZERO;
-    let deposit_diff_root =
+    let deposit_tx_hash =
         PoseidonHash::two_to_one(*merge_inclusion_proof2.root, deposit_nonce).into();
 
-    let merge_inclusion_proof1 = get_merkle_proof(&[deposit_diff_root], 0, N_LOG_TXS);
+    let merge_inclusion_proof1 = get_merkle_proof(&[deposit_tx_hash], 0, N_LOG_TXS);
 
     let default_hash = HashOut::ZERO;
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
@@ -529,10 +531,10 @@ fn test_merge_proof_by_plonky2() {
     };
     let block_hash = get_block_hash(&prev_block_header);
 
-    let deposit_tx_hash = PoseidonHash::two_to_one(*deposit_diff_root, block_hash).into();
+    let deposit_merge_key = PoseidonHash::two_to_one(*deposit_tx_hash, block_hash).into();
 
     let merge_process_proof = sender2_user_asset_tree
-        .set(deposit_tx_hash, merge_inclusion_proof2.value)
+        .set(deposit_merge_key, merge_inclusion_proof2.value)
         .unwrap();
 
     let merge_proof = MergeProof {
@@ -544,7 +546,7 @@ fn test_merge_proof_by_plonky2() {
         ),
         merge_process_proof,
         latest_account_tree_inclusion_proof: default_inclusion_proof,
-        nonce: nonce.into(),
+        nonce: deposit_nonce.into(),
     };
 
     let mut pw = PartialWitness::new();

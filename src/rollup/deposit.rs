@@ -17,7 +17,7 @@ use crate::{
 };
 
 #[allow(clippy::type_complexity)]
-pub fn make_deposit_root(
+pub fn make_partial_deposit_proof(
     deposit_list: &[DepositInfo<GoldilocksField>],
     num_log_txs: usize,
 ) -> MerkleProof<GoldilocksField> {
@@ -37,9 +37,7 @@ pub fn make_deposit_root(
     let deposit_nonce = HashOut::ZERO;
     let deposit_diff_root = PoseidonHash::two_to_one(*inner_deposit_tree.get_root(), deposit_nonce);
 
-    let deposit_proof1 = get_merkle_proof(&[deposit_diff_root.into()], 0, num_log_txs);
-
-    deposit_proof1
+    get_merkle_proof(&[deposit_diff_root.into()], 0, num_log_txs)
 }
 
 #[allow(clippy::type_complexity)]

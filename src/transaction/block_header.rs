@@ -84,16 +84,19 @@ impl<F: RichField> Serialize for BlockHeader<F> {
     }
 }
 
-impl<F: RichField> Default for BlockHeader<F> {
-    fn default() -> Self {
+impl<F: RichField> BlockHeader<F> {
+    pub fn with_tree_depth(depth: usize) -> Self {
+        let default_hash = HashOut::ZERO;
+        let default_merkle_root = get_merkle_proof(&[], 0, depth).root;
+
         Self {
             block_number: 0,
-            prev_block_header_digest: HashOut::ZERO,
-            transactions_digest: HashOut::ZERO,
-            deposit_digest: HashOut::ZERO,
-            proposed_world_state_digest: HashOut::ZERO,
-            approved_world_state_digest: HashOut::ZERO,
-            latest_account_digest: HashOut::ZERO,
+            prev_block_header_digest: default_hash,
+            transactions_digest: *default_merkle_root,
+            deposit_digest: *default_merkle_root,
+            proposed_world_state_digest: default_hash,
+            approved_world_state_digest: default_hash,
+            latest_account_digest: default_hash,
         }
     }
 }

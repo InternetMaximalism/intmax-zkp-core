@@ -7,7 +7,7 @@ use crate::{
     transaction::block_header::BlockHeader,
 };
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BlockInfo<F: RichField> {
     #[serde(bound(
         serialize = "BlockHeader<F>: Serialize",
@@ -31,4 +31,15 @@ pub struct BlockInfo<F: RichField> {
     pub address_list: Vec<TransactionSenderWithValidity<F>>,
     // diff_tree_proof
     // world_state_tree_proof
+}
+
+impl<F: RichField>  BlockInfo<F> {
+    pub fn with_tree_depth(depth: usize ) -> Self {
+        Self {
+            header: BlockHeader::with_tree_depth(depth),
+            transactions: Default::default(),
+            deposit_list: Default::default(),
+            address_list: Default::default()
+        }
+    }
 }

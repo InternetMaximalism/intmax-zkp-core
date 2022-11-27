@@ -440,17 +440,18 @@ fn test_deposit_block() {
     let merge_inclusion_proof2 = deposit_sender2_tree.find(&sender2_address.into()).unwrap();
 
     let deposit_nonce = HashOut::ZERO;
-    let deposit_diff_root =
-        PoseidonHash::two_to_one(*merge_inclusion_proof2.root, deposit_nonce).into();
+    let deposit_tx_hash =
+        PoseidonHash::two_to_one(*merge_inclusion_proof2.root, deposit_nonce);
 
-    let merge_inclusion_proof1 = get_merkle_proof(&[deposit_diff_root], 0, N_LOG_TXS);
+    let merge_inclusion_proof1 = get_merkle_proof(&[deposit_tx_hash.into()], 0, N_LOG_TXS);
 
     let default_hash = HashOut::ZERO;
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
+        let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
     let prev_block_header = BlockHeader {
         block_number: 0,
         prev_block_header_digest: default_hash,
-        transactions_digest: default_hash,
+        transactions_digest: *default_merkle_root,
         deposit_digest: *merge_inclusion_proof1.root,
         proposed_world_state_digest: default_hash,
         approved_world_state_digest: default_hash,
@@ -459,10 +460,10 @@ fn test_deposit_block() {
 
     let block_hash = get_block_hash(&prev_block_header);
 
-    let deposit_tx_hash = PoseidonHash::two_to_one(*deposit_diff_root, block_hash).into();
+    let deposit_merge_key = PoseidonHash::two_to_one(deposit_tx_hash, block_hash).into();
 
     let merge_process_proof = sender2_user_asset_tree
-        .set(deposit_tx_hash, merge_inclusion_proof2.value)
+        .set(deposit_merge_key, merge_inclusion_proof2.value)
         .unwrap();
 
     let merge_proof = MergeProof {
@@ -484,10 +485,10 @@ fn test_deposit_block() {
     let mut sender2_user_asset_tree: LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory> =
         sender2_user_asset_tree.into();
     let proof1 = sender2_user_asset_tree
-        .set(deposit_tx_hash, key2.1, key2.2, zero)
+        .set(deposit_merge_key, key2.1, key2.2, zero)
         .unwrap();
     let proof2 = sender2_user_asset_tree
-        .set(deposit_tx_hash, key1.1, key1.2, zero)
+        .set(deposit_merge_key, key1.1, key1.2, zero)
         .unwrap();
 
     let proof3 = sender2_tx_diff_tree

@@ -155,14 +155,14 @@ impl<
                 ProcessMerkleProofRole::ProcessNoOp
             );
 
-            let block_header = witness.diff_tree_inclusion_proof.0.clone();
+            let block_header = &witness.diff_tree_inclusion_proof.0;
             let root = if witness.is_deposit {
                 block_header.deposit_digest
             } else {
                 block_header.transactions_digest
             };
             assert_eq!(root, *witness.diff_tree_inclusion_proof.1.root);
-            let block_hash = get_block_hash(&block_header);
+            let block_hash = get_block_hash(block_header);
 
             // purge のとき, latest_account_tree (active_account_tree) に正しい値が入っていることの検証
             if !witness.is_deposit {
@@ -172,16 +172,13 @@ impl<
                 );
             }
 
-            let diff_root = witness.diff_tree_inclusion_proof.2.root;
             if witness.is_deposit {
                 assert_eq!(witness.nonce, Default::default());
             };
-            let inclusion_proof1_value =
-                PoseidonHash::two_to_one(*diff_root, *witness.nonce).into();
-            assert_eq!(
-                witness.diff_tree_inclusion_proof.1.value,
-                inclusion_proof1_value
-            );
+            let diff_root =
+                PoseidonHash::two_to_one(*witness.diff_tree_inclusion_proof.2.root, *witness.nonce)
+                    .into();
+            assert_eq!(witness.diff_tree_inclusion_proof.1.value, diff_root);
 
             let tx_hash = if witness.is_deposit {
                 println!("deposit");
@@ -202,6 +199,20 @@ impl<
                 *witness.latest_account_tree_inclusion_proof.root,
             ); // XXX
             assert_eq!(witness.merge_process_proof.old_root, new_user_asset_root);
+
+            // deposit でないとき, latest_account_tree (active_account_tree) に正しい値が入っていることの検証
+            {
+                let is_not_no_op =
+                    witness.merge_process_proof.fnc != ProcessMerkleProofRole::ProcessNoOp;
+                let receiving_block_number = witness.diff_tree_inclusion_proof.0.block_number;
+                let confirmed_block_number = witness.latest_account_tree_inclusion_proof.value; // 最後に成功した block number
+                if is_not_no_op && !witness.is_deposit {
+                    assert_eq!(
+                        confirmed_block_number.0,
+                        HashOut::from_partial(&[F::from_canonical_u32(receiving_block_number)]),
+                    );
+                }
+            }
 
             // pw.set_bool_target(target.is_deposit, witness.is_deposit);
             target
@@ -224,6 +235,7 @@ impl<
                 .merge_process_proof
                 .set_witness(pw, &witness.merge_process_proof);
 
+            // deposit でないときのみ検証する
             target.address_list_inclusion_proof.set_witness(
                 pw,
                 &witness.latest_account_tree_inclusion_proof,
@@ -296,7 +308,7 @@ pub fn verify_user_asset_merge_proof<
         nonce,
     } in proofs
     {
-        let is_not_deposit = builder.not(address_list_inclusion_proof.enabled);
+        let is_not_deposit = address_list_inclusion_proof.enabled;
 
         let ProcessMerkleProofRoleTarget { is_not_no_op, .. } =
             get_process_merkle_proof_role::<F, D>(builder, merge_process_proof.fnc);
@@ -498,8 +510,9 @@ fn test_merge_proof_by_plonky2() {
 
     let merge_inclusion_proof2 = deposit_sender2_tree.find(&sender2_address.into()).unwrap();
 
-    let nonce = HashOut::ZERO;
-    let deposit_diff_root = PoseidonHash::two_to_one(*merge_inclusion_proof2.root, nonce).into();
+    let deposit_nonce = HashOut::ZERO;
+    let deposit_diff_root =
+        PoseidonHash::two_to_one(*merge_inclusion_proof2.root, deposit_nonce).into();
 
     let merge_inclusion_proof1 = get_merkle_proof(&[deposit_diff_root], 0, N_LOG_TXS);
 

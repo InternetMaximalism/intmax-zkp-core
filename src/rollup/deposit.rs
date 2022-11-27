@@ -1,4 +1,8 @@
-use plonky2::{field::goldilocks_field::GoldilocksField, hash::hash_types::HashOut};
+use plonky2::{
+    field::goldilocks_field::GoldilocksField,
+    hash::{hash_types::HashOut, poseidon::PoseidonHash},
+    plonk::config::Hasher,
+};
 
 use crate::{
     merkle_tree::tree::{get_merkle_proof, MerkleProof},
@@ -56,5 +60,8 @@ pub fn make_deposit_proof(
 
     debug_assert!(deposit_proof2.found);
 
-    (deposit_proof1.root, Some((deposit_proof1, deposit_proof2)))
+    let deposit_nonce = HashOut::ZERO;
+    let deposit_root = PoseidonHash::two_to_one(*deposit_proof1.root, deposit_nonce).into();
+
+    (deposit_root, Some((deposit_proof1, deposit_proof2)))
 }

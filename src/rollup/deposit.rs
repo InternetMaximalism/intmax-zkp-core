@@ -1,6 +1,9 @@
 use plonky2::{
     field::goldilocks_field::GoldilocksField,
-    hash::{hash_types::HashOut, poseidon::PoseidonHash},
+    hash::{
+        hash_types::HashOut,
+        poseidon::{Poseidon, PoseidonHash},
+    },
     plonk::config::Hasher,
 };
 
@@ -41,9 +44,10 @@ pub fn make_deposit_proof(
             .unwrap();
     }
 
-    let diff_root = inner_deposit_tree.get_root();
+    let deposit_nonce = HashOut::ZERO;
+    let diff_root = PoseidonHash::two_to_one(*inner_deposit_tree.get_root(), deposit_nonce);
 
-    let deposit_proof1 = get_merkle_proof(&[diff_root], index.unwrap_or(0), num_log_txs);
+    let deposit_proof1 = get_merkle_proof(&[diff_root.into()], index.unwrap_or(0), num_log_txs);
 
     if index.is_none() {
         return (deposit_proof1.root, None);
@@ -60,8 +64,5 @@ pub fn make_deposit_proof(
 
     debug_assert!(deposit_proof2.found);
 
-    let deposit_nonce = HashOut::ZERO;
-    let deposit_root = PoseidonHash::two_to_one(*deposit_proof1.root, deposit_nonce).into();
-
-    (deposit_root, Some((deposit_proof1, deposit_proof2)))
+    (deposit_proof1.root, Some((deposit_proof1, deposit_proof2)))
 }

@@ -1,3 +1,5 @@
+pub mod test;
+
 use itertools::Itertools;
 use plonky2::{
     field::extension::Extendable,

@@ -1,64 +1,291 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::Instant,
-};
-
+use itertools::Itertools;
 use plonky2::{
-    field::{
-        goldilocks_field::GoldilocksField,
-        types::{Field, Field64},
-    },
-    hash::{hash_types::HashOut, poseidon::PoseidonHash},
-    iop::witness::PartialWitness,
+    field::extension::Extendable,
+    hash::hash_types::{HashOut, HashOutTarget, RichField},
+    iop::witness::Witness,
     plonk::{
         circuit_builder::CircuitBuilder,
-        circuit_data::CircuitConfig,
-        config::{GenericConfig, Hasher, PoseidonGoldilocksConfig, GenericHashOut},
+        circuit_data::CircuitData,
+        config::{AlgebraicHasher, GenericConfig},
+        proof::ProofWithPublicInputs,
     },
 };
 
-use intmax_zkp_core::{
-    merkle_tree::tree::{get_merkle_proof, MerkleProof},
-    rollup::{
-        circuits::make_block_proof_circuit,
-        gadgets::{batch::BatchBlockProofTarget, deposit_block::DepositInfo},
-    },
-    sparse_merkle_tree::{
-        goldilocks_poseidon::{
-            GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory,
-            PoseidonSparseMerkleTree, WrappedHashOut, Wrapper,
+use crate::{
+    merkle_tree::gadgets::get_merkle_root_target_from_leaves,
+    recursion::gadgets::RecursiveProofTarget,
+    sparse_merkle_tree::gadgets::{
+        common::{enforce_equal_if_enabled, logical_or},
+        process::{
+            process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
+            utils::{get_process_merkle_proof_role, ProcessMerkleProofRoleTarget},
         },
-        proof::SparseMerkleInclusionProof,
     },
-    transaction::{
-        block_header::{get_block_hash, BlockHeader},
-        circuits::make_user_proof_circuit,
-        gadgets::merge::MergeProof,
-    },
-    zkdsa::{
-        account::{private_key_to_account, Address},
-        circuits::make_simple_signature_circuit,
-    },
+    transaction::circuits::parse_merge_and_purge_public_inputs,
 };
 
-fn main() {
+#[derive(Clone)]
+pub struct TestProposalBlockProofTarget<
+    const D: usize,
+    const N_LOG_USERS: usize, // N_LOG_MAX_USERS
+    const N_TXS: usize,
+> {
+    pub world_state_process_proofs: [SparseMerkleProcessProofTarget<N_LOG_USERS>; N_TXS], // input
+
+    pub user_tx_proofs: [RecursiveProofTarget<D>; N_TXS], // input
+
+    pub block_tx_root: HashOutTarget, // output
+
+    pub old_world_state_root: HashOutTarget, // input
+
+    pub new_world_state_root: HashOutTarget, // output
+}
+
+impl<const D: usize, const N_LOG_USERS: usize, const N_TXS: usize>
+    TestProposalBlockProofTarget<D, N_LOG_USERS, N_TXS>
+{
+    #![cfg(not(doctest))]
+    /// # Example
+    ///
+    /// ```
+    /// let config = CircuitConfig::standard_recursion_config();
+    /// let mut builder: CircuitBuilder<F, D> = CircuitBuilder::new(config);
+    /// let proof_of_purge_t: PurgeTransitionTarget<N_LEVELS, N_DIFFS> =
+    ///     PurgeTransitionTarget::add_virtual_to(&mut builder);
+    /// builder.register_public_inputs(&proof_of_purge_t.new_user_asset_root.elements);
+    /// let inner_circuit_data = builder.build::<C>();
+    /// let block_target = ProposalBlockProofTarget::add_virtual_to::<F, H, C>(&mut builder, inner_circuit_data);
+    /// ```
+    pub fn add_virtual_to<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>>(
+        builder: &mut CircuitBuilder<F, D>,
+        user_tx_circuit_data: &CircuitData<F, C, D>,
+    ) -> Self
+    where
+        C::Hasher: AlgebraicHasher<F>,
+    {
+        let mut world_state_process_proofs = vec![];
+        for _ in 0..N_TXS {
+            let a = SparseMerkleProcessProofTarget::add_virtual_to::<F, C::Hasher, D>(builder); // XXX: row: 529
+            world_state_process_proofs.push(a);
+        }
+
+        let mut user_tx_proofs = vec![];
+        for _ in 0..N_TXS {
+            let b = RecursiveProofTarget::add_virtual_to(builder, user_tx_circuit_data);
+            user_tx_proofs.push(b);
+        }
+
+        let old_world_state_root = builder.add_virtual_hash();
+
+        let (block_tx_root, new_world_state_root) =
+            verify_valid_proposal_block::<F, C::Hasher, D, N_LOG_USERS>(
+                builder,
+                &world_state_process_proofs,
+                &user_tx_proofs,
+                old_world_state_root,
+            );
+
+        Self {
+            world_state_process_proofs: world_state_process_proofs.try_into().unwrap(),
+            user_tx_proofs: user_tx_proofs
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("fail to convert vector to constant size array"))
+                .unwrap(),
+            block_tx_root,
+            old_world_state_root,
+            new_world_state_root,
+        }
+    }
+
+    pub fn set_witness<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>>(
+        &self,
+        pw: &mut impl Witness<F>,
+        world_state_process_proofs: &[SmtProcessProof<F>],
+        user_tx_proofs: &[ProofWithPublicInputs<F, C, D>],
+        old_world_state_root: HashOut<F>,
+    ) where
+        C::Hasher: AlgebraicHasher<F>,
+    {
+        pw.set_hash_target(self.old_world_state_root, old_world_state_root);
+
+        assert!(!world_state_process_proofs.is_empty());
+        assert!(world_state_process_proofs.len() <= self.world_state_process_proofs.len());
+        for (p_t, p) in self
+            .world_state_process_proofs
+            .iter()
+            .zip(world_state_process_proofs.iter())
+        {
+            p_t.set_witness(pw, p);
+        }
+
+        let latest_root = world_state_process_proofs.last().unwrap().new_root;
+
+        let default_proof = SmtProcessProof::with_root(latest_root);
+        for p_t in self
+            .world_state_process_proofs
+            .iter()
+            .skip(world_state_process_proofs.len())
+        {
+            p_t.set_witness(pw, &default_proof);
+        }
+
+        assert!(!user_tx_proofs.is_empty());
+        assert!(user_tx_proofs.len() <= self.user_tx_proofs.len());
+        for (r_t, r) in self.user_tx_proofs.iter().zip(user_tx_proofs.iter()) {
+            r_t.set_witness(pw, r, true);
+        }
+
+        for r_t in self.user_tx_proofs.iter().skip(user_tx_proofs.len()) {
+            r_t.set_witness(pw, user_tx_proofs.last().unwrap(), false);
+        }
+    }
+}
+
+/// Returns `(block_tx_root, old_world_state_root, new_world_state_root)`
+pub fn verify_valid_proposal_block<
+    F: RichField + Extendable<D>,
+    H: AlgebraicHasher<F>,
+    const D: usize,
+    const N_LOG_USERS: usize,
+>(
+    builder: &mut CircuitBuilder<F, D>,
+    world_state_process_proofs: &[SparseMerkleProcessProofTarget<N_LOG_USERS>],
+    user_tx_proofs: &[RecursiveProofTarget<D>],
+    old_world_state_root: HashOutTarget,
+) -> (HashOutTarget, HashOutTarget) {
+    let constant_true = builder._true();
+    let constant_false = builder._false();
+    let zero = builder.zero();
+    let default_hash = HashOutTarget {
+        elements: [zero; 4],
+    };
+
+    // world state process proof は正しい遷移になるように並んでいる.
+    let mut new_world_state_root = old_world_state_root;
+    for proof in world_state_process_proofs {
+        let fnc = get_process_merkle_proof_role(builder, proof.fnc);
+        enforce_equal_if_enabled(
+            builder,
+            proof.old_root,
+            new_world_state_root,
+            fnc.is_not_no_op,
+        );
+
+        new_world_state_root = proof.new_root;
+    }
+
+    // 各 user asset root は world state tree に含まれていることの検証.
+    for (w, u) in world_state_process_proofs
+        .iter()
+        .zip_eq(user_tx_proofs.iter())
+    {
+        let public_inputs = parse_merge_and_purge_public_inputs(&u.inner.0.public_inputs);
+        let old_user_asset_root = public_inputs.middle_user_asset_root;
+        let new_user_asset_root = public_inputs.new_user_asset_root;
+
+        let ProcessMerkleProofRoleTarget {
+            is_no_op,
+            is_insert_op,
+            is_update_op,
+            is_remove_op,
+            ..
+        } = get_process_merkle_proof_role(builder, w.fnc);
+
+        // If user transaction is not enabled, corresponding process proof is for noop process.
+        let is_no_op_or_enabled = logical_or(builder, is_no_op, u.enabled);
+        builder.connect(is_no_op_or_enabled.target, constant_true.target);
+
+        // 古い world state には古い user asset root が格納されている
+        enforce_equal_if_enabled(builder, old_user_asset_root, w.old_value, u.enabled);
+
+        // purge では world state への insert は行われない
+        builder.connect(is_insert_op.target, constant_false.target);
+
+        let is_update_op_and_enabled = builder.and(is_update_op, u.enabled);
+        enforce_equal_if_enabled(
+            builder,
+            new_user_asset_root,
+            w.new_value,
+            is_update_op_and_enabled,
+        );
+        let is_remove_op_and_enabled = builder.and(is_remove_op, u.enabled);
+        enforce_equal_if_enabled(
+            builder,
+            new_user_asset_root,
+            default_hash,
+            is_remove_op_and_enabled,
+        );
+        let is_no_op_and_enabled = builder.and(is_no_op, u.enabled);
+        enforce_equal_if_enabled(
+            builder,
+            new_user_asset_root,
+            old_user_asset_root,
+            is_no_op_and_enabled,
+        );
+    }
+
+    // block tx root は block_txs から生まれる Merkle tree の root である.
+    let mut leaves = vec![];
+    for proof in user_tx_proofs {
+        let public_inputs = parse_merge_and_purge_public_inputs(&proof.inner.0.public_inputs);
+
+        leaves.push(public_inputs.diff_root);
+    }
+
+    let block_tx_root = get_merkle_root_target_from_leaves::<F, H, D>(builder, leaves);
+
+    (block_tx_root, new_world_state_root)
+}
+
+#[test]
+fn test_proposal_block() {
+    use std::{
+        sync::{Arc, Mutex},
+        time::Instant,
+    };
+
+    use plonky2::{
+        field::{goldilocks_field::GoldilocksField, types::Field},
+        hash::{hash_types::HashOut, poseidon::PoseidonHash},
+        iop::witness::PartialWitness,
+        plonk::{
+            circuit_builder::CircuitBuilder,
+            circuit_data::CircuitConfig,
+            config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
+        },
+    };
+
+    use crate::{
+        merkle_tree::tree::get_merkle_proof,
+        sparse_merkle_tree::{
+            goldilocks_poseidon::{
+                GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory,
+                PoseidonSparseMerkleTree, WrappedHashOut,
+            },
+            proof::SparseMerkleInclusionProof,
+        },
+        transaction::{
+            block_header::{get_block_hash, BlockHeader},
+            circuits::make_user_proof_circuit,
+            gadgets::merge::MergeProof,
+        },
+        zkdsa::{account::private_key_to_account, circuits::make_simple_signature_circuit},
+    };
+
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = <C as GenericConfig<D>>::F;
-    const N_LOG_MAX_BLOCKS: usize = 32;
     const N_LOG_MAX_USERS: usize = 3;
     const N_LOG_MAX_TXS: usize = 3;
     const N_LOG_MAX_CONTRACTS: usize = 3;
     const N_LOG_MAX_VARIABLES: usize = 3;
-    const N_LOG_TXS: usize = 2;
+    const N_LOG_TXS: usize = 1; // XXX
     const N_LOG_RECIPIENTS: usize = 3;
     const N_LOG_CONTRACTS: usize = 3;
     const N_LOG_VARIABLES: usize = 3;
-    const N_DEPOSITS: usize = 2;
     const N_DIFFS: usize = 2;
     const N_MERGES: usize = 2;
     const N_TXS: usize = 2usize.pow(N_LOG_TXS as u32);
-    const N_BLOCKS: usize = 2;
 
     let mut world_state_tree = PoseidonSparseMerkleTree::new(
         Arc::new(Mutex::new(NodeDataMemory::default())),
@@ -91,7 +318,6 @@ fn main() {
             GoldilocksField::from_canonical_u64(9979414176933652180),
         ],
     };
-    dbg!(format!("{}", Wrapper(sender1_private_key)));
     let sender1_account = private_key_to_account(sender1_private_key);
     let sender1_address = sender1_account.address.0;
 
@@ -159,24 +385,14 @@ fn main() {
     let sender1_input_witness = vec![proof1, proof2];
     let sender1_output_witness = vec![proof3, proof4];
 
-    // let sender2_private_key = HashOut {
-    //     elements: [
-    //         GoldilocksField::from_canonical_u64(15657143458229430356),
-    //         GoldilocksField::from_canonical_u64(6012455030006979790),
-    //         GoldilocksField::from_canonical_u64(4280058849535143691),
-    //         GoldilocksField::from_canonical_u64(5153662694263190591),
-    //     ],
-    // };
     let sender2_private_key = HashOut {
         elements: [
-            GoldilocksField::from_canonical_u64(17814943904840276189),
-            GoldilocksField::from_canonical_u64(12088887497349422745),
-            GoldilocksField::from_canonical_u64(1199609976110004574),
-            GoldilocksField::from_canonical_u64(13794990519201211279),
+            GoldilocksField::from_canonical_u64(15657143458229430356),
+            GoldilocksField::from_canonical_u64(6012455030006979790),
+            GoldilocksField::from_canonical_u64(4280058849535143691),
+            GoldilocksField::from_canonical_u64(5153662694263190591),
         ],
     };
-    dbg!(format!("{}", Wrapper(sender2_private_key)));
-
     dbg!(&sender2_private_key);
     let sender2_account = private_key_to_account(sender2_private_key);
     let sender2_address = sender2_account.address.0;
@@ -232,7 +448,7 @@ fn main() {
     let merge_proof = MergeProof {
         is_deposit: true,
         diff_tree_inclusion_proof: (
-            prev_block_header.clone(),
+            prev_block_header,
             merge_inclusion_proof1,
             merge_inclusion_proof2,
         ),
@@ -386,34 +602,12 @@ fn main() {
 
     // dbg!(&sender2_received_signature.public_inputs);
 
-    let mut pw = PartialWitness::new();
-    zkdsa_circuit
-        .targets
-        .set_witness(&mut pw, Default::default(), Default::default());
-
-    println!("start proving: default_simple_signature");
-    let start = Instant::now();
-    let default_simple_signature = zkdsa_circuit.prove(pw).unwrap();
-    let end = start.elapsed();
-    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
-
-    let block_circuit = make_block_proof_circuit::<
-        F,
-        C,
-        D,
-        N_LOG_MAX_USERS,
-        N_LOG_MAX_TXS,
-        N_LOG_MAX_CONTRACTS,
-        N_LOG_MAX_VARIABLES,
-        N_LOG_TXS,
-        N_LOG_RECIPIENTS,
-        N_LOG_CONTRACTS,
-        N_LOG_VARIABLES,
-        N_DIFFS,
-        N_MERGES,
-        N_TXS,
-        N_DEPOSITS,
-    >(&merge_and_purge_circuit, &zkdsa_circuit);
+    // proposal block
+    let config = CircuitConfig::standard_recursion_config();
+    let mut builder = CircuitBuilder::<F, D>::new(config);
+    let proposal_block_target: TestProposalBlockProofTarget<D, N_LOG_MAX_USERS, N_TXS> =
+        TestProposalBlockProofTarget::add_virtual_to(&mut builder, &merge_and_purge_circuit.data);
+    let circuit_data = builder.build::<C>();
 
     let block_number = 1;
 
@@ -461,90 +655,24 @@ fn main() {
         received_signatures.push(opt_received_signature);
     }
 
-    let block_headers = vec![HashOut::ZERO];
-    let prev_block_number = block_number - 1;
-    let prev_block_hash = get_block_hash(&prev_block_header); // TODO: `prev_block_number` 番目の block header
-    let MerkleProof {
-        siblings: block_header_siblings,
-        ..
-    } = get_merkle_proof(
-        &block_headers
-            .into_iter()
-            .map(|v| v.into())
-            .collect::<Vec<_>>(),
-        prev_block_number as usize,
-        N_LOG_MAX_BLOCKS,
-    );
-
-    let deposit_list: Vec<DepositInfo<F>> = vec![DepositInfo {
-        receiver_address: Address(sender2_address),
-        contract_address: Address(*GoldilocksHashOut::from_u128(1)),
-        variable_index: *GoldilocksHashOut::from_u128(0),
-        amount: GoldilocksField::from_noncanonical_u64(1),
-    }];
-
-    let mut deposit_tree: LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory> =
-        LayeredLayeredPoseidonSparseMerkleTree::new(Default::default(), Default::default());
-    let deposit_process_proofs = deposit_list
-        .iter()
-        .map(|leaf| {
-            deposit_tree
-                .set(
-                    leaf.receiver_address.0.into(),
-                    leaf.contract_address.0.into(),
-                    leaf.variable_index.into(),
-                    HashOut::from_partial(&[leaf.amount]).into(),
-                )
-                .unwrap()
-        })
-        .collect::<Vec<_>>();
-
     let mut pw = PartialWitness::new();
-    block_circuit.targets.set_witness(
+    proposal_block_target.set_witness(
         &mut pw,
-        block_number,
-        &user_tx_proofs,
-        &deposit_process_proofs,
         &world_state_process_proofs,
-        &world_state_revert_proofs,
-        &received_signatures,
-        &default_simple_signature,
-        &latest_account_tree_process_proofs,
-        &block_header_siblings
-            .into_iter()
-            .map(|v| *v)
+        &user_tx_proofs
+            .iter()
+            .map(|p| ProofWithPublicInputs::from(p.clone()))
             .collect::<Vec<_>>(),
-        prev_block_hash,
         *world_state_process_proofs.first().unwrap().old_root,
     );
 
     println!("start proving: block_proof");
     let start = Instant::now();
-    let block_proof = block_circuit.prove(pw).unwrap();
+    let proof = circuit_data.prove(pw).unwrap();
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-    match block_circuit.verify(block_proof.clone()) {
-        Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
-    }
-
-    let config = CircuitConfig::standard_recursion_config();
-    let mut builder = CircuitBuilder::<F, D>::new(config);
-    let block_proof_targets: BatchBlockProofTarget<D, N_BLOCKS> =
-        BatchBlockProofTarget::add_virtual_to::<F, C>(&mut builder, &block_circuit.data);
-    let batch_block_circuit_data = builder.build::<C>();
-
-    let mut pw = PartialWitness::new();
-    block_proof_targets.set_witness(&mut pw, &[block_proof.into()]);
-
-    println!("start proving: batch_block_proof");
-    let start = Instant::now();
-    let batch_block_proof = batch_block_circuit_data.prove(pw).unwrap();
-    let end = start.elapsed();
-    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
-
-    match batch_block_circuit_data.verify(batch_block_proof) {
+    match circuit_data.verify(proof) {
         Ok(()) => println!("Ok!"),
         Err(x) => println!("{}", x),
     }

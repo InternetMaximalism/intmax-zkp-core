@@ -33,13 +33,13 @@ pub struct BlockInfo<F: RichField> {
     // world_state_tree_proof
 }
 
-impl<F: RichField>  BlockInfo<F> {
-    pub fn with_tree_depth(depth: usize ) -> Self {
+impl<F: RichField> BlockInfo<F> {
+    pub fn with_tree_depth(depth: usize) -> Self {
         Self {
             header: BlockHeader::with_tree_depth(depth),
             transactions: Default::default(),
             deposit_list: Default::default(),
-            address_list: Default::default()
+            address_list: Default::default(),
         }
     }
 }

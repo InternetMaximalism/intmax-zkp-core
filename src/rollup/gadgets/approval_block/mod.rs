@@ -539,14 +539,13 @@ fn test_approval_block() {
     let merge_inclusion_proof2 = deposit_sender2_tree.find(&sender2_address.into()).unwrap();
 
     let deposit_nonce = HashOut::ZERO;
-    let deposit_tx_hash =
-        PoseidonHash::two_to_one(*merge_inclusion_proof2.root, deposit_nonce);
+    let deposit_tx_hash = PoseidonHash::two_to_one(*merge_inclusion_proof2.root, deposit_nonce);
 
     let merge_inclusion_proof1 = get_merkle_proof(&[deposit_tx_hash.into()], 0, N_LOG_TXS);
 
     let default_hash = HashOut::ZERO;
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
-        let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
+    let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
     let prev_block_header = BlockHeader {
         block_number: 0,
         prev_block_header_digest: default_hash,

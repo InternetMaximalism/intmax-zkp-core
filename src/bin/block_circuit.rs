@@ -195,14 +195,13 @@ fn main() {
     // `merge_inclusion_proof2` の root を `diff_root`, `hash(diff_root, nonce)` の値を `tx_hash` とよぶ.
     let deposit_nonce = HashOut::ZERO;
     let deposit_diff_root = merge_inclusion_proof2.root;
-    let deposit_tx_hash =
-        PoseidonHash::two_to_one(*deposit_diff_root, deposit_nonce).into();
+    let deposit_tx_hash = PoseidonHash::two_to_one(*deposit_diff_root, deposit_nonce).into();
 
     let merge_inclusion_proof1 = get_merkle_proof(&[deposit_tx_hash], 0, N_LOG_TXS);
 
     let default_hash = HashOut::ZERO;
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
-        let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
+    let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
     let prev_block_header = BlockHeader {
         block_number: 0,
         prev_block_header_digest: default_hash,

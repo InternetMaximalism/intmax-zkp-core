@@ -176,15 +176,12 @@ impl<
                 assert_eq!(witness.nonce, Default::default());
             };
             let diff_root = witness.diff_tree_inclusion_proof.2.root;
-            let tx_hash =
-                PoseidonHash::two_to_one(*diff_root, *witness.nonce)
-                    .into();
+            let tx_hash = PoseidonHash::two_to_one(*diff_root, *witness.nonce).into();
             assert_eq!(witness.diff_tree_inclusion_proof.1.value, tx_hash);
 
             let merge_key = if witness.is_deposit {
                 // println!("deposit");
-                PoseidonHash::two_to_one(*tx_hash, block_hash)
-                    .into()
+                PoseidonHash::two_to_one(*tx_hash, block_hash).into()
             } else {
                 // println!("purge");
                 tx_hash
@@ -366,11 +363,7 @@ pub fn verify_user_asset_merge_proof<
         let block_hash = get_block_hash_target::<F, H, D>(builder, &diff_tree_inclusion_proof.0);
         let merge_key = {
             let tx_hash = diff_tree_inclusion_proof.1.value;
-            let deposit_merge_key = poseidon_two_to_one::<F, H, D>(
-                builder,
-                tx_hash,
-                block_hash,
-            );
+            let deposit_merge_key = poseidon_two_to_one::<F, H, D>(builder, tx_hash, block_hash);
             let purge_merge_key = tx_hash;
 
             conditionally_select(builder, purge_merge_key, deposit_merge_key, is_not_deposit)
@@ -521,7 +514,7 @@ fn test_merge_proof_by_plonky2() {
 
     let default_hash = HashOut::ZERO;
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
-        let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
+    let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
     let prev_block_header = BlockHeader {
         block_number: 0,
         prev_block_header_digest: default_hash,

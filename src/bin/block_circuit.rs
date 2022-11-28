@@ -13,7 +13,7 @@ use plonky2::{
     plonk::{
         circuit_builder::CircuitBuilder,
         circuit_data::CircuitConfig,
-        config::{GenericConfig, Hasher, PoseidonGoldilocksConfig, GenericHashOut},
+        config::{GenericConfig, GenericHashOut, Hasher, PoseidonGoldilocksConfig},
     },
 };
 

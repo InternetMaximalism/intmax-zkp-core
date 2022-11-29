@@ -376,10 +376,7 @@ pub fn verify_user_asset_purge_proof<
 
 #[test]
 fn test_purge_proof_by_plonky2() {
-    use std::{
-        sync::{Arc, Mutex},
-        time::Instant,
-    };
+    use std::time::Instant;
 
     use plonky2::{
         iop::witness::PartialWitness,
@@ -391,8 +388,8 @@ fn test_purge_proof_by_plonky2() {
     };
 
     use crate::sparse_merkle_tree::goldilocks_poseidon::{
-        GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory,
-        PoseidonSparseMerkleTree,
+        GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTreeMemory, NodeDataMemory,
+        PoseidonSparseMerkleTreeMemory,
     };
 
     const D: usize = 2;
@@ -451,21 +448,19 @@ fn test_purge_proof_by_plonky2() {
 
     let user_address = GoldilocksHashOut::from_u128(4);
 
-    let mut world_state_tree = PoseidonSparseMerkleTree::new(
-        Arc::new(Mutex::new(NodeDataMemory::default())),
-        Default::default(),
-    );
+    let mut world_state_tree =
+        PoseidonSparseMerkleTreeMemory::new(NodeDataMemory::default(), Default::default());
 
-    let mut user_asset_tree = LayeredLayeredPoseidonSparseMerkleTree::<NodeDataMemory>::default();
+    let mut user_asset_tree = LayeredLayeredPoseidonSparseMerkleTreeMemory::default();
 
-    let mut tx_diff_tree = LayeredLayeredPoseidonSparseMerkleTree::<NodeDataMemory>::default();
+    let mut tx_diff_tree = LayeredLayeredPoseidonSparseMerkleTreeMemory::default();
 
     let zero = GoldilocksHashOut::from_u128(0);
     user_asset_tree.set(key1.0, key1.1, key1.2, value1).unwrap();
     user_asset_tree.set(key2.0, key2.1, key2.2, value2).unwrap();
 
     world_state_tree
-        .set(user_address, user_asset_tree.get_root())
+        .set(user_address, user_asset_tree.get_root().unwrap())
         .unwrap();
 
     let proof1 = user_asset_tree.set(key2.0, key2.1, key2.2, zero).unwrap();

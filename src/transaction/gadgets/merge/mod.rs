@@ -410,10 +410,7 @@ pub fn verify_user_asset_merge_proof<
 
 #[test]
 fn test_merge_proof_by_plonky2() {
-    use std::{
-        sync::{Arc, Mutex},
-        time::Instant,
-    };
+    use std::time::Instant;
 
     use plonky2::{
         field::types::Sample,
@@ -477,7 +474,7 @@ fn test_merge_proof_by_plonky2() {
     let sender2_account = private_key_to_account(sender2_private_key);
     let sender2_address = sender2_account.address.0;
 
-    let node_data = Arc::new(Mutex::new(NodeDataMemory::default()));
+    let node_data = NodeDataMemory::default();
     let mut sender2_user_asset_tree =
         PoseidonSparseMerkleTree::new(node_data.clone(), Default::default());
 

@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::Ok;
 use num::Integer;
@@ -52,18 +55,17 @@ type K = GoldilocksHashOut;
 type V = GoldilocksHashOut;
 type I = GoldilocksHashOut;
 
+#[allow(clippy::type_complexity)]
 #[derive(Clone, Debug, Default)]
 pub struct NodeDataMemory {
-    pub nodes: HashMap<K, Node<K, V, I>>,
+    pub nodes: Arc<Mutex<HashMap<K, Node<K, V, I>>>>,
 }
 
 impl NodeData<K, V, I> for NodeDataMemory {
     type Error = anyhow::Error;
 
     fn get(&self, key: &K) -> Result<Option<Node<K, V, I>>, Self::Error> {
-        let result = self.nodes.get(key);
-
-        if let Some(some_data) = result {
+        if let Some(some_data) = self.nodes.lock().expect("mutex poison error").get(key) {
             Ok(Some(some_data.clone()))
         } else {
             Ok(None)
@@ -72,7 +74,10 @@ impl NodeData<K, V, I> for NodeDataMemory {
 
     fn multi_insert(&mut self, insert_entries: Vec<(K, Node<K, V, I>)>) -> Result<(), Self::Error> {
         for (key, value) in insert_entries {
-            self.nodes.insert(key, value);
+            self.nodes
+                .lock()
+                .expect("mutex poison error")
+                .insert(key, value);
         }
 
         Ok(())

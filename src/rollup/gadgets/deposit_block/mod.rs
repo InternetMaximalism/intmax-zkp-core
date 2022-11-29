@@ -251,10 +251,7 @@ pub fn calc_deposit_digest<
 
 #[test]
 fn test_deposit_block() {
-    use std::{
-        sync::{Arc, Mutex},
-        time::Instant,
-    };
+    use std::time::Instant;
 
     use plonky2::{
         field::{
@@ -307,10 +304,8 @@ fn test_deposit_block() {
     const N_DIFFS: usize = 2;
     const N_MERGES: usize = 2;
 
-    let mut world_state_tree = PoseidonSparseMerkleTree::new(
-        Arc::new(Mutex::new(NodeDataMemory::default())),
-        Default::default(),
-    );
+    let mut world_state_tree =
+        PoseidonSparseMerkleTree::new(NodeDataMemory::default(), Default::default());
 
     let merge_and_purge_circuit = make_user_proof_circuit::<
         F,
@@ -417,7 +412,7 @@ fn test_deposit_block() {
     let sender2_account = private_key_to_account(sender2_private_key);
     let sender2_address = sender2_account.address.0;
 
-    let node_data = Arc::new(Mutex::new(NodeDataMemory::default()));
+    let node_data = NodeDataMemory::default();
     let mut sender2_user_asset_tree =
         PoseidonSparseMerkleTree::new(node_data.clone(), Default::default());
 

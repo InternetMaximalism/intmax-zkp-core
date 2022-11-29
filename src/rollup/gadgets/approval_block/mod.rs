@@ -358,10 +358,7 @@ pub fn verify_valid_approval_block<
 
 #[test]
 fn test_approval_block() {
-    use std::{
-        sync::{Arc, Mutex},
-        time::Instant,
-    };
+    use std::time::Instant;
 
     use plonky2::{
         field::{goldilocks_field::GoldilocksField, types::Field},
@@ -406,10 +403,8 @@ fn test_approval_block() {
     const N_MERGES: usize = 2;
     const N_TXS: usize = 2usize.pow(N_LOG_TXS as u32);
 
-    let mut world_state_tree = PoseidonSparseMerkleTree::new(
-        Arc::new(Mutex::new(NodeDataMemory::default())),
-        Default::default(),
-    );
+    let mut world_state_tree =
+        PoseidonSparseMerkleTree::new(NodeDataMemory::default(), Default::default());
 
     let merge_and_purge_circuit = make_user_proof_circuit::<
         F,
@@ -516,7 +511,7 @@ fn test_approval_block() {
     let sender2_account = private_key_to_account(sender2_private_key);
     let sender2_address = sender2_account.address.0;
 
-    let node_data = Arc::new(Mutex::new(NodeDataMemory::default()));
+    let node_data = NodeDataMemory::default();
     let mut sender2_user_asset_tree =
         PoseidonSparseMerkleTree::new(node_data.clone(), Default::default());
 

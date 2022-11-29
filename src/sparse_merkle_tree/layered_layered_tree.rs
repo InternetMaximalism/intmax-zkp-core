@@ -1,7 +1,4 @@
-use std::{
-    fmt::Debug,
-    sync::{Arc, Mutex},
-};
+use std::fmt::Debug;
 
 use super::{
     node_data::NodeData,
@@ -32,7 +29,7 @@ pub struct LayeredLayeredSparseMerkleTree<
     H: NodeHash<K, V, I>,
     D: NodeData<K, V, I>,
 > {
-    pub nodes_db: Arc<Mutex<D>>,
+    pub nodes_db: D,
     pub root: I,
     pub _key: std::marker::PhantomData<K>,
     pub _value: std::marker::PhantomData<V>,
@@ -70,7 +67,7 @@ impl<K: Sized, V: Sized, I: Sized, H: NodeHash<K, V, I>, D: NodeData<K, V, I>>
 impl<K: Sized, V: Sized, I: Sized, H: NodeHash<K, V, I>, D: NodeData<K, V, I>>
     LayeredLayeredSparseMerkleTree<K, V, I, H, D>
 {
-    pub fn new(nodes_db: Arc<Mutex<D>>, root_hash: I) -> Self {
+    pub fn new(nodes_db: D, root_hash: I) -> Self {
         Self {
             nodes_db,
             root: root_hash,
@@ -103,14 +100,9 @@ impl<K: KeyLike, I: ValueLike + HashLike, H: NodeHash<K, I, I>, D: NodeData<K, I
 
     pub fn change_root(&mut self, root_hash: I) -> anyhow::Result<()> {
         if !I::default().eq(&root_hash) {
-            let root_node = self
-                .nodes_db
-                .lock()
-                .map_err(|err| anyhow::anyhow!("mutex poison error: {}", err))?
-                .get(&root_hash)
-                .map_err(|err| {
-                    anyhow::anyhow!("fail to get node corresponding `root_hash`: {:?}", err)
-                })?;
+            let root_node = self.nodes_db.get(&root_hash).map_err(|err| {
+                anyhow::anyhow!("fail to get node corresponding `root_hash`: {:?}", err)
+            })?;
 
             if root_node.is_none() {
                 return Err(anyhow::anyhow!(

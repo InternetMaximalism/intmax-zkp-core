@@ -376,10 +376,7 @@ pub fn verify_user_asset_purge_proof<
 
 #[test]
 fn test_purge_proof_by_plonky2() {
-    use std::{
-        sync::{Arc, Mutex},
-        time::Instant,
-    };
+    use std::time::Instant;
 
     use plonky2::{
         iop::witness::PartialWitness,
@@ -451,10 +448,8 @@ fn test_purge_proof_by_plonky2() {
 
     let user_address = GoldilocksHashOut::from_u128(4);
 
-    let mut world_state_tree = PoseidonSparseMerkleTree::new(
-        Arc::new(Mutex::new(NodeDataMemory::default())),
-        Default::default(),
-    );
+    let mut world_state_tree =
+        PoseidonSparseMerkleTree::new(NodeDataMemory::default(), Default::default());
 
     let mut user_asset_tree = LayeredLayeredPoseidonSparseMerkleTree::<NodeDataMemory>::default();
 

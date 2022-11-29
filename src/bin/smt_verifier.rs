@@ -1,5 +1,5 @@
 use intmax_zkp_core::sparse_merkle_tree::goldilocks_poseidon::{
-    GoldilocksHashOut, NodeDataMemory, PoseidonSparseMerkleTree,
+    GoldilocksHashOut, NodeDataMemory, PoseidonSparseMerkleTree, PoseidonSparseMerkleTreeMemory,
 };
 use plonky2::{field::types::Sample, hash::hash_types::HashOut};
 
@@ -7,8 +7,7 @@ fn main() {
     use rand::Rng;
     let mut rng = rand::thread_rng();
     let zero = GoldilocksHashOut::default();
-    let mut tree: PoseidonSparseMerkleTree<NodeDataMemory> =
-        PoseidonSparseMerkleTree::new(Default::default(), Default::default());
+    let mut tree = PoseidonSparseMerkleTreeMemory::new(Default::default(), Default::default());
     let key1 = GoldilocksHashOut::from_u128(1);
     let value1 = GoldilocksHashOut::from_u128(2);
     let mut proof = tree.insert(key1, value1).unwrap();

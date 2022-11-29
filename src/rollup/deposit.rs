@@ -11,6 +11,7 @@ use crate::{
         gadgets::verify::verify_smt::SmtInclusionProof,
         goldilocks_poseidon::{
             LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory, PoseidonSparseMerkleTree,
+            RootDataMemory,
         },
     },
     zkdsa::account::Address,
@@ -22,7 +23,7 @@ pub fn make_partial_deposit_proof(
     num_log_txs: usize,
 ) -> MerkleProof<GoldilocksField> {
     let mut inner_deposit_tree =
-        LayeredLayeredPoseidonSparseMerkleTree::<NodeDataMemory>::default();
+        LayeredLayeredPoseidonSparseMerkleTree::<NodeDataMemory, RootDataMemory>::default();
     for leaf in deposit_list {
         inner_deposit_tree
             .set(
@@ -35,7 +36,8 @@ pub fn make_partial_deposit_proof(
     }
 
     let deposit_nonce = HashOut::ZERO;
-    let deposit_diff_root = PoseidonHash::two_to_one(*inner_deposit_tree.get_root(), deposit_nonce);
+    let deposit_diff_root =
+        PoseidonHash::two_to_one(*inner_deposit_tree.get_root().unwrap(), deposit_nonce);
 
     get_merkle_proof(&[deposit_diff_root.into()], 0, num_log_txs)
 }
@@ -50,7 +52,7 @@ pub fn make_deposit_proof(
     SmtInclusionProof<GoldilocksField>,
 ) {
     let mut inner_deposit_tree =
-        LayeredLayeredPoseidonSparseMerkleTree::<NodeDataMemory>::default();
+        LayeredLayeredPoseidonSparseMerkleTree::<NodeDataMemory, RootDataMemory>::default();
     for leaf in deposit_list {
         inner_deposit_tree
             .set(
@@ -63,11 +65,13 @@ pub fn make_deposit_proof(
     }
 
     let deposit_nonce = HashOut::ZERO;
-    let deposit_diff_root = PoseidonHash::two_to_one(*inner_deposit_tree.get_root(), deposit_nonce);
+    let deposit_diff_root =
+        PoseidonHash::two_to_one(*inner_deposit_tree.get_root().unwrap(), deposit_nonce);
 
     let deposit_proof1 = get_merkle_proof(&[deposit_diff_root.into()], 0, num_log_txs);
 
-    let inner_deposit_tree: PoseidonSparseMerkleTree<NodeDataMemory> = inner_deposit_tree.into();
+    let inner_deposit_tree: PoseidonSparseMerkleTree<NodeDataMemory, RootDataMemory> =
+        inner_deposit_tree.into();
     let deposit_proof2 = inner_deposit_tree
         .find(&receiver_address.to_hash_out().into())
         .unwrap();

@@ -8,6 +8,8 @@ use plonky2::{
     plonk::config::Hasher,
 };
 
+use crate::sparse_merkle_tree::root_data::RootData;
+
 use super::super::{
     goldilocks_poseidon::{GoldilocksHashOut, Wrapper},
     node_data::NodeData,
@@ -22,7 +24,9 @@ type K = GoldilocksHashOut;
 type V = GoldilocksHashOut;
 type I = GoldilocksHashOut;
 
-impl<H: NodeHash<K, V, I>, D: NodeData<K, V, I>> StorageLayout for SparseMerkleTree<K, V, I, H, D> {
+impl<H: NodeHash<K, V, I>, D: NodeData<K, V, I>, R: RootData<I>> StorageLayout
+    for SparseMerkleTree<K, V, I, H, D, R>
+{
     type Position = K;
     type VectorIndex = u128;
     type MappingKey = K;

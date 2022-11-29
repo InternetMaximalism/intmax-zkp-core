@@ -122,6 +122,29 @@ impl RootData<I> for RootDataMemory {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct RootDataTmp(pub I);
+
+impl From<I> for RootDataTmp {
+    fn from(value: I) -> Self {
+        Self(value)
+    }
+}
+
+impl RootData<I> for RootDataTmp {
+    type Error = anyhow::Error;
+
+    fn get(&self) -> Result<I, Self::Error> {
+        Ok(self.0)
+    }
+
+    fn set(&mut self, root: I) -> Result<(), Self::Error> {
+        let _ = std::mem::replace(self, Self(root));
+
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PoseidonNodeHash {}
 
@@ -150,9 +173,18 @@ impl NodeHash<K, V, I> for PoseidonNodeHash {
     }
 }
 
-pub type PoseidonSparseMerkleTree<D> = SparseMerkleTree<K, V, I, PoseidonNodeHash, D>;
+pub type PoseidonSparseMerkleTree<D, R> = SparseMerkleTree<K, V, I, PoseidonNodeHash, D, R>;
 
-pub type LayeredPoseidonSparseMerkleTree<D> = LayeredSparseMerkleTree<K, V, I, PoseidonNodeHash, D>;
+pub type LayeredPoseidonSparseMerkleTree<D, R> =
+    LayeredSparseMerkleTree<K, V, I, PoseidonNodeHash, D, R>;
 
-pub type LayeredLayeredPoseidonSparseMerkleTree<D> =
-    LayeredLayeredSparseMerkleTree<K, V, I, PoseidonNodeHash, D>;
+pub type LayeredLayeredPoseidonSparseMerkleTree<D, R> =
+    LayeredLayeredSparseMerkleTree<K, V, I, PoseidonNodeHash, D, R>;
+
+pub type PoseidonSparseMerkleTreeMemory = PoseidonSparseMerkleTree<NodeDataMemory, RootDataMemory>;
+
+pub type LayeredPoseidonSparseMerkleTreeMemory =
+    LayeredPoseidonSparseMerkleTree<NodeDataMemory, RootDataMemory>;
+
+pub type LayeredLayeredPoseidonSparseMerkleTreeMemory =
+    LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory, RootDataMemory>;

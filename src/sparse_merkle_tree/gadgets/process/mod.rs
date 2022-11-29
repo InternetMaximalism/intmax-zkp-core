@@ -16,7 +16,7 @@ fn test_verify_process_proof_by_plonky2() {
 
     use super::super::{
         gadgets::process::process_smt::SparseMerkleProcessProofTarget,
-        goldilocks_poseidon::{GoldilocksHashOut, NodeDataMemory, PoseidonSparseMerkleTree},
+        goldilocks_poseidon::{GoldilocksHashOut, PoseidonSparseMerkleTreeMemory},
     };
 
     const D: usize = 2; // extension degree
@@ -26,8 +26,7 @@ fn test_verify_process_proof_by_plonky2() {
     // type F = GoldilocksField;
     const N_LEVELS: usize = 16;
 
-    let mut tree: PoseidonSparseMerkleTree<NodeDataMemory> =
-        PoseidonSparseMerkleTree::new(Default::default(), Default::default());
+    let mut tree = PoseidonSparseMerkleTreeMemory::new(Default::default(), Default::default());
     let key1 = GoldilocksHashOut::from_u128(1);
     let value1 = GoldilocksHashOut::from_u128(2);
 

@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::Ok;
 use num::Integer;
@@ -52,18 +55,17 @@ type K = GoldilocksHashOut;
 type V = GoldilocksHashOut;
 type I = GoldilocksHashOut;
 
+#[allow(clippy::type_complexity)]
 #[derive(Clone, Debug, Default)]
 pub struct NodeDataMemory {
-    pub nodes: HashMap<K, Node<K, V, I>>,
+    pub nodes: Arc<Mutex<HashMap<K, Node<K, V, I>>>>,
 }
 
 impl NodeData<K, V, I> for NodeDataMemory {
     type Error = anyhow::Error;
 
     fn get(&self, key: &K) -> Result<Option<Node<K, V, I>>, Self::Error> {
-        let result = self.nodes.get(key);
-
-        if let Some(some_data) = result {
+        if let Some(some_data) = self.nodes.lock().expect("mutex poison error").get(key) {
             Ok(Some(some_data.clone()))
         } else {
             Ok(None)
@@ -72,7 +74,10 @@ impl NodeData<K, V, I> for NodeDataMemory {
 
     fn multi_insert(&mut self, insert_entries: Vec<(K, Node<K, V, I>)>) -> Result<(), Self::Error> {
         for (key, value) in insert_entries {
-            self.nodes.insert(key, value);
+            self.nodes
+                .lock()
+                .expect("mutex poison error")
+                .insert(key, value);
         }
 
         Ok(())
@@ -117,6 +122,29 @@ impl RootData<I> for RootDataMemory {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct RootDataTmp(pub I);
+
+impl From<I> for RootDataTmp {
+    fn from(value: I) -> Self {
+        Self(value)
+    }
+}
+
+impl RootData<I> for RootDataTmp {
+    type Error = anyhow::Error;
+
+    fn get(&self) -> Result<I, Self::Error> {
+        Ok(self.0)
+    }
+
+    fn set(&mut self, root: I) -> Result<(), Self::Error> {
+        let _ = std::mem::replace(self, Self(root));
+
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PoseidonNodeHash {}
 
@@ -145,9 +173,18 @@ impl NodeHash<K, V, I> for PoseidonNodeHash {
     }
 }
 
-pub type PoseidonSparseMerkleTree<D> = SparseMerkleTree<K, V, I, PoseidonNodeHash, D>;
+pub type PoseidonSparseMerkleTree<D, R> = SparseMerkleTree<K, V, I, PoseidonNodeHash, D, R>;
 
-pub type LayeredPoseidonSparseMerkleTree<D> = LayeredSparseMerkleTree<K, V, I, PoseidonNodeHash, D>;
+pub type LayeredPoseidonSparseMerkleTree<D, R> =
+    LayeredSparseMerkleTree<K, V, I, PoseidonNodeHash, D, R>;
 
-pub type LayeredLayeredPoseidonSparseMerkleTree<D> =
-    LayeredLayeredSparseMerkleTree<K, V, I, PoseidonNodeHash, D>;
+pub type LayeredLayeredPoseidonSparseMerkleTree<D, R> =
+    LayeredLayeredSparseMerkleTree<K, V, I, PoseidonNodeHash, D, R>;
+
+pub type PoseidonSparseMerkleTreeMemory = PoseidonSparseMerkleTree<NodeDataMemory, RootDataMemory>;
+
+pub type LayeredPoseidonSparseMerkleTreeMemory =
+    LayeredPoseidonSparseMerkleTree<NodeDataMemory, RootDataMemory>;
+
+pub type LayeredLayeredPoseidonSparseMerkleTreeMemory =
+    LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory, RootDataMemory>;

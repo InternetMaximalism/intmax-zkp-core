@@ -13,7 +13,7 @@ use plonky2::{
 
 use intmax_zkp_core::sparse_merkle_tree::{
     gadgets::process::process_smt::SparseMerkleProcessProofTarget,
-    goldilocks_poseidon::{GoldilocksHashOut, NodeDataMemory, PoseidonSparseMerkleTree},
+    goldilocks_poseidon::{GoldilocksHashOut, PoseidonSparseMerkleTreeMemory},
 };
 
 const D: usize = 2; // extension degree
@@ -42,8 +42,7 @@ fn main() {
 }
 
 fn benchmark() {
-    let mut tree: PoseidonSparseMerkleTree<NodeDataMemory> =
-        PoseidonSparseMerkleTree::new(Default::default(), Default::default());
+    let mut tree = PoseidonSparseMerkleTreeMemory::new(Default::default(), Default::default());
     let key1 = GoldilocksHashOut::from_u128(1);
     let value1 = GoldilocksHashOut::from_u128(2);
 

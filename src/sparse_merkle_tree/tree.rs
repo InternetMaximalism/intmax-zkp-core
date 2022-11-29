@@ -1,13 +1,10 @@
-use std::{
-    fmt::Debug,
-    hash::Hash,
-    sync::{Arc, Mutex},
-};
+use std::{fmt::Debug, hash::Hash};
 
 use super::{
     node_data::{Node, NodeData},
     node_hash::NodeHash,
     proof::{ProcessMerkleProofRole, SparseMerkleInclusionProof, SparseMerkleProcessProof},
+    root_data::RootData,
 };
 
 #[derive(Debug)]
@@ -17,23 +14,26 @@ pub struct SparseMerkleTree<
     I: Sized,
     H: NodeHash<K, V, I>,
     D: NodeData<K, V, I>,
+    R: RootData<I>,
 > {
-    pub nodes_db: Arc<Mutex<D>>,
-    pub root: I,
+    pub nodes_db: D,
+    pub roots_db: R,
     pub _key: std::marker::PhantomData<K>,
     pub _value: std::marker::PhantomData<V>,
+    pub _root: std::marker::PhantomData<I>,
     pub _hash: std::marker::PhantomData<H>,
 }
 
-impl<K: Sized, V: Sized, I: Sized, H: NodeHash<K, V, I>, D: NodeData<K, V, I>>
-    SparseMerkleTree<K, V, I, H, D>
+impl<K: Sized, V: Sized, I: Sized, H: NodeHash<K, V, I>, D: NodeData<K, V, I>, R: RootData<I>>
+    SparseMerkleTree<K, V, I, H, D, R>
 {
-    pub fn new(nodes_db: Arc<Mutex<D>>, root_hash: I) -> Self {
+    pub fn new(nodes_db: D, roots_db: R) -> Self {
         Self {
             nodes_db,
-            root: root_hash,
+            roots_db,
             _key: std::marker::PhantomData,
             _value: std::marker::PhantomData,
+            _root: std::marker::PhantomData,
             _hash: std::marker::PhantomData,
         }
     }
@@ -45,7 +45,8 @@ impl<
         I: Sized + Default,
         H: NodeHash<K, V, I>,
         D: NodeData<K, V, I> + Default,
-    > Default for SparseMerkleTree<K, V, I, H, D>
+        R: RootData<I> + Default,
+    > Default for SparseMerkleTree<K, V, I, H, D, R>
 {
     fn default() -> Self {
         Self::new(Default::default(), Default::default())
@@ -60,23 +61,24 @@ pub trait ValueLike: Copy + PartialEq + Debug + Default {}
 
 pub trait HashLike: Copy + PartialEq + Debug + Default {}
 
-impl<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeData<K, V, I>>
-    SparseMerkleTree<K, V, I, H, D>
+impl<
+        K: KeyLike,
+        V: ValueLike,
+        I: HashLike,
+        H: NodeHash<K, V, I>,
+        D: NodeData<K, V, I>,
+        R: RootData<I>,
+    > SparseMerkleTree<K, V, I, H, D, R>
 {
-    pub fn get_root(&self) -> I {
-        self.root
+    pub fn get_root(&self) -> Result<I, R::Error> {
+        self.roots_db.get()
     }
 
     pub fn change_root(&mut self, root_hash: I) -> anyhow::Result<()> {
         if !I::default().eq(&root_hash) {
-            let root_node = self
-                .nodes_db
-                .lock()
-                .map_err(|err| anyhow::anyhow!("mutex poison error: {}", err))?
-                .get(&root_hash)
-                .map_err(|err| {
-                    anyhow::anyhow!("fail to get node corresponding `root_hash`: {:?}", err)
-                })?;
+            let root_node = self.nodes_db.get(&root_hash).map_err(|err| {
+                anyhow::anyhow!("fail to get node corresponding `root_hash`: {:?}", err)
+            })?;
             if root_node.is_none() {
                 return Err(anyhow::anyhow!(
                     "the node corresponding `root_hash` does not exist"
@@ -84,7 +86,9 @@ impl<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeData<K,
             }
         }
 
-        self.root = root_hash;
+        self.roots_db
+            .set(root_hash)
+            .map_err(|err| anyhow::anyhow!("{:?}", err))?;
 
         Ok(())
     }
@@ -94,8 +98,14 @@ impl<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeData<K,
         key: &K,
         new_value: &V,
     ) -> anyhow::Result<SparseMerkleProcessProof<K, V, I>> {
-        let result = update::<K, V, I, H, D>(&mut self.nodes_db, &self.root, key, *new_value)?;
-        self.root = result.new_root;
+        let root = self
+            .roots_db
+            .get()
+            .map_err(|err| anyhow::anyhow!("{:?}", err))?;
+        let result = update::<K, V, I, H, D>(&mut self.nodes_db, &root, key, *new_value)?;
+        self.roots_db
+            .set(result.new_root)
+            .map_err(|err| anyhow::anyhow!("{:?}", err))?;
 
         Ok(result)
     }
@@ -105,33 +115,58 @@ impl<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeData<K,
         key: K,
         value: V,
     ) -> anyhow::Result<SparseMerkleProcessProof<K, V, I>> {
-        let result = insert::<K, V, I, H, D>(&mut self.nodes_db, &self.root, key, value)?;
-        self.root = result.new_root;
+        let root = self
+            .roots_db
+            .get()
+            .map_err(|err| anyhow::anyhow!("{:?}", err))?;
+        let result = insert::<K, V, I, H, D>(&mut self.nodes_db, &root, key, value)?;
+        self.roots_db
+            .set(result.new_root)
+            .map_err(|err| anyhow::anyhow!("{:?}", err))?;
 
         Ok(result)
     }
 
     pub fn remove(&mut self, key: &K) -> anyhow::Result<SparseMerkleProcessProof<K, V, I>> {
-        let result = remove::<K, V, I, H, D>(&mut self.nodes_db, &self.root, key)?;
-        self.root = result.new_root;
+        let root = self
+            .roots_db
+            .get()
+            .map_err(|err| anyhow::anyhow!("{:?}", err))?;
+        let result = remove::<K, V, I, H, D>(&mut self.nodes_db, &root, key)?;
+        self.roots_db
+            .set(result.new_root)
+            .map_err(|err| anyhow::anyhow!("{:?}", err))?;
 
         Ok(result)
     }
 
     pub fn set(&mut self, key: K, value: V) -> anyhow::Result<SparseMerkleProcessProof<K, V, I>> {
-        let result =
-            calc_process_proof::<K, V, I, H, D>(&mut self.nodes_db, &self.root, key, value)?;
-        self.root = result.new_root;
+        let root = self
+            .roots_db
+            .get()
+            .map_err(|err| anyhow::anyhow!("{:?}", err))?;
+        let result = calc_process_proof::<K, V, I, H, D>(&mut self.nodes_db, &root, key, value)?;
+        self.roots_db
+            .set(result.new_root)
+            .map_err(|err| anyhow::anyhow!("{:?}", err))?;
 
         Ok(result)
     }
 
     pub fn find(&self, key: &K) -> anyhow::Result<SparseMerkleInclusionProof<K, V, I>> {
-        calc_inclusion_proof::<K, V, I, H, D>(&self.nodes_db, &self.root, key)
+        let root = self
+            .roots_db
+            .get()
+            .map_err(|err| anyhow::anyhow!("{:?}", err))?;
+        calc_inclusion_proof::<K, V, I, H, D>(&self.nodes_db, &root, key)
     }
 
     pub fn get(&self, key: &K) -> anyhow::Result<V> {
-        get::<K, V, I, H, D>(&self.nodes_db, &self.root, key)
+        let root = self
+            .roots_db
+            .get()
+            .map_err(|err| anyhow::anyhow!("{:?}", err))?;
+        get::<K, V, I, H, D>(&self.nodes_db, &root, key)
     }
 }
 
@@ -142,7 +177,7 @@ pub(crate) fn update<
     H: NodeHash<K, V, I>,
     D: NodeData<K, V, I>,
 >(
-    nodes_db: &mut Arc<Mutex<D>>,
+    nodes_db: &mut D,
     root: &I,
     key: &K,
     new_value: V,
@@ -195,9 +230,6 @@ pub(crate) fn update<
     }
 
     {
-        let mut nodes_db = nodes_db
-            .lock()
-            .map_err(|err| anyhow::anyhow!("mutex poison error: {}", err))?;
         nodes_db
             .multi_delete(&delete_keys)
             .map_err(|_| anyhow::anyhow!("fail to delete multiple entries"))?;
@@ -230,7 +262,7 @@ pub(crate) fn insert<
     H: NodeHash<K, V, I>,
     D: NodeData<K, V, I>,
 >(
-    nodes_db: &mut Arc<Mutex<D>>,
+    nodes_db: &mut D,
     root: &I,
     key: K,
     value: V,
@@ -337,9 +369,6 @@ pub(crate) fn insert<
     }
 
     {
-        let mut nodes_db = nodes_db
-            .lock()
-            .map_err(|err| anyhow::anyhow!("mutex poison error: {}", err))?;
         nodes_db
             .multi_delete(&delete_keys)
             .map_err(|_| anyhow::anyhow!("fail to delete multiple entries"))?;
@@ -373,7 +402,7 @@ pub(crate) fn remove<
     H: NodeHash<K, V, I>,
     D: NodeData<K, V, I>,
 >(
-    nodes_db: &mut Arc<Mutex<D>>,
+    nodes_db: &mut D,
     root: &I,
     key: &K,
 ) -> anyhow::Result<SparseMerkleProcessProof<K, V, I>> {
@@ -399,8 +428,6 @@ pub(crate) fn remove<
     {
         let res_last_sibling = res_find.siblings.last().unwrap();
         let next_node = nodes_db
-            .lock()
-            .map_err(|err| anyhow::anyhow!("mutex poison error: {}", err))?
             .get(res_last_sibling)
             .map_err(|_| anyhow::anyhow!(""))?;
         match next_node {
@@ -479,9 +506,6 @@ pub(crate) fn remove<
     }
 
     {
-        let mut nodes_db = nodes_db
-            .lock()
-            .map_err(|err| anyhow::anyhow!("mutex poison error: {}", err))?;
         nodes_db
             .multi_delete(&delete_keys)
             .map_err(|_| anyhow::anyhow!("fail to delete multiple entries"))?;
@@ -527,7 +551,7 @@ pub(crate) fn noop<
     H: NodeHash<K, V, I>,
     D: NodeData<K, V, I>,
 >(
-    _nodes_db: &Arc<Mutex<D>>,
+    _nodes_db: &D,
     root: &I,
     key: &K,
 ) -> anyhow::Result<SparseMerkleProcessProof<K, V, I>> {
@@ -558,7 +582,7 @@ pub fn calc_process_proof<
     H: NodeHash<K, V, I>,
     D: NodeData<K, V, I>,
 >(
-    nodes_db: &mut Arc<Mutex<D>>,
+    nodes_db: &mut D,
     root: &I,
     key: K,
     value: V,
@@ -585,7 +609,7 @@ pub(crate) fn find<
     H: NodeHash<K, V, I>,
     D: NodeData<K, V, I>,
 >(
-    nodes_db: &Arc<Mutex<D>>,
+    nodes_db: &D,
     root: &I,
     key: &K,
 ) -> anyhow::Result<SparseMerkleInclusionProof<K, V, I>> {
@@ -595,7 +619,7 @@ pub(crate) fn find<
 }
 
 fn find_rec<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeData<K, V, I>>(
-    nodes_db: &Arc<Mutex<D>>,
+    nodes_db: &D,
     root: &I,
     key: &K,
     key_bits: &[bool],
@@ -615,8 +639,6 @@ fn find_rec<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: Node
     }
 
     let root_node = nodes_db
-        .lock()
-        .map_err(|err| anyhow::anyhow!("mutex poison error: {}", err))?
         .get(root)
         .map_err(|err| anyhow::anyhow!("fail to fetch the root node: {:?}", err))?;
     match root_node {
@@ -677,7 +699,7 @@ pub fn calc_inclusion_proof<
     H: NodeHash<K, V, I>,
     D: NodeData<K, V, I>,
 >(
-    nodes_db: &Arc<Mutex<D>>,
+    nodes_db: &D,
     root: &I,
     key: &K,
 ) -> anyhow::Result<SparseMerkleInclusionProof<K, V, I>> {
@@ -685,7 +707,7 @@ pub fn calc_inclusion_proof<
 }
 
 pub fn get<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeData<K, V, I>>(
-    nodes_db: &Arc<Mutex<D>>,
+    nodes_db: &D,
     root: &I,
     key: &K,
 ) -> anyhow::Result<V> {

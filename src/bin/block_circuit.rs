@@ -1,7 +1,4 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::Instant,
-};
+use std::time::Instant;
 
 use plonky2::{
     field::{
@@ -25,8 +22,9 @@ use intmax_zkp_core::{
     },
     sparse_merkle_tree::{
         goldilocks_poseidon::{
-            GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory,
-            PoseidonSparseMerkleTree, WrappedHashOut,
+            GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree,
+            LayeredLayeredPoseidonSparseMerkleTreeMemory, NodeDataMemory, PoseidonSparseMerkleTree,
+            PoseidonSparseMerkleTreeMemory, WrappedHashOut,
         },
         proof::SparseMerkleInclusionProof,
     },
@@ -60,10 +58,8 @@ fn main() {
     const N_TXS: usize = 2usize.pow(N_LOG_TXS as u32);
     const N_BLOCKS: usize = 2;
 
-    let mut world_state_tree = PoseidonSparseMerkleTree::new(
-        Arc::new(Mutex::new(NodeDataMemory::default())),
-        Default::default(),
-    );
+    let mut world_state_tree =
+        PoseidonSparseMerkleTreeMemory::new(Default::default(), Default::default());
 
     let merge_and_purge_circuit = make_user_proof_circuit::<
         F,
@@ -94,11 +90,11 @@ fn main() {
     let sender1_account = private_key_to_account(sender1_private_key);
     let sender1_address = sender1_account.address.0;
 
-    let mut sender1_user_asset_tree: LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory> =
-        LayeredLayeredPoseidonSparseMerkleTree::new(Default::default(), Default::default());
+    let mut sender1_user_asset_tree =
+        LayeredLayeredPoseidonSparseMerkleTreeMemory::new(Default::default(), Default::default());
 
-    let mut sender1_tx_diff_tree: LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory> =
-        LayeredLayeredPoseidonSparseMerkleTree::new(Default::default(), Default::default());
+    let mut sender1_tx_diff_tree =
+        LayeredLayeredPoseidonSparseMerkleTreeMemory::new(Default::default(), Default::default());
 
     let key1 = (
         GoldilocksHashOut::from_u128(12),
@@ -137,7 +133,7 @@ fn main() {
     world_state_tree
         .set(
             sender1_account.address.0.into(),
-            sender1_user_asset_tree.get_root(),
+            sender1_user_asset_tree.get_root().unwrap(),
         )
         .unwrap();
 
@@ -170,12 +166,12 @@ fn main() {
     let sender2_account = private_key_to_account(sender2_private_key);
     let sender2_address = sender2_account.address.0;
 
-    let node_data = Arc::new(Mutex::new(NodeDataMemory::default()));
+    let node_data = NodeDataMemory::default();
     let mut sender2_user_asset_tree =
         PoseidonSparseMerkleTree::new(node_data.clone(), Default::default());
 
     let mut sender2_tx_diff_tree =
-        LayeredLayeredPoseidonSparseMerkleTree::new(node_data.clone(), Default::default());
+        LayeredLayeredPoseidonSparseMerkleTreeMemory::new(node_data.clone(), Default::default());
 
     let mut deposit_sender2_tree =
         LayeredLayeredPoseidonSparseMerkleTree::new(node_data, Default::default());
@@ -187,8 +183,7 @@ fn main() {
         .set(sender2_address.into(), key2.1, key2.2, value2)
         .unwrap();
 
-    let deposit_sender2_tree: PoseidonSparseMerkleTree<NodeDataMemory> =
-        deposit_sender2_tree.into();
+    let deposit_sender2_tree: PoseidonSparseMerkleTreeMemory = deposit_sender2_tree.into();
 
     let merge_inclusion_proof2 = deposit_sender2_tree.find(&sender2_address.into()).unwrap();
 
@@ -234,10 +229,13 @@ fn main() {
     };
 
     world_state_tree
-        .set(sender2_address.into(), sender2_user_asset_tree.get_root())
+        .set(
+            sender2_address.into(),
+            sender2_user_asset_tree.get_root().unwrap(),
+        )
         .unwrap();
 
-    let mut sender2_user_asset_tree: LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory> =
+    let mut sender2_user_asset_tree: LayeredLayeredPoseidonSparseMerkleTreeMemory =
         sender2_user_asset_tree.into();
     let proof1 = sender2_user_asset_tree
         .set(deposit_merge_key, key2.1, key2.2, zero)
@@ -332,13 +330,19 @@ fn main() {
     let mut user_tx_proofs = vec![];
 
     let sender1_world_state_process_proof = world_state_tree
-        .set(sender1_address.into(), sender1_user_asset_tree.get_root())
+        .set(
+            sender1_address.into(),
+            sender1_user_asset_tree.get_root().unwrap(),
+        )
         .unwrap();
 
     // dbg!(serde_json::to_string(&sender1_world_state_process_proof).unwrap());
 
     let sender2_world_state_process_proof = world_state_tree
-        .set(sender2_address.into(), sender2_user_asset_tree.get_root())
+        .set(
+            sender2_address.into(),
+            sender2_user_asset_tree.get_root().unwrap(),
+        )
         .unwrap();
 
     world_state_process_proofs.push(sender1_world_state_process_proof);
@@ -352,7 +356,7 @@ fn main() {
     zkdsa_circuit.targets.set_witness(
         &mut pw,
         sender1_account.private_key,
-        *world_state_tree.get_root(),
+        *world_state_tree.get_root().unwrap(),
     );
 
     println!("start proving: sender1_received_signature");
@@ -367,7 +371,7 @@ fn main() {
     zkdsa_circuit.targets.set_witness(
         &mut pw,
         sender2_account.private_key,
-        *world_state_tree.get_root(),
+        *world_state_tree.get_root().unwrap(),
     );
 
     println!("start proving: sender2_received_signature");
@@ -414,7 +418,7 @@ fn main() {
         (Some(sender2_received_signature), sender2_tx_proof),
     ];
 
-    let mut latest_account_tree: PoseidonSparseMerkleTree<NodeDataMemory> =
+    let mut latest_account_tree: PoseidonSparseMerkleTreeMemory =
         PoseidonSparseMerkleTree::new(Default::default(), Default::default());
 
     // NOTICE: merge proof の中に deposit が混ざっていると, revert proof がうまく出せない場合がある.
@@ -475,7 +479,7 @@ fn main() {
         amount: GoldilocksField::from_noncanonical_u64(1),
     }];
 
-    let mut deposit_tree: LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory> =
+    let mut deposit_tree: LayeredLayeredPoseidonSparseMerkleTreeMemory =
         LayeredLayeredPoseidonSparseMerkleTree::new(Default::default(), Default::default());
     let deposit_process_proofs = deposit_list
         .iter()

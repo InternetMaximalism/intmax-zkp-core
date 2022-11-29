@@ -4,6 +4,8 @@ use plonky2::field::{
     types::{Field, PrimeField},
 };
 
+use crate::sparse_merkle_tree::root_data::RootData;
+
 use super::super::{
     goldilocks_poseidon::{GoldilocksHashOut, Wrapper},
     layered_layered_tree::LayeredLayeredSparseMerkleTree,
@@ -21,8 +23,8 @@ type K = GoldilocksHashOut;
 type V = GoldilocksHashOut;
 type I = GoldilocksHashOut;
 
-impl<H: NodeHash<K, V, I>, D: NodeData<K, V, I>> StorageLayout
-    for LayeredLayeredSparseMerkleTree<K, V, I, H, D>
+impl<H: NodeHash<K, V, I>, D: NodeData<K, V, I>, R: RootData<I>> StorageLayout
+    for LayeredLayeredSparseMerkleTree<K, V, I, H, D, R>
 {
     type Position = (K, K, K); // (contract_address, position)
     type VectorIndex = u128;

@@ -22,6 +22,7 @@ use crate::{
             },
         },
         goldilocks_poseidon::WrappedHashOut,
+        proof::ProcessMerkleProofRole,
     },
     zkdsa::{account::Address, gadgets::account::AddressTarget},
 };
@@ -150,6 +151,11 @@ impl<
         assert!(input_witness.len() <= self.input_proofs.len());
         for ((p0_t, p1_t, p2_t), (w0, w1, w2)) in self.input_proofs.iter().zip(input_witness.iter())
         {
+            assert_eq!(w2.fnc, ProcessMerkleProofRole::ProcessDelete);
+            assert!(w2.old_value.elements[0].to_canonical_u64() < 1u64 << 56);
+            assert_eq!(w2.old_value.elements[1], F::ZERO);
+            assert_eq!(w2.old_value.elements[2], F::ZERO);
+            assert_eq!(w2.old_value.elements[3], F::ZERO);
             p0_t.set_witness(pw, w0);
             p1_t.set_witness(pw, w1);
             p2_t.set_witness(pw, w2);
@@ -184,6 +190,11 @@ impl<
         for ((p0_t, p1_t, p2_t), (w0, w1, w2)) in
             self.output_proofs.iter().zip(output_witness.iter())
         {
+            assert_eq!(w2.fnc, ProcessMerkleProofRole::ProcessInsert);
+            assert!(w2.old_value.elements[0].to_canonical_u64() < 1u64 << 56);
+            assert_eq!(w2.old_value.elements[1], F::ZERO);
+            assert_eq!(w2.old_value.elements[2], F::ZERO);
+            assert_eq!(w2.old_value.elements[3], F::ZERO);
             p0_t.set_witness(pw, w0);
             p1_t.set_witness(pw, w1);
             p2_t.set_witness(pw, w2);

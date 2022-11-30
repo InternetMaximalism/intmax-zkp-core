@@ -63,7 +63,7 @@ pub struct MergeProofTarget<
         SparseMerkleInclusionProofTarget<N_LOG_RECIPIENTS>,
     ),
     pub merge_process_proof: SparseMerkleProcessProofTarget<N_LOG_MAX_TXS>,
-    pub address_list_inclusion_proof: SparseMerkleInclusionProofTarget<N_LOG_MAX_USERS>,
+    pub latest_account_tree_inclusion_proof: SparseMerkleInclusionProofTarget<N_LOG_MAX_USERS>,
     pub nonce: HashOutTarget,
 }
 
@@ -104,11 +104,8 @@ impl<
                 merge_process_proof: SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(
                     builder,
                 ),
-                address_list_inclusion_proof: SparseMerkleInclusionProofTarget::add_virtual_to::<
-                    F,
-                    H,
-                    D,
-                >(builder),
+                latest_account_tree_inclusion_proof:
+                    SparseMerkleInclusionProofTarget::add_virtual_to::<F, H, D>(builder),
                 nonce: builder.add_virtual_hash(),
             };
 
@@ -238,7 +235,7 @@ impl<
                 .set_witness(pw, &witness.merge_process_proof);
 
             // deposit でないときのみ検証する
-            target.address_list_inclusion_proof.set_witness(
+            target.latest_account_tree_inclusion_proof.set_witness(
                 pw,
                 &witness.latest_account_tree_inclusion_proof,
                 !witness.is_deposit,
@@ -273,9 +270,11 @@ impl<
                 .merge_process_proof
                 .set_witness(pw, &default_process_proof);
 
-            target
-                .address_list_inclusion_proof
-                .set_witness(pw, &default_inclusion_proof, false);
+            target.latest_account_tree_inclusion_proof.set_witness(
+                pw,
+                &default_inclusion_proof,
+                false,
+            );
             pw.set_hash_target(target.nonce, HashOut::ZERO);
         }
 
@@ -306,11 +305,11 @@ pub fn verify_user_asset_merge_proof<
         // is_deposit: actual_is_deposit,
         merge_process_proof,
         diff_tree_inclusion_proof,
-        address_list_inclusion_proof,
+        latest_account_tree_inclusion_proof,
         nonce,
     } in proofs
     {
-        let is_not_deposit = address_list_inclusion_proof.enabled;
+        let is_not_deposit = latest_account_tree_inclusion_proof.enabled;
 
         let ProcessMerkleProofRoleTarget {
             is_insert_op,
@@ -334,7 +333,7 @@ pub fn verify_user_asset_merge_proof<
         // ); // XXX
 
         let receiving_block_number = diff_tree_inclusion_proof.0.block_number;
-        let confirmed_block_number = address_list_inclusion_proof.value; // 最後に成功した block number
+        let confirmed_block_number = latest_account_tree_inclusion_proof.value; // 最後に成功した block number
 
         // purge のとき, latest_account_tree (active_account_tree) に正しい値が入っていることの検証
         {
@@ -389,7 +388,7 @@ pub fn verify_user_asset_merge_proof<
         enforce_equal_if_enabled(
             builder,
             diff_tree_inclusion_proof.0.latest_account_digest,
-            address_list_inclusion_proof.root,
+            latest_account_tree_inclusion_proof.root,
             is_not_no_op,
         );
         enforce_equal_if_enabled(

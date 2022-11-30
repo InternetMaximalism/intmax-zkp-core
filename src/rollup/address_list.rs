@@ -28,25 +28,16 @@ pub fn make_address_list<
 >(
     user_tx_proofs: &[MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>],
     received_signatures: &[Option<SimpleSignatureProofWithPublicInputs<F, C, D>>],
-    num_transactions: usize,
+    _num_transactions: usize,
 ) -> Vec<TransactionSenderWithValidity<F>> {
-    let mut address_list = vec![];
-    for (user_tx_proof, received_signature) in
-        user_tx_proofs.iter().zip_eq(received_signatures.iter())
-    {
-        address_list.push(TransactionSenderWithValidity {
-            sender_address: user_tx_proof.public_inputs.sender_address,
-            is_valid: received_signature.is_some(),
-        });
-    }
-
-    address_list.resize(
-        num_transactions,
-        TransactionSenderWithValidity {
-            sender_address: Address(HashOut::ZERO),
-            is_valid: false,
-        },
-    );
-
-    address_list
+    user_tx_proofs
+        .iter()
+        .zip_eq(received_signatures.iter())
+        .map(
+            |(user_tx_proof, received_signature)| TransactionSenderWithValidity {
+                sender_address: user_tx_proof.public_inputs.sender_address,
+                is_valid: received_signature.is_some(),
+            },
+        )
+        .collect::<Vec<_>>()
 }

@@ -58,6 +58,7 @@ pub fn get_merkle_proof<F: RichField>(
         leaves.to_vec()
     };
     assert!(index < nodes.len());
+    assert!(nodes.len() <= 1usize << depth);
     let num_leaves = nodes.len().next_power_of_two();
     let log_num_leaves = log2_ceil(num_leaves) as usize;
     let value = nodes[index];
@@ -71,7 +72,7 @@ pub fn get_merkle_proof<F: RichField>(
 
     let mut rest_index = index;
     for sibling in siblings.iter_mut().take(log_num_leaves) {
-        let _ = std::mem::replace(sibling, nodes[rest_index ^ 1]);
+        let _ = std::mem::replace(sibling, nodes[rest_index ^ 1]); // XXX: out of index が起こる
 
         let mut new_nodes: Vec<WrappedHashOut<F>> = vec![];
         for j in 0..(nodes.len() / 2) {
@@ -160,4 +161,28 @@ fn test_get_block_hash_tree_proofs() {
     } = get_merkle_proof(&leaves, index, N_LEVELS);
     assert_eq!(siblings, actual_siblings);
     assert_eq!(new_root, actual_new_root);
+}
+
+#[test]
+#[should_panic]
+fn test_get_block_hash_tree_proofs2() {
+    use plonky2::{
+        field::{goldilocks_field::GoldilocksField, types::Field},
+        hash::hash_types::HashOut,
+    };
+
+    type F = GoldilocksField;
+
+    let leaves = vec![0, 10, 20, 30, 40, 0]
+        .into_iter()
+        .map(|i| {
+            HashOut {
+                elements: [F::from_canonical_u32(i), F::ZERO, F::ZERO, F::ZERO],
+            }
+            .into()
+        })
+        .collect::<Vec<_>>();
+    const N_LEVELS: usize = 2;
+    let index = leaves.len() - 1;
+    get_merkle_proof(&leaves, index, N_LEVELS);
 }

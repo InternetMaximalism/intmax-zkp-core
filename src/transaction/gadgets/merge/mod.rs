@@ -188,7 +188,10 @@ impl<
             };
 
             assert_eq!(witness.merge_process_proof.new_key, merge_key);
-            assert_eq!(witness.merge_process_proof.old_value, Default::default());
+            assert_eq!(
+                witness.merge_process_proof.fnc,
+                ProcessMerkleProofRole::ProcessInsert
+            );
             assert_eq!(
                 witness.merge_process_proof.new_value,
                 witness.diff_tree_inclusion_proof.2.value,
@@ -309,8 +312,11 @@ pub fn verify_user_asset_merge_proof<
     {
         let is_not_deposit = address_list_inclusion_proof.enabled;
 
-        let ProcessMerkleProofRoleTarget { is_not_no_op, .. } =
-            get_process_merkle_proof_role::<F, D>(builder, merge_process_proof.fnc);
+        let ProcessMerkleProofRoleTarget {
+            is_insert_op,
+            is_not_no_op,
+            ..
+        } = get_process_merkle_proof_role::<F, D>(builder, merge_process_proof.fnc);
 
         let block_header_t = diff_tree_inclusion_proof.0.clone();
 
@@ -370,12 +376,10 @@ pub fn verify_user_asset_merge_proof<
         };
 
         // enforce_equal_if_enabled(builder, merge_process_proof.new_key, merge_key, is_not_no_op); // XXX
-        enforce_equal_if_enabled(
-            builder,
-            merge_process_proof.old_value,
-            default_hash,
-            is_not_no_op,
-        );
+
+        // noop でないならば insert である
+        builder.connect(is_not_no_op.target, is_insert_op.target);
+
         enforce_equal_if_enabled(
             builder,
             merge_process_proof.new_value,

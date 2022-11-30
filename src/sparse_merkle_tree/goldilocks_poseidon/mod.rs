@@ -95,13 +95,23 @@ impl NodeData<K, V, I> for NodeDataMemory {
 
 #[derive(Clone, Debug)]
 pub struct RootDataMemory {
-    pub roots: Vec<I>,
+    pub roots: Arc<Mutex<Vec<I>>>,
 }
 
 impl Default for RootDataMemory {
     fn default() -> Self {
+        let data = vec![Wrapper(HashOut::ZERO)];
         Self {
-            roots: vec![Wrapper(HashOut::ZERO)],
+            roots: Arc::new(Mutex::new(data)),
+        }
+    }
+}
+
+impl From<I> for RootDataMemory {
+    fn from(value: I) -> Self {
+        let data = vec![value];
+        Self {
+            roots: Arc::new(Mutex::new(data)),
         }
     }
 }
@@ -110,13 +120,13 @@ impl RootData<I> for RootDataMemory {
     type Error = anyhow::Error;
 
     fn get(&self) -> Result<I, Self::Error> {
-        let result = *self.roots.last().unwrap();
+        let result = *self.roots.lock().unwrap().last().unwrap();
 
         Ok(result)
     }
 
     fn set(&mut self, root: I) -> Result<(), Self::Error> {
-        self.roots.push(root);
+        self.roots.lock().unwrap().push(root);
 
         Ok(())
     }

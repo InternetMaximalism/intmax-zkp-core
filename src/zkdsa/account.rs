@@ -1,5 +1,8 @@
-use std::{fmt::Display, str::FromStr};
-
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::{fmt::Display, str::FromStr};
 use plonky2::{
     field::{
         goldilocks_field::GoldilocksField,
@@ -27,7 +30,7 @@ pub struct Address<F: Field>(pub HashOut<F>);
 pub struct SerializableAddress(#[serde(with = "SerHexSeq::<StrictPfx>")] pub Vec<u8>);
 
 impl<F: RichField> Display for Address<F> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let mut bytes = self.0.to_bytes(); // little endian
         bytes.reverse(); // big endian
 
@@ -72,7 +75,7 @@ impl<F: RichField> Serialize for Address<F> {
     where
         S: Serializer,
     {
-        let raw = format!("0x{}", self);
+        let raw = "0x".to_string() + &self.to_string();
 
         serializer.serialize_str(&raw)
     }
@@ -110,7 +113,7 @@ fn test_serialize_address() {
     assert_eq!(decoded_value, value);
 }
 
-impl<F: Field> std::ops::Deref for Address<F> {
+impl<F: Field> core::ops::Deref for Address<F> {
     type Target = HashOut<F>;
 
     fn deref(&self) -> &Self::Target {

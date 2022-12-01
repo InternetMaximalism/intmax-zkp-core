@@ -1,5 +1,6 @@
-use std::fmt::Debug;
-
+use alloc::vec;
+use alloc::vec::Vec;
+use core::fmt::Debug;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

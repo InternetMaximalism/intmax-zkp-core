@@ -1,3 +1,4 @@
+use alloc::vec;
 use plonky2::{
     field::extension::Extendable,
     hash::hash_types::{HashOutTarget, RichField},

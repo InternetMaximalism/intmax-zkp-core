@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use plonky2::{
     field::extension::Extendable,
     hash::{
@@ -386,6 +387,7 @@ pub fn verify_user_asset_purge_proof<
 }
 
 #[test]
+#[cfg(feature = "std")]
 fn test_purge_proof_by_plonky2() {
     use std::time::Instant;
 

@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 pub trait RootData<I: Sized> {
     type Error: 'static + Debug + Sync + Send;

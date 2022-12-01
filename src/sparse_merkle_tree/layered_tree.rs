@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 use super::{
     node_data::NodeData,
@@ -31,10 +31,10 @@ pub struct LayeredSparseMerkleTree<
 > {
     pub nodes_db: D,
     pub roots_db: R,
-    pub _key: std::marker::PhantomData<K>,
-    pub _value: std::marker::PhantomData<V>,
-    pub _root: std::marker::PhantomData<I>,
-    pub _hash: std::marker::PhantomData<H>,
+    pub _key: core::marker::PhantomData<K>,
+    pub _value: core::marker::PhantomData<V>,
+    pub _root: core::marker::PhantomData<I>,
+    pub _hash: core::marker::PhantomData<H>,
 }
 
 impl<K: Sized, V: Sized, I: Sized, H: NodeHash<K, V, I>, D: NodeData<K, V, I>, R: RootData<I>>
@@ -44,10 +44,10 @@ impl<K: Sized, V: Sized, I: Sized, H: NodeHash<K, V, I>, D: NodeData<K, V, I>, R
         Self {
             nodes_db: value.nodes_db,
             roots_db: value.roots_db,
-            _key: std::marker::PhantomData,
-            _value: std::marker::PhantomData,
-            _root: std::marker::PhantomData,
-            _hash: std::marker::PhantomData,
+            _key: core::marker::PhantomData,
+            _value: core::marker::PhantomData,
+            _root: core::marker::PhantomData,
+            _hash: core::marker::PhantomData,
         }
     }
 }
@@ -59,10 +59,10 @@ impl<K: Sized, V: Sized, I: Sized, H: NodeHash<K, V, I>, D: NodeData<K, V, I>, R
         Self {
             nodes_db: value.nodes_db,
             roots_db: value.roots_db,
-            _key: std::marker::PhantomData,
-            _value: std::marker::PhantomData,
-            _root: std::marker::PhantomData,
-            _hash: std::marker::PhantomData,
+            _key: core::marker::PhantomData,
+            _value: core::marker::PhantomData,
+            _root: core::marker::PhantomData,
+            _hash: core::marker::PhantomData,
         }
     }
 }
@@ -74,10 +74,10 @@ impl<K: Sized, V: Sized, I: Sized, H: NodeHash<K, V, I>, D: NodeData<K, V, I>, R
         Self {
             nodes_db,
             roots_db,
-            _key: std::marker::PhantomData,
-            _value: std::marker::PhantomData,
-            _root: std::marker::PhantomData,
-            _hash: std::marker::PhantomData,
+            _key: core::marker::PhantomData,
+            _value: core::marker::PhantomData,
+            _root: core::marker::PhantomData,
+            _hash: core::marker::PhantomData,
         }
     }
 }

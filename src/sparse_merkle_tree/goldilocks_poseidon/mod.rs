@@ -1,13 +1,11 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
-
+use alloc::collections::BTreeMap;
+use alloc::vec;
+use alloc::vec::Vec;
 use anyhow::Ok;
 use num::Integer;
 use plonky2::{
     field::goldilocks_field::GoldilocksField,
-    hash::{hash_types::HashOut, poseidon::PoseidonHash},
+    hash::poseidon::PoseidonHash,
     plonk::config::{GenericHashOut, Hasher},
 };
 
@@ -23,6 +21,13 @@ use super::{
 
 mod hash;
 pub use self::hash::{GoldilocksHashOut, WrappedHashOut, Wrapper};
+
+mod memory;
+#[cfg(feature = "std")]
+pub use self::memory::{
+    LayeredLayeredPoseidonSparseMerkleTreeMemory, LayeredPoseidonSparseMerkleTreeMemory,
+    NodeDataMemory, PoseidonSparseMerkleTreeMemory, RootDataMemory,
+};
 
 fn le_bytes_to_bits(bytes: &[u8]) -> Vec<bool> {
     bytes
@@ -57,76 +62,34 @@ type I = GoldilocksHashOut;
 
 #[allow(clippy::type_complexity)]
 #[derive(Clone, Debug, Default)]
-pub struct NodeDataMemory {
-    pub nodes: Arc<Mutex<HashMap<K, Node<K, V, I>>>>,
+pub struct NodeDataTmp {
+    pub nodes: BTreeMap<K, Node<K, V, I>>,
 }
 
-impl NodeData<K, V, I> for NodeDataMemory {
+impl NodeData<K, V, I> for NodeDataTmp {
     type Error = anyhow::Error;
 
-    fn get(&self, key: &K) -> Result<Option<Node<K, V, I>>, Self::Error> {
-        if let Some(some_data) = self.nodes.lock().expect("mutex poison error").get(key) {
+    fn get(&self, key: &I) -> Result<Option<Node<K, V, I>>, Self::Error> {
+        if let Some(some_data) = self.nodes.get(key) {
             Ok(Some(some_data.clone()))
         } else {
             Ok(None)
         }
     }
 
-    fn multi_insert(&mut self, insert_entries: Vec<(K, Node<K, V, I>)>) -> Result<(), Self::Error> {
+    fn multi_insert(&mut self, insert_entries: Vec<(I, Node<K, V, I>)>) -> Result<(), Self::Error> {
         for (key, value) in insert_entries {
-            self.nodes
-                .lock()
-                .expect("mutex poison error")
-                .insert(key, value);
+            self.nodes.insert(key, value);
         }
 
         Ok(())
     }
 
-    fn multi_delete(&mut self, _delete_keys: &[K]) -> Result<(), Self::Error> {
-        // あとで過去の root を参照したい時に役立つので消さない.
-        // for key in _delete_keys {
-        //     self.nodes.remove(key);
-        // }
-
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct RootDataMemory {
-    pub roots: Arc<Mutex<Vec<I>>>,
-}
-
-impl Default for RootDataMemory {
-    fn default() -> Self {
-        let data = vec![Wrapper(HashOut::ZERO)];
-        Self {
-            roots: Arc::new(Mutex::new(data)),
+    fn multi_delete(&mut self, _delete_keys: &[I]) -> Result<(), Self::Error> {
+        // NOTICE: 過去の root がどのようなリーフを持っていたかは参照できなくなる.
+        for key in _delete_keys {
+            self.nodes.remove(key);
         }
-    }
-}
-
-impl From<I> for RootDataMemory {
-    fn from(value: I) -> Self {
-        let data = vec![value];
-        Self {
-            roots: Arc::new(Mutex::new(data)),
-        }
-    }
-}
-
-impl RootData<I> for RootDataMemory {
-    type Error = anyhow::Error;
-
-    fn get(&self) -> Result<I, Self::Error> {
-        let result = *self.roots.lock().unwrap().last().unwrap();
-
-        Ok(result)
-    }
-
-    fn set(&mut self, root: I) -> Result<(), Self::Error> {
-        self.roots.lock().unwrap().push(root);
 
         Ok(())
     }
@@ -149,7 +112,7 @@ impl RootData<I> for RootDataTmp {
     }
 
     fn set(&mut self, root: I) -> Result<(), Self::Error> {
-        let _ = std::mem::replace(self, Self(root));
+        let _ = core::mem::replace(self, Self(root));
 
         Ok(())
     }
@@ -190,11 +153,3 @@ pub type LayeredPoseidonSparseMerkleTree<D, R> =
 
 pub type LayeredLayeredPoseidonSparseMerkleTree<D, R> =
     LayeredLayeredSparseMerkleTree<K, V, I, PoseidonNodeHash, D, R>;
-
-pub type PoseidonSparseMerkleTreeMemory = PoseidonSparseMerkleTree<NodeDataMemory, RootDataMemory>;
-
-pub type LayeredPoseidonSparseMerkleTreeMemory =
-    LayeredPoseidonSparseMerkleTree<NodeDataMemory, RootDataMemory>;
-
-pub type LayeredLayeredPoseidonSparseMerkleTreeMemory =
-    LayeredLayeredPoseidonSparseMerkleTree<NodeDataMemory, RootDataMemory>;

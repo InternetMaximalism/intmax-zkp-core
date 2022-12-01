@@ -1,5 +1,8 @@
-use std::{fmt::Display, str::FromStr};
-
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::{fmt::Display, str::FromStr};
 use num::BigUint;
 use plonky2::{
     field::{
@@ -17,7 +20,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 #[repr(transparent)]
 pub struct Wrapper<T>(pub T);
 
-impl<T> std::ops::Deref for Wrapper<T> {
+impl<T> core::ops::Deref for Wrapper<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -41,7 +44,7 @@ impl<F: Field> Default for WrappedHashOut<F> {
 }
 
 impl<F: RichField> Display for WrappedHashOut<F> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let mut bytes = self.0.to_bytes(); // little endian
         bytes.reverse(); // big endian
 
@@ -84,7 +87,7 @@ impl<F: RichField> Serialize for WrappedHashOut<F> {
     where
         S: Serializer,
     {
-        let raw = format!("0x{}", self);
+        let raw = "0x".to_string() + &self.to_string();
 
         serializer.serialize_str(&raw)
     }
@@ -140,6 +143,18 @@ impl<F: RichField> WrappedHashOut<F> {
 
     pub fn rand() -> Self {
         HashOut::rand().into()
+    }
+}
+
+impl<F: RichField> PartialOrd for WrappedHashOut<F> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        self.0.to_bytes().partial_cmp(&other.0.to_bytes())
+    }
+}
+
+impl<F: RichField> Ord for WrappedHashOut<F> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.0.to_bytes().cmp(&other.0.to_bytes())
     }
 }
 
@@ -342,7 +357,8 @@ impl WrappedHashOut<GoldilocksField> {
         let mut elements = [GoldilocksField::ZERO; 4];
         let mut value = value.to_canonical_biguint();
         for e in elements.iter_mut() {
-            let _ = std::mem::replace(e, GoldilocksField::from_noncanonical_biguint(value.clone())); // canonical
+            let _ =
+                core::mem::replace(e, GoldilocksField::from_noncanonical_biguint(value.clone())); // canonical
             value /= GoldilocksField::order();
         }
 
@@ -364,7 +380,8 @@ impl WrappedHashOut<GoldilocksField> {
         let mut elements = [GoldilocksField::ZERO; 4];
         let mut value = value.to_canonical_biguint();
         for e in elements.iter_mut() {
-            let _ = std::mem::replace(e, GoldilocksField::from_noncanonical_biguint(value.clone())); // canonical
+            let _ =
+                core::mem::replace(e, GoldilocksField::from_noncanonical_biguint(value.clone())); // canonical
             value /= GoldilocksField::order();
         }
 

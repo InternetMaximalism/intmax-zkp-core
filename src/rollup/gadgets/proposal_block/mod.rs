@@ -1,3 +1,4 @@
+use alloc::vec;
 use itertools::Itertools;
 use plonky2::{
     field::extension::Extendable,
@@ -238,6 +239,7 @@ pub fn verify_valid_proposal_block<
 }
 
 #[test]
+#[cfg(feature = "std")]
 fn test_proposal_block() {
     use std::time::Instant;
 

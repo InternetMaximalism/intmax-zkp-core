@@ -1,7 +1,8 @@
+use alloc::vec::Vec;
 use itertools::Itertools;
 use plonky2::{
     field::{extension::Extendable, types::Field},
-    hash::hash_types::{HashOut, RichField},
+    hash::hash_types::RichField,
     plonk::config::GenericConfig,
 };
 use serde::{Deserialize, Serialize};

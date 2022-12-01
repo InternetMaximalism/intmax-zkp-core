@@ -1,3 +1,5 @@
+use alloc::vec;
+use alloc::vec::Vec;
 use itertools::Itertools;
 use plonky2::{
     field::extension::Extendable,
@@ -526,8 +528,7 @@ pub fn parse_proposal_and_approval_public_inputs<const N_TXS: usize, const N_DEP
         ],
     };
 
-    let rest_public_inputs = public_inputs_t.collect::<Vec<_>>();
-    dbg!(rest_public_inputs);
+    // let rest_public_inputs = public_inputs_t.collect::<Vec<_>>();
 
     ProposalAndApprovalBlockPublicInputsTarget {
         address_list: address_list.try_into().unwrap(),

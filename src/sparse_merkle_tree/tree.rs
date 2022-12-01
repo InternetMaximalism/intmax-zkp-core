@@ -1,4 +1,6 @@
-use std::{fmt::Debug, hash::Hash};
+use alloc::vec;
+use alloc::vec::Vec;
+use core::{fmt::Debug, hash::Hash};
 
 use super::{
     node_data::{Node, NodeData},
@@ -18,10 +20,10 @@ pub struct SparseMerkleTree<
 > {
     pub nodes_db: D,
     pub roots_db: R,
-    pub _key: std::marker::PhantomData<K>,
-    pub _value: std::marker::PhantomData<V>,
-    pub _root: std::marker::PhantomData<I>,
-    pub _hash: std::marker::PhantomData<H>,
+    pub _key: core::marker::PhantomData<K>,
+    pub _value: core::marker::PhantomData<V>,
+    pub _root: core::marker::PhantomData<I>,
+    pub _hash: core::marker::PhantomData<H>,
 }
 
 impl<K: Sized, V: Sized, I: Sized, H: NodeHash<K, V, I>, D: NodeData<K, V, I>, R: RootData<I>>
@@ -31,10 +33,10 @@ impl<K: Sized, V: Sized, I: Sized, H: NodeHash<K, V, I>, D: NodeData<K, V, I>, R
         Self {
             nodes_db,
             roots_db,
-            _key: std::marker::PhantomData,
-            _value: std::marker::PhantomData,
-            _root: std::marker::PhantomData,
-            _hash: std::marker::PhantomData,
+            _key: core::marker::PhantomData,
+            _value: core::marker::PhantomData,
+            _root: core::marker::PhantomData,
+            _hash: core::marker::PhantomData,
         }
     }
 }
@@ -200,8 +202,8 @@ pub(crate) fn update<
 
     let res_old_root = root;
 
-    let mut insert_entries = vec![];
-    let mut delete_keys = vec![];
+    let mut insert_entries = alloc::vec![];
+    let mut delete_keys = alloc::vec![];
 
     let old_leaf_node = Node::Leaf(found_key, found_value);
     let new_leaf_node = Node::Leaf(found_key, new_value);

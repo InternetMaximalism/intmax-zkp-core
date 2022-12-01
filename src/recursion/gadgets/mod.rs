@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use plonky2::{
     field::extension::Extendable,
     fri::proof::FriProofTarget,
@@ -15,7 +16,7 @@ use plonky2::{
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Wrapper<T>(pub T);
 
-impl<T> std::ops::Deref for Wrapper<T> {
+impl<T> core::ops::Deref for Wrapper<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {

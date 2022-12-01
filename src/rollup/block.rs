@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use plonky2::hash::hash_types::RichField;
 use serde::{Deserialize, Serialize};
 

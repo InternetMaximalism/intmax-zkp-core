@@ -1,45 +1,48 @@
-use std::time::Instant;
+#![cfg_attr(not(feature = "std"), no_main)]
 
-use plonky2::{
-    field::{
-        goldilocks_field::GoldilocksField,
-        types::{Field, Field64},
-    },
-    hash::{hash_types::HashOut, poseidon::PoseidonHash},
-    iop::witness::PartialWitness,
-    plonk::{
-        circuit_builder::CircuitBuilder,
-        circuit_data::CircuitConfig,
-        config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
-    },
-};
-
-use intmax_zkp_core::{
-    merkle_tree::tree::{get_merkle_proof, MerkleProof},
-    rollup::{
-        circuits::make_block_proof_circuit,
-        gadgets::{batch::BatchBlockProofTarget, deposit_block::DepositInfo},
-    },
-    sparse_merkle_tree::{
-        goldilocks_poseidon::{
-            GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree,
-            LayeredLayeredPoseidonSparseMerkleTreeMemory, NodeDataMemory, PoseidonSparseMerkleTree,
-            PoseidonSparseMerkleTreeMemory, WrappedHashOut,
-        },
-        proof::SparseMerkleInclusionProof,
-    },
-    transaction::{
-        block_header::{get_block_hash, BlockHeader},
-        circuits::make_user_proof_circuit,
-        gadgets::merge::MergeProof,
-    },
-    zkdsa::{
-        account::{private_key_to_account, Address},
-        circuits::make_simple_signature_circuit,
-    },
-};
-
+#[cfg(feature = "std")]
 fn main() {
+    use std::time::Instant;
+
+    use plonky2::{
+        field::{
+            goldilocks_field::GoldilocksField,
+            types::{Field, Field64},
+        },
+        hash::{hash_types::HashOut, poseidon::PoseidonHash},
+        iop::witness::PartialWitness,
+        plonk::{
+            circuit_builder::CircuitBuilder,
+            circuit_data::CircuitConfig,
+            config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
+        },
+    };
+
+    use intmax_zkp_core::{
+        merkle_tree::tree::{get_merkle_proof, MerkleProof},
+        rollup::{
+            circuits::make_block_proof_circuit,
+            gadgets::{batch::BatchBlockProofTarget, deposit_block::DepositInfo},
+        },
+        sparse_merkle_tree::{
+            goldilocks_poseidon::{
+                GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree,
+                LayeredLayeredPoseidonSparseMerkleTreeMemory, NodeDataMemory,
+                PoseidonSparseMerkleTree, PoseidonSparseMerkleTreeMemory, WrappedHashOut,
+            },
+            proof::SparseMerkleInclusionProof,
+        },
+        transaction::{
+            block_header::{get_block_hash, BlockHeader},
+            circuits::make_user_proof_circuit,
+            gadgets::merge::MergeProof,
+        },
+        zkdsa::{
+            account::{private_key_to_account, Address},
+            circuits::make_simple_signature_circuit,
+        },
+    };
+
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = <C as GenericConfig<D>>::F;

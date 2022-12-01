@@ -1,5 +1,5 @@
-use std::hash::Hash;
-
+use alloc::vec::Vec;
+use core::hash::Hash;
 use plonky2::{
     field::types::Field,
     hash::{

@@ -1,4 +1,5 @@
-use std::fmt::Debug;
+use alloc::vec::Vec;
+use core::fmt::Debug;
 
 use super::super::goldilocks_poseidon::GoldilocksHashOut;
 

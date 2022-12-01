@@ -1,3 +1,4 @@
+use alloc::vec;
 use plonky2::{
     field::{extension::Extendable, goldilocks_field::GoldilocksField, types::Field},
     hash::hash_types::{HashOut, HashOutTarget, RichField},
@@ -250,6 +251,7 @@ pub fn calc_deposit_digest<
 }
 
 #[test]
+#[cfg(feature = "std")]
 fn test_deposit_block() {
     use std::time::Instant;
 

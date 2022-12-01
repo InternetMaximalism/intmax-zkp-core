@@ -1,6 +1,7 @@
 pub mod verify_smt;
 
 #[test]
+#[cfg(feature = "std")]
 fn test_verify_inclusion_proof_by_plonky2() {
     use plonky2::iop::witness::PartialWitness;
     use plonky2::plonk::{

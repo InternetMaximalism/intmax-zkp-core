@@ -2,6 +2,7 @@ pub mod process_smt;
 pub mod utils;
 
 #[test]
+#[cfg(feature = "std")]
 fn test_verify_process_proof_by_plonky2() {
     use plonky2::{
         field::types::Sample,

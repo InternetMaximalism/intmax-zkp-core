@@ -1,3 +1,5 @@
+use alloc::vec;
+use alloc::vec::Vec;
 use plonky2::{
     hash::{hash_types::RichField, poseidon::PoseidonHash},
     plonk::config::Hasher,
@@ -72,7 +74,7 @@ pub fn get_merkle_proof<F: RichField>(
 
     let mut rest_index = index;
     for sibling in siblings.iter_mut().take(log_num_leaves) {
-        let _ = std::mem::replace(sibling, nodes[rest_index ^ 1]); // XXX: out of index が起こる
+        let _ = core::mem::replace(sibling, nodes[rest_index ^ 1]); // XXX: out of index が起こる
 
         let mut new_nodes: Vec<WrappedHashOut<F>> = vec![];
         for j in 0..(nodes.len() / 2) {

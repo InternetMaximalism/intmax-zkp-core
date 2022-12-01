@@ -10,8 +10,8 @@ use crate::{
     sparse_merkle_tree::{
         gadgets::verify::verify_smt::SmtInclusionProof,
         goldilocks_poseidon::{
-            LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory, PoseidonSparseMerkleTree,
-            RootDataMemory,
+            LayeredLayeredPoseidonSparseMerkleTree, NodeDataTmp, PoseidonSparseMerkleTree,
+            RootDataTmp,
         },
     },
     zkdsa::account::Address,
@@ -23,7 +23,7 @@ pub fn make_partial_deposit_proof(
     num_log_txs: usize,
 ) -> MerkleProof<GoldilocksField> {
     let mut inner_deposit_tree =
-        LayeredLayeredPoseidonSparseMerkleTree::<NodeDataMemory, RootDataMemory>::default();
+        LayeredLayeredPoseidonSparseMerkleTree::<NodeDataTmp, RootDataTmp>::default();
     for leaf in deposit_list {
         inner_deposit_tree
             .set(
@@ -52,7 +52,7 @@ pub fn make_deposit_proof(
     SmtInclusionProof<GoldilocksField>,
 ) {
     let mut inner_deposit_tree =
-        LayeredLayeredPoseidonSparseMerkleTree::<NodeDataMemory, RootDataMemory>::default();
+        LayeredLayeredPoseidonSparseMerkleTree::<NodeDataTmp, RootDataTmp>::default();
     for leaf in deposit_list {
         inner_deposit_tree
             .set(
@@ -70,7 +70,7 @@ pub fn make_deposit_proof(
 
     let deposit_proof1 = get_merkle_proof(&[deposit_diff_root.into()], 0, num_log_txs);
 
-    let inner_deposit_tree: PoseidonSparseMerkleTree<NodeDataMemory, RootDataMemory> =
+    let inner_deposit_tree: PoseidonSparseMerkleTree<NodeDataTmp, RootDataTmp> =
         inner_deposit_tree.into();
     let deposit_proof2 = inner_deposit_tree
         .find(&receiver_address.to_hash_out().into())

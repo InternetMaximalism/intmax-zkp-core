@@ -380,7 +380,7 @@ pub fn smt_lev_ins<F: RichField + Extendable<D>, const D: usize>(
     let num_levels = siblings.len();
 
     let zero = builder.zero();
-
+    
     let mut is_zeros = siblings
         .iter()
         .map(|sibling| {

@@ -1,9 +1,11 @@
 use plonky2::{
-    field::{extension::Extendable, types::Field},
+    field::extension::Extendable,
     hash::hash_types::{HashOut, HashOutTarget, RichField},
     iop::{target::BoolTarget, witness::Witness},
     plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
 };
+
+use crate::sparse_merkle_tree::proof::common::first_different_bit_index;
 
 use super::super::super::{goldilocks_poseidon::Wrapper, proof::SparseMerkleProcessProof};
 use super::super::common::{
@@ -76,8 +78,14 @@ impl<const N_LEVELS: usize> SparseMerkleProcessProofTarget<N_LEVELS> {
         }
     }
 
-    pub fn set_witness<F: Field>(&self, pw: &mut impl Witness<F>, witness: &SmtProcessProof<F>) {
+    pub fn set_witness<F: RichField>(
+        &self,
+        pw: &mut impl Witness<F>,
+        witness: &SmtProcessProof<F>,
+    ) {
         assert!(witness.siblings.len() <= N_LEVELS);
+        // `witness.old_key` と `witness.new_key` は一致するか, 末尾の `N_LEVELS` 桁が一致しない.
+        assert!(first_different_bit_index(witness.old_key, witness.new_key) < Some(N_LEVELS));
         for i in 0..witness.siblings.len() {
             pw.set_hash_target(self.siblings[i], *witness.siblings[i]);
         }
@@ -233,13 +241,17 @@ pub fn verify_smt_process_proof<
         prev = st;
     }
 
-    // flag = sm[nLevels-1].st_na + sm[nLevels-1].st_new1 + sm[nLevels-1].st_old0 + sm[nLevels-1].st_upd;
-    let tmp1 = logical_or(builder, sm[num_levels - 1].na, sm[num_levels - 1].new1);
-    let tmp2 = logical_or(builder, sm[num_levels - 1].old0, sm[num_levels - 1].upd);
-    let flag = logical_or(builder, tmp1, tmp2);
+    // 最後の status は top でも btn　でもない.
+    // NOTICE: ここで失敗する場合は NUM_LEVELS が小さすぎないか確かめる
+    {
+        // flag = sm[nLevels-1].st_na + sm[nLevels-1].st_new1 + sm[nLevels-1].st_old0 + sm[nLevels-1].st_upd;
+        let tmp1 = logical_or(builder, sm[num_levels - 1].na, sm[num_levels - 1].new1);
+        let tmp2 = logical_or(builder, sm[num_levels - 1].old0, sm[num_levels - 1].upd);
+        let flag = logical_or(builder, tmp1, tmp2);
 
-    // flag === 1;
-    builder.connect(flag.target, constant_true.target);
+        // flag === 1;
+        builder.connect(flag.target, constant_true.target);
+    }
 
     // component levels[nLevels];
     // for (i=nLevels-1; i != -1; i--)

@@ -98,13 +98,13 @@ impl<
         key: &K,
         new_value: &V,
     ) -> anyhow::Result<SparseMerkleProcessProof<K, V, I>> {
-        let root = self
+        let mut root = self
             .roots_db
             .get()
             .map_err(|err| anyhow::anyhow!("{:?}", err))?;
-        let result = update::<K, V, I, H, D>(&mut self.nodes_db, &root, key, *new_value)?;
+        let result = update::<K, V, I, H, D>(&mut self.nodes_db, &mut root, key, *new_value)?;
         self.roots_db
-            .set(result.new_root)
+            .set(root)
             .map_err(|err| anyhow::anyhow!("{:?}", err))?;
 
         Ok(result)
@@ -115,39 +115,40 @@ impl<
         key: K,
         value: V,
     ) -> anyhow::Result<SparseMerkleProcessProof<K, V, I>> {
-        let root = self
+        let mut root = self
             .roots_db
             .get()
             .map_err(|err| anyhow::anyhow!("{:?}", err))?;
-        let result = insert::<K, V, I, H, D>(&mut self.nodes_db, &root, key, value)?;
+        let result = insert::<K, V, I, H, D>(&mut self.nodes_db, &mut root, key, value)?;
         self.roots_db
-            .set(result.new_root)
+            .set(root)
             .map_err(|err| anyhow::anyhow!("{:?}", err))?;
 
         Ok(result)
     }
 
     pub fn remove(&mut self, key: &K) -> anyhow::Result<SparseMerkleProcessProof<K, V, I>> {
-        let root = self
+        let mut root = self
             .roots_db
             .get()
             .map_err(|err| anyhow::anyhow!("{:?}", err))?;
-        let result = remove::<K, V, I, H, D>(&mut self.nodes_db, &root, key)?;
+        let result = remove::<K, V, I, H, D>(&mut self.nodes_db, &mut root, key)?;
         self.roots_db
-            .set(result.new_root)
+            .set(root)
             .map_err(|err| anyhow::anyhow!("{:?}", err))?;
 
         Ok(result)
     }
 
     pub fn set(&mut self, key: K, value: V) -> anyhow::Result<SparseMerkleProcessProof<K, V, I>> {
-        let root = self
+        let mut root = self
             .roots_db
             .get()
             .map_err(|err| anyhow::anyhow!("{:?}", err))?;
-        let result = calc_process_proof::<K, V, I, H, D>(&mut self.nodes_db, &root, key, value)?;
+        let result =
+            calc_process_proof::<K, V, I, H, D>(&mut self.nodes_db, &mut root, key, value)?;
         self.roots_db
-            .set(result.new_root)
+            .set(root)
             .map_err(|err| anyhow::anyhow!("{:?}", err))?;
 
         Ok(result)
@@ -170,15 +171,9 @@ impl<
     }
 }
 
-pub(crate) fn update<
-    K: KeyLike,
-    V: ValueLike,
-    I: HashLike,
-    H: NodeHash<K, V, I>,
-    D: NodeData<K, V, I>,
->(
+fn update<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeData<K, V, I>>(
     nodes_db: &mut D,
-    root: &I,
+    root: &mut I,
     key: &K,
     new_value: V,
 ) -> anyhow::Result<SparseMerkleProcessProof<K, V, I>> {
@@ -198,7 +193,7 @@ pub(crate) fn update<
     let found_key = res_find.key;
     let found_value = res_find.value;
 
-    let res_old_root = root;
+    let res_old_root = res_find.root;
 
     let mut insert_entries = vec![];
     let mut delete_keys = vec![];
@@ -242,8 +237,10 @@ pub(crate) fn update<
         // tree.root = rt_new;
     }
 
+    let _ = core::mem::replace(root, rt_new);
+
     Ok(SparseMerkleProcessProof {
-        old_root: *res_old_root,
+        old_root: res_old_root,
         old_key: found_key,
         old_value: found_value,
         new_root: rt_new,
@@ -255,21 +252,14 @@ pub(crate) fn update<
     })
 }
 
-pub(crate) fn insert<
-    K: KeyLike,
-    V: ValueLike,
-    I: HashLike,
-    H: NodeHash<K, V, I>,
-    D: NodeData<K, V, I>,
->(
+fn insert<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeData<K, V, I>>(
     nodes_db: &mut D,
-    root: &I,
+    root: &mut I,
     key: K,
     value: V,
 ) -> anyhow::Result<SparseMerkleProcessProof<K, V, I>> {
-    let res_old_root = root;
-
     let res_find = find::<K, V, I, H, D>(nodes_db, root, &key)?;
+    let res_old_root = res_find.root;
 
     // Given key should not be found.
     if res_find.found {
@@ -381,8 +371,10 @@ pub(crate) fn insert<
         // tree.root = rt;
     }
 
+    let _ = core::mem::replace(root, rt);
+
     Ok(SparseMerkleProcessProof {
-        old_root: *res_old_root,
+        old_root: res_old_root,
         old_key: not_found_key,
         old_value: not_found_value,
         new_root: rt,
@@ -395,15 +387,9 @@ pub(crate) fn insert<
 }
 
 /// 遷移の自然さを考慮して, オリジナルの仕様とは (old_key, old_value) と (new_key, new_value) を逆に出力している.
-pub(crate) fn remove<
-    K: KeyLike,
-    V: ValueLike,
-    I: HashLike,
-    H: NodeHash<K, V, I>,
-    D: NodeData<K, V, I>,
->(
+fn remove<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeData<K, V, I>>(
     nodes_db: &mut D,
-    root: &I,
+    root: &mut I,
     key: &K,
 ) -> anyhow::Result<SparseMerkleProcessProof<K, V, I>> {
     let res_find = find::<K, V, I, H, D>(nodes_db, root, key)?;
@@ -531,6 +517,8 @@ pub(crate) fn remove<
     //     fnc: ProcessMerkleProofRole::ProcessDelete,
     // })
 
+    let _ = core::mem::replace(root, rt_new);
+
     Ok(SparseMerkleProcessProof {
         old_root: rt_old,
         old_key: found_key,     // del_key
@@ -544,33 +532,22 @@ pub(crate) fn remove<
     })
 }
 
-pub(crate) fn noop<
-    K: KeyLike,
-    V: ValueLike,
-    I: HashLike,
-    H: NodeHash<K, V, I>,
-    D: NodeData<K, V, I>,
->(
-    _nodes_db: &D,
+fn noop<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeData<K, V, I>>(
+    nodes_db: &D,
     root: &I,
     key: &K,
 ) -> anyhow::Result<SparseMerkleProcessProof<K, V, I>> {
-    // let res_find = find::<K, V, I, H, D>(nodes_db, root, key)?;
-
-    // // Given key should not be found.
-    // if res_find.found {
-    //     return Err(anyhow::anyhow!("given key already exists"));
-    // }
+    let res_find = find::<K, V, I, H, D>(nodes_db, root, key)?;
 
     Ok(SparseMerkleProcessProof {
         old_root: *root,
         old_key: *key,
-        old_value: V::default(),
+        old_value: res_find.value,
         new_root: *root,
         new_key: *key,
-        new_value: V::default(),
-        siblings: vec![],
-        is_old0: true,
+        new_value: res_find.value,
+        siblings: res_find.siblings,
+        is_old0: res_find.is_old0,
         fnc: ProcessMerkleProofRole::ProcessNoOp,
     })
 }
@@ -583,7 +560,7 @@ pub fn calc_process_proof<
     D: NodeData<K, V, I>,
 >(
     nodes_db: &mut D,
-    root: &I,
+    root: &mut I,
     key: K,
     value: V,
 ) -> anyhow::Result<SparseMerkleProcessProof<K, V, I>> {

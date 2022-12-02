@@ -372,7 +372,7 @@ pub fn enforce_not_equal_if_enabled<F: RichField + Extendable<D>, const D: usize
 
 pub fn smt_lev_ins<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
-    is_insert_op: BoolTarget,
+    enabled: BoolTarget,
     siblings: &[HashOutTarget],
 ) -> Vec<BoolTarget> {
     let constant_false = builder.constant_bool(false);
@@ -397,7 +397,7 @@ pub fn smt_lev_ins<F: RichField + Extendable<D>, const D: usize>(
     is_zeros.reverse();
 
     // The last level must always have a sibling of 0. If not, then it cannot be inserted.
-    let is_non_zero_last_sibling = logical_and_not(builder, is_insert_op, is_zeros[0]);
+    let is_non_zero_last_sibling = logical_and_not(builder, enabled, is_zeros[0]);
     builder.connect(is_non_zero_last_sibling.target, constant_false.target);
 
     let mut lev_ins = vec![];
@@ -418,6 +418,7 @@ pub fn smt_lev_ins<F: RichField + Extendable<D>, const D: usize>(
         ));
     }
 
+    // done の値が 0 または 1 であることを検証する
     if cfg!(debug_assertion) {
         builder.assert_bool(*done.last().unwrap());
     }

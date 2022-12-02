@@ -139,28 +139,28 @@ impl<
         key3: K,
         value: I,
     ) -> anyhow::Result<LayeredLayeredSparseMerkleProcessProof<K, I, I>> {
-        let layer1_root = self
+        let mut layer1_root = self
             .get_root()
             .map_err(|err| anyhow::anyhow!("{:?}", err))?;
-        let layer2_root = get::<K, I, I, H, D>(&self.nodes_db, &layer1_root, &key1)?;
-        let layer3_root = get::<K, I, I, H, D>(&self.nodes_db, &layer2_root, &key2)?;
+        let mut layer2_root = get::<K, I, I, H, D>(&self.nodes_db, &layer1_root, &key1)?;
+        let mut layer3_root = get::<K, I, I, H, D>(&self.nodes_db, &layer2_root, &key2)?;
         let result3 =
-            calc_process_proof::<K, I, I, H, D>(&mut self.nodes_db, &layer3_root, key3, value)?;
+            calc_process_proof::<K, I, I, H, D>(&mut self.nodes_db, &mut layer3_root, key3, value)?;
         let result2 = calc_process_proof::<K, I, I, H, D>(
             &mut self.nodes_db,
-            &layer2_root,
+            &mut layer2_root,
             key2,
-            result3.new_root,
+            layer3_root,
         )?;
         let result1 = calc_process_proof::<K, I, I, H, D>(
             &mut self.nodes_db,
-            &layer1_root,
+            &mut layer1_root,
             key1,
-            result2.new_root,
+            layer2_root,
         )?;
 
         self.roots_db
-            .set(result1.new_root)
+            .set(layer1_root)
             .map_err(|err| anyhow::anyhow!("{:?}", err))?;
 
         Ok((result1, result2, result3))

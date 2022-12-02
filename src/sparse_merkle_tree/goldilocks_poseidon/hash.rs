@@ -119,6 +119,20 @@ fn test_serde_goldilocks_hashout() {
     assert_eq!(decoded_value, value);
 }
 
+impl<F: RichField> GenericHashOut<F> for WrappedHashOut<F> {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.0.to_bytes()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        HashOut::from_bytes(bytes).into()
+    }
+
+    fn to_vec(&self) -> Vec<F> {
+        self.0.to_vec()
+    }
+}
+
 impl<F: RichField> WrappedHashOut<F> {
     pub const ZERO: Self = Wrapper(HashOut::ZERO);
 

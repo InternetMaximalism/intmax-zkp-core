@@ -239,7 +239,7 @@ pub fn verify_smt_inclusion_proof<
         .flat_map(|i| builder.split_le(key.elements[i], 64))
         .collect::<Vec<_>>();
 
-    let lev_ins = smt_lev_ins(builder, constant_false, siblings);
+    let lev_ins = smt_lev_ins(builder, enabled, siblings);
 
     let init_sm = VerifierLoopElt {
         top: enabled,

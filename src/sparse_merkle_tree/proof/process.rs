@@ -1,8 +1,12 @@
+use std::fmt::Debug;
+
 use crate::sparse_merkle_tree::{
-    gadgets::process::process_smt::SmtProcessProof, goldilocks_poseidon::WrappedHashOut,
-    node_data::Node, node_hash::NodeHash, proof::common::smt_lev_ins,
+    goldilocks_poseidon::{GoldilocksHashOut, PoseidonNodeHash},
+    node_data::Node,
+    node_hash::NodeHash,
+    proof::common::{smt_lev_ins, to_le_bits},
 };
-use plonky2::hash::hash_types::RichField;
+use plonky2::{hash::hash_types::RichField, plonk::config::GenericHashOut};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,10 +44,9 @@ impl<K: Default, V: Default, I: Clone> SparseMerkleProcessProof<K, V, I> {
     }
 }
 
-impl<K, V, I> SparseMerkleProcessProof<K, V, I> {
-    pub fn check(&self) -> bool {
-        // TODO
-        true
+impl SparseMerkleProcessProof<GoldilocksHashOut, GoldilocksHashOut, GoldilocksHashOut> {
+    pub fn check(&self) {
+        verify_smt_process_proof::<_, _, _, _, PoseidonNodeHash>(self);
     }
 }
 
@@ -137,17 +140,25 @@ pub struct ProcessorLoop {
     upd: bool,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ProcessorStatus {
+    Top,
+    Bottom,
+    OldIsZero,
+    NewOne,
+    Update,
+    Na,
+}
+
 pub fn verify_smt_process_proof<
     F: RichField,
-    H: NodeHash<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>>,
+    K: Default + GenericHashOut<F>,
+    V: Copy + Default + Eq + Debug,
+    I: Copy + Default + Eq + Debug,
+    H: NodeHash<K, V, I>,
 >(
-    proof: &SmtProcessProof<F>,
+    proof: &SparseMerkleProcessProof<K, V, I>,
 ) {
-    let siblings = &proof.siblings;
-    dbg!(siblings);
-    let is_old0 = proof.is_old0;
-
-    let num_levels = siblings.len();
     let enabled = proof.fnc != ProcessMerkleProofRole::ProcessNoOp;
 
     // remove proof は old と new をひっくり返せば insert proof になる
@@ -178,75 +189,64 @@ pub fn verify_smt_process_proof<
         assert_ne!(fnc, ProcessMerkleProofRole::ProcessDelete);
     }
 
-    let hash1_old = H::calc_node_hash(Node::Leaf(old_key, old_value));
-    let hash1_new = H::calc_node_hash(Node::Leaf(new_key, new_value));
+    // old key の Merkle path
     let n2b_old = old_key
-        .elements
+        .to_bytes()
         .into_iter()
-        .flat_map(|e| to_le_64(e.to_canonical_u64()))
+        .flat_map(to_le_bits)
         .collect::<Vec<_>>();
+    // new key の Merkle path
     let n2b_new = new_key
-        .elements
+        .to_bytes()
         .into_iter()
-        .flat_map(|e| to_le_64(e.to_canonical_u64()))
+        .flat_map(to_le_bits)
         .collect::<Vec<_>>();
+    assert_eq!(n2b_old.len(), n2b_new.len());
 
-    let lev_ins = smt_lev_ins(enabled, siblings);
+    let mut siblings = proof.siblings.clone();
+    assert!(siblings.len() < n2b_new.len()); // siblings の長さは Merkle path の長さより小さい
+    siblings.resize(n2b_new.len(), I::default());
+    let lev_ins = smt_lev_ins(&siblings, enabled);
 
-    let xors = n2b_old
-        .iter()
-        .zip(n2b_new.iter())
-        .map(|(a, b)| a ^ b)
-        .collect::<Vec<_>>();
-
-    let mut prev = ProcessorLoop {
-        top: enabled,
-        old0: false,
-        new1: false,
-        bot: false,
-        na: !enabled,
-        upd: false,
+    let mut prev = if enabled {
+        ProcessorStatus::Top
+    } else {
+        ProcessorStatus::Na
     };
-
-    let mut sm: Vec<ProcessorLoop> = Vec::with_capacity(num_levels);
-    for i in 0..num_levels {
-        let is_insert_or_remove_op = fnc == ProcessMerkleProofRole::ProcessInsert;
-        let st = smt_processor_sm(xors[i], is_old0, lev_ins[i], is_insert_or_remove_op, prev);
+    let is_insert_or_remove_op = fnc == ProcessMerkleProofRole::ProcessInsert;
+    let is_old0 = proof.is_old0;
+    let mut sm = Vec::with_capacity(lev_ins.len());
+    for i in 0..lev_ins.len() {
+        let st = smt_processor_sm(
+            prev,
+            n2b_old[i] ^ n2b_new[i],
+            is_old0,
+            lev_ins[i],
+            is_insert_or_remove_op,
+        );
         sm.push(st);
         prev = st;
     }
 
+    // 最後の status は top でも btn　でもない.
     {
-        // flag = sm[nLevels-1].st_na + sm[nLevels-1].st_new1 + sm[nLevels-1].st_old0 + sm[nLevels-1].st_upd;
-        let flag = sm[num_levels - 1].na
-            || sm[num_levels - 1].new1
-            || sm[num_levels - 1].old0
-            || sm[num_levels - 1].upd;
-
-        // flag === 1;
-        assert!(flag);
+        let last_status = *sm.last().unwrap();
+        assert!(last_status != ProcessorStatus::Top && last_status != ProcessorStatus::Bottom);
     }
 
-    // component levels[nLevels];
-    // for (i=nLevels-1; i != -1; i--)
-    let default_hash = WrappedHashOut::ZERO;
-    let mut prev_level = (default_hash, default_hash);
-    for i in (0..num_levels).rev() {
-        let (old_child, new_child) = prev_level;
-        prev_level = smt_processor_level::<F, H>(
-            sm[i],
-            siblings[i],
-            hash1_old,
-            hash1_new,
-            n2b_new[i],
-            old_child,
-            new_child,
-        );
-    }
+    let num_levels = n2b_new.len();
+    let top_level_root = calc_old_new_root::<_, _, _, H>(
+        (old_key, old_value),
+        (new_key, new_value),
+        &siblings,
+        &n2b_new,
+        &sm,
+        num_levels,
+    );
 
     if enabled {
-        assert_eq!(prev_level.0, old_root);
-        assert_eq!(prev_level.1, new_root);
+        assert_eq!(top_level_root.0, old_root);
+        assert_eq!(top_level_root.1, new_root);
     } else {
         assert_eq!(old_root, new_root);
         assert_eq!(old_value, new_value);
@@ -256,188 +256,115 @@ pub fn verify_smt_process_proof<
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn smt_processor_level<
-    F: RichField,
-    H: NodeHash<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>>,
->(
-    st: ProcessorLoop,
-    sibling: WrappedHashOut<F>,
-    old1_leaf: WrappedHashOut<F>,
-    new1_leaf: WrappedHashOut<F>,
-    new_lr_bit: bool,
-    old_child: WrappedHashOut<F>,
-    new_child: WrappedHashOut<F>,
-) -> (WrappedHashOut<F>, WrappedHashOut<F>) {
-    let ProcessorLoop {
-        top: st_top,
-        old0: st_old0,
-        new1: st_new1,
-        bot: st_bot,
-        upd: st_upd,
-        ..
-    } = st;
+/// Returns `(old_root, new_root)`
+pub(crate) fn calc_old_new_root<K, V, I: Copy + Default + Eq + Debug, H: NodeHash<K, V, I>>(
+    (old_key, old_value): (K, V),
+    (new_key, new_value): (K, V),
+    siblings: &[I],
+    n2b_new: &[bool],
+    sm: &[ProcessorStatus],
+    num_levels: usize,
+) -> (I, I) {
+    let default_hash = I::default();
+    let old1_leaf = H::calc_node_hash(Node::Leaf(old_key, old_value));
+    let new1_leaf = H::calc_node_hash(Node::Leaf(new_key, new_value));
+    let mut prev_level_root = (default_hash, default_hash);
+    for i in (0..num_levels).rev() {
+        let child_position = n2b_new[i];
+        let (old_child, new_child) = prev_level_root;
+        let old_hash_out = {
+            let internal_node = if child_position {
+                Node::Internal(siblings[i], old_child)
+            } else {
+                Node::Internal(old_child, siblings[i])
+            };
 
-    let default_hash = WrappedHashOut::ZERO;
-
-    let old_hash_out = {
-        let internal_node = if new_lr_bit {
-            Node::Internal(sibling, old_child)
-        } else {
-            Node::Internal(old_child, sibling)
+            H::calc_node_hash(internal_node)
         };
 
-        H::calc_node_hash(internal_node)
-    };
-
-    // aux[0] <== old1leaf * (st_bot + st_new1 + st_upd);
-    // oldRoot <== aux[0] + oldProofHash.out * st_top;
-    let old_root = if st_bot || st_new1 || st_upd {
-        old1_leaf
-    } else if st_top {
-        old_hash_out
-    } else {
-        default_hash
-    };
-
-    // aux[1] <== newChild * (st_top + st_bot);
-    // newSwitcher.L <== aux[1] + new1leaf*st_new1;
-    let new_left_child = if st_top || st_bot {
-        new_child
-    } else if st_new1 {
-        new1_leaf
-    } else {
-        default_hash
-    };
-
-    // aux[2] <== sibling*st_top;
-    // newSwitcher.R <== aux[2] + old1leaf*st_new1;
-    let new_right_child = if st_top {
-        sibling
-    } else if st_new1 {
-        old1_leaf
-    } else {
-        default_hash
-    };
-
-    let new_hash_out = {
-        let internal_node = if new_lr_bit {
-            Node::Internal(new_right_child, new_left_child)
-        } else {
-            Node::Internal(new_left_child, new_right_child)
+        // aux[0] <== old1leaf * (st_bot + st_new1 + st_upd);
+        // oldRoot <== aux[0] + oldProofHash.out * st_top;
+        let old_root = match sm[i] {
+            ProcessorStatus::Top => old_hash_out,
+            ProcessorStatus::Bottom => old1_leaf,
+            ProcessorStatus::NewOne => old1_leaf,
+            ProcessorStatus::Update => old1_leaf,
+            _ => default_hash,
         };
 
-        H::calc_node_hash(internal_node)
-    };
+        // aux[1] <== newChild * (st_top + st_bot);
+        // newSwitcher.L <== aux[1] + new1leaf*st_new1;
+        let new_left_child = match sm[i] {
+            ProcessorStatus::Top => new_child,
+            ProcessorStatus::Bottom => new_child,
+            ProcessorStatus::NewOne => new1_leaf,
+            _ => default_hash,
+        };
 
-    // aux[3] <== newProofHash.out * (st_top + st_bot + st_new1);
-    // newRoot <==  aux[3] + new1leaf * (st_old0 + st_upd);
-    let new_root = if st_top || st_bot || st_new1 {
-        new_hash_out
-    } else if st_old0 || st_upd {
-        new1_leaf
-    } else {
-        default_hash
-    };
+        // aux[2] <== sibling*st_top;
+        // newSwitcher.R <== aux[2] + old1leaf*st_new1;
+        let new_right_child = match sm[i] {
+            ProcessorStatus::Top => siblings[i],
+            ProcessorStatus::NewOne => old1_leaf,
+            _ => default_hash,
+        };
 
-    (old_root, new_root)
+        let new_hash_out = {
+            let internal_node = if child_position {
+                Node::Internal(new_right_child, new_left_child)
+            } else {
+                Node::Internal(new_left_child, new_right_child)
+            };
+
+            H::calc_node_hash(internal_node)
+        };
+
+        // aux[3] <== newProofHash.out * (st_top + st_bot + st_new1);
+        // newRoot <==  aux[3] + new1leaf * (st_old0 + st_upd);
+        let new_root = match sm[i] {
+            ProcessorStatus::Top => new_hash_out,
+            ProcessorStatus::Bottom => new_hash_out,
+            ProcessorStatus::NewOne => new_hash_out,
+            ProcessorStatus::OldIsZero => new1_leaf,
+            ProcessorStatus::Update => new1_leaf,
+            _ => default_hash,
+        };
+
+        prev_level_root = (old_root, new_root);
+    }
+
+    prev_level_root
 }
 
+/// https://github.com/iden3/circomlib/blob/master/circuits/smt/smtprocessorsm.circom#L53-L90
 pub(crate) fn smt_processor_sm(
-    xor: bool,
-    is0: bool,
-    lev_ins: bool,
+    prev: ProcessorStatus,
+    is_different_bit: bool,
+    is_old0: bool,
+    is_inserting_level: bool,
     is_insert_or_remove_op: bool,
-    prev: ProcessorLoop,
-) -> ProcessorLoop {
-    // aux1 = prev_top * levIns
-    let aux1 = prev.top && lev_ins;
-
-    // aux2 = prev_top * levIns * fnc[0]
-    let aux2 = aux1 && is_insert_or_remove_op;
-
-    // st_top = prev_top * (1-levIns)
-    //    = + prev_top
-    //      - prev_top * levIns
-    let top = prev.top && !lev_ins;
-
-    // st_old0 = prev_top * levIns * is0 * fnc[0]
-    //      = + prev_top * levIns * is0 * fnc[0]         (= aux2 * is0)
-    let old0 = aux2 && is0;
-
-    // st_new1 = prev_top * levIns * (1-is0)*fnc[0] * xor   +  prev_bot*xor =
-    //    = + prev_top * levIns *       fnc[0] * xor     (= aux2     * xor)
-    //      - prev_top * levIns * is0 * fnc[0] * xor     (= st_old0  * xor)
-    //      + prev_bot *                         xor     (= prev_bot * xor)
-    let aux2_minus_old0 = aux2 && !is0;
-    let aux2_minus_old0_plus_prev_bot = aux2_minus_old0 || prev.bot;
-    let new1 = aux2_minus_old0_plus_prev_bot && xor;
-
-    // st_bot = prev_top * levIns * (1-is0)*fnc[0] * (1-xor) + prev_bot*(1-xor);
-    //    = + prev_top * levIns *       fnc[0]
-    //      - prev_top * levIns * is0 * fnc[0]
-    //      - prev_top * levIns *       fnc[0] * xor
-    //      + prev_top * levIns * is0 * fnc[0] * xor
-    //      + prev_bot
-    //      - prev_bot *                         xor
-    let bot = aux2_minus_old0_plus_prev_bot && !xor;
-
-    // st_upd = prev_top * (1-fnc[0]) *levIns;
-    //    = + prev_top * levIns
-    //      - prev_top * levIns * fnc[0]
-
-    let upd = aux1 && !is_insert_or_remove_op;
-
-    // st_na = prev_new1 + prev_old0 + prev_na + prev_upd;
-    //    = + prev_new1
-    //      + prev_old0
-    //      + prev_na
-    //      + prev_upd
-    // NOTICE: or の代わりに add を使うとうまくいかない.
-    // let prev_new1_plus_prev_old0 = builder.add(prev.new1.target, prev.old0.target);
-    // let prev_new1_plus_prev_old0_plus_prev_na =
-    //     builder.add(prev_new1_plus_prev_old0, prev.na.target);
-    // let na =
-    //     BoolTarget::new_unsafe(builder.add(prev_new1_plus_prev_old0_plus_prev_na, prev.upd.target));
-    // builder.assert_bool(na);
-    let prev_new1_plus_prev_old0 = prev.new1 || prev.old0;
-    let prev_new1_plus_prev_old0_plus_prev_na = prev_new1_plus_prev_old0 || prev.na;
-    let na = prev_new1_plus_prev_old0_plus_prev_na || prev.upd;
-
-    ProcessorLoop {
-        top,
-        old0,
-        new1,
-        bot,
-        na,
-        upd,
-    }
-}
-
-// convert u64 to little endian bits arrary
-fn to_le_64(x: u64) -> Vec<bool> {
-    let mut x = x;
-    let mut r = vec![];
-    while x > 0 {
-        r.push(x & 1 == 1);
-        x >>= 1;
-    }
-
-    r.resize(64, false);
-    assert_eq!(r.len(), 64);
-
-    r
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_to_le() {
-        assert_eq!(to_le_64(1), vec![true]);
-        assert_eq!(to_le_64(2), vec![false, true]);
-        assert_eq!(to_le_64(3), vec![true, true]);
-        assert_eq!(to_le_64(8), vec![false, false, false, true]);
+) -> ProcessorStatus {
+    match prev {
+        ProcessorStatus::Top => {
+            if !is_inserting_level {
+                ProcessorStatus::Top
+            } else if !is_insert_or_remove_op {
+                ProcessorStatus::Update
+            } else if is_old0 {
+                ProcessorStatus::OldIsZero
+            } else if is_different_bit {
+                ProcessorStatus::NewOne
+            } else {
+                ProcessorStatus::Bottom
+            }
+        }
+        ProcessorStatus::Bottom => {
+            if is_different_bit {
+                ProcessorStatus::NewOne
+            } else {
+                ProcessorStatus::Bottom
+            }
+        }
+        _ => ProcessorStatus::Na,
     }
 }

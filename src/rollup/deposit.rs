@@ -29,7 +29,7 @@ pub fn make_partial_deposit_proof(
             .set(
                 leaf.receiver_address.to_hash_out().into(),
                 leaf.contract_address.to_hash_out().into(),
-                leaf.variable_index.into(),
+                leaf.variable_index.to_hash_out().into(),
                 HashOut::from_partial(&[leaf.amount]).into(),
             )
             .unwrap();
@@ -58,7 +58,7 @@ pub fn make_deposit_proof(
             .set(
                 leaf.receiver_address.to_hash_out().into(),
                 leaf.contract_address.to_hash_out().into(),
-                leaf.variable_index.into(),
+                leaf.variable_index.to_hash_out().into(),
                 HashOut::from_partial(&[leaf.amount]).into(),
             )
             .unwrap();

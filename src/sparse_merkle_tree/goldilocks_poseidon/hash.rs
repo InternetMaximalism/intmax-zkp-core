@@ -133,7 +133,7 @@ impl<F: RichField> GenericHashOut<F> for WrappedHashOut<F> {
     }
 }
 
-impl<F: RichField> WrappedHashOut<F> {
+impl<F: Field> WrappedHashOut<F> {
     pub const ZERO: Self = Wrapper(HashOut::ZERO);
 
     pub fn read(inputs: &mut core::slice::Iter<F>) -> Self {

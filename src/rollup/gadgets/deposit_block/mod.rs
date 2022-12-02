@@ -5,6 +5,7 @@ use plonky2::{
     plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
 };
 use serde::{Deserialize, Serialize};
+use serde_hex::{SerHex, StrictPfx};
 
 use crate::{
     sparse_merkle_tree::{
@@ -18,16 +19,73 @@ use crate::{
                 },
             },
         },
-        goldilocks_poseidon::GoldilocksHashOut,
+        goldilocks_poseidon::{GoldilocksHashOut, WrappedHashOut},
     },
     zkdsa::{account::Address, gadgets::account::AddressTarget},
 };
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct VariableIndex<F>(pub u8, core::marker::PhantomData<F>);
+
+impl<F: Field> From<u8> for VariableIndex<F> {
+    fn from(value: u8) -> Self {
+        Self(value, core::marker::PhantomData)
+    }
+}
+
+impl<F: RichField> VariableIndex<F> {
+    pub fn to_hash_out(&self) -> HashOut<F> {
+        HashOut::from_partial(&[F::from_canonical_u8(self.0)])
+    }
+
+    pub fn from_hash_out(value: HashOut<F>) -> Self {
+        Self::read(&mut value.elements.iter())
+    }
+
+    pub fn read(inputs: &mut core::slice::Iter<F>) -> Self {
+        let value = WrappedHashOut::read(inputs).0.elements[0].to_canonical_u64() as u8;
+
+        value.into()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SerializableVariableIndex(#[serde(with = "SerHex::<StrictPfx>")] pub u8);
+
+impl From<SerializableVariableIndex> for VariableIndex<GoldilocksField> {
+    fn from(value: SerializableVariableIndex) -> Self {
+        value.into()
+    }
+}
+
+impl<'de> Deserialize<'de> for VariableIndex<GoldilocksField> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = SerializableVariableIndex::deserialize(deserializer)?;
+
+        Ok(raw.into())
+    }
+}
+
+impl From<VariableIndex<GoldilocksField>> for SerializableVariableIndex {
+    fn from(value: VariableIndex<GoldilocksField>) -> Self {
+        SerializableVariableIndex(value.0)
+    }
+}
+
+impl Serialize for VariableIndex<GoldilocksField> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let raw = SerializableVariableIndex::from(*self);
+
+        raw.serialize(serializer)
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DepositInfo<F: Field> {
     pub receiver_address: Address<F>,
     pub contract_address: Address<F>,
-    pub variable_index: HashOut<F>,
+    pub variable_index: VariableIndex<F>,
     pub amount: F,
 }
 
@@ -35,7 +93,7 @@ pub struct DepositInfo<F: Field> {
 pub struct SerializableDepositInfo {
     pub receiver_address: GoldilocksHashOut,
     pub contract_address: GoldilocksHashOut,
-    pub variable_index: GoldilocksHashOut,
+    pub variable_index: VariableIndex<GoldilocksField>,
     pub amount: GoldilocksField,
 }
 
@@ -44,7 +102,7 @@ impl From<SerializableDepositInfo> for DepositInfo<GoldilocksField> {
         Self {
             receiver_address: Address(value.receiver_address.0),
             contract_address: Address(value.contract_address.0),
-            variable_index: value.variable_index.0,
+            variable_index: value.variable_index,
             amount: value.amount,
         }
     }
@@ -63,7 +121,7 @@ impl From<DepositInfo<GoldilocksField>> for SerializableDepositInfo {
         SerializableDepositInfo {
             receiver_address: value.receiver_address.0.into(),
             contract_address: value.contract_address.0.into(),
-            variable_index: value.variable_index.into(),
+            variable_index: value.variable_index,
             amount: value.amount,
         }
     }
@@ -111,7 +169,7 @@ impl DepositInfoTarget {
             .set_witness(pw, value.receiver_address);
         self.contract_address
             .set_witness(pw, value.contract_address);
-        pw.set_hash_target(self.variable_index, value.variable_index);
+        pw.set_hash_target(self.variable_index, value.variable_index.to_hash_out());
         pw.set_target(self.amount, value.amount);
     }
 }
@@ -689,7 +747,7 @@ fn test_deposit_block() {
     let deposit_list: Vec<DepositInfo<F>> = vec![DepositInfo {
         receiver_address: Address(sender2_address),
         contract_address: Address(*GoldilocksHashOut::from_u128(1)),
-        variable_index: *GoldilocksHashOut::from_u128(0),
+        variable_index: 0u8.into(),
         amount: GoldilocksField::from_noncanonical_u64(1),
     }];
 
@@ -702,7 +760,7 @@ fn test_deposit_block() {
                 .set(
                     leaf.receiver_address.0.into(),
                     leaf.contract_address.0.into(),
-                    leaf.variable_index.into(),
+                    leaf.variable_index.to_hash_out().into(),
                     HashOut::from_partial(&[leaf.amount]).into(),
                 )
                 .unwrap()

@@ -18,7 +18,7 @@ use crate::{
     merkle_tree::gadgets::{get_merkle_root_target, MerkleProofTarget},
     rollup::gadgets::{
         approval_block::ApprovalBlockProofTarget,
-        deposit_block::{DepositBlockProofTarget, DepositInfo, DepositInfoTarget},
+        deposit_block::{DepositBlockProofTarget, DepositInfo, DepositInfoTarget, VariableIndex},
         proposal_block::ProposalBlockProofTarget,
     },
     sparse_merkle_tree::{
@@ -379,7 +379,7 @@ impl<F: RichField> ProposalAndApprovalBlockPublicInputs<F> {
         {
             receiver_address.write(&mut public_inputs);
             contract_address.write(&mut public_inputs);
-            public_inputs.append(&mut variable_index.elements.into());
+            public_inputs.append(&mut variable_index.to_hash_out().elements.into());
             public_inputs.push(amount);
         }
 
@@ -591,7 +591,7 @@ impl<
             .map(|_| DepositInfo {
                 receiver_address: Address::read(&mut public_inputs),
                 contract_address: Address::read(&mut public_inputs),
-                variable_index: *WrappedHashOut::read(&mut public_inputs),
+                variable_index: VariableIndex::read(&mut public_inputs),
                 amount: *public_inputs.next().unwrap(),
             })
             .collect::<Vec<_>>();

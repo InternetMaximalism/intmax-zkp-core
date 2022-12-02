@@ -475,7 +475,7 @@ fn main() {
     let deposit_list: Vec<DepositInfo<F>> = vec![DepositInfo {
         receiver_address: Address(sender2_address),
         contract_address: Address(*GoldilocksHashOut::from_u128(1)),
-        variable_index: *GoldilocksHashOut::from_u128(0),
+        variable_index: 0u8.into(),
         amount: GoldilocksField::from_noncanonical_u64(1),
     }];
 
@@ -488,7 +488,7 @@ fn main() {
                 .set(
                     leaf.receiver_address.0.into(),
                     leaf.contract_address.0.into(),
-                    leaf.variable_index.into(),
+                    leaf.variable_index.to_hash_out().into(),
                     HashOut::from_partial(&[leaf.amount]).into(),
                 )
                 .unwrap()

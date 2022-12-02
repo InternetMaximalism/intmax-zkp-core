@@ -380,7 +380,7 @@ pub fn smt_lev_ins<F: RichField + Extendable<D>, const D: usize>(
     let num_levels = siblings.len();
 
     let zero = builder.zero();
-    
+
     let mut is_zeros = siblings
         .iter()
         .map(|sibling| {
@@ -396,7 +396,7 @@ pub fn smt_lev_ins<F: RichField + Extendable<D>, const D: usize>(
 
     is_zeros.reverse();
 
-    // The last level must always have a sibling of 0. If not, then it cannot be inserted.
+    // if this is insert process, the last level of siblings must be 0.
     let is_non_zero_last_sibling = logical_and_not(builder, is_insert_op, is_zeros[0]);
     builder.connect(is_non_zero_last_sibling.target, constant_false.target);
 

@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use plonky2::{
     field::{extension::Extendable, goldilocks_field::GoldilocksField, types::Field},
     hash::hash_types::{HashOut, HashOutTarget, RichField},
@@ -50,16 +52,46 @@ impl<F: RichField> VariableIndex<F> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SerializableVariableIndex(#[serde(with = "SerHex::<StrictPfx>")] pub u8);
+impl<F: RichField> std::fmt::Display for VariableIndex<F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = serde_json::to_string(self)
+            .map(|v| v.replace('\"', ""))
+            .unwrap();
 
-impl From<SerializableVariableIndex> for VariableIndex<GoldilocksField> {
-    fn from(value: SerializableVariableIndex) -> Self {
-        value.into()
+        write!(f, "{}", s)
     }
 }
 
-impl<'de> Deserialize<'de> for VariableIndex<GoldilocksField> {
+impl<F: RichField> FromStr for VariableIndex<F> {
+    type Err = serde_json::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let json = "\"".to_string() + s + "\"";
+
+        serde_json::from_str(&json)
+    }
+}
+
+#[test]
+fn test_fmt_variable_index() {
+    let value = VariableIndex::from(20u8);
+    let encoded_value = format!("{}", value);
+    assert_eq!(encoded_value, "0x14");
+    let decoded_value: VariableIndex<GoldilocksField> = VariableIndex::from_str("0x14").unwrap();
+    assert_eq!(decoded_value, value);
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(transparent)]
+pub struct SerializableVariableIndex(#[serde(with = "SerHex::<StrictPfx>")] pub u8);
+
+impl<F: RichField> From<SerializableVariableIndex> for VariableIndex<F> {
+    fn from(value: SerializableVariableIndex) -> Self {
+        value.0.into()
+    }
+}
+
+impl<'de, F: RichField> Deserialize<'de> for VariableIndex<F> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let raw = SerializableVariableIndex::deserialize(deserializer)?;
 
@@ -67,18 +99,26 @@ impl<'de> Deserialize<'de> for VariableIndex<GoldilocksField> {
     }
 }
 
-impl From<VariableIndex<GoldilocksField>> for SerializableVariableIndex {
-    fn from(value: VariableIndex<GoldilocksField>) -> Self {
+impl<F: RichField> From<VariableIndex<F>> for SerializableVariableIndex {
+    fn from(value: VariableIndex<F>) -> Self {
         SerializableVariableIndex(value.0)
     }
 }
 
-impl Serialize for VariableIndex<GoldilocksField> {
+impl<F: RichField> Serialize for VariableIndex<F> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let raw = SerializableVariableIndex::from(*self);
 
         raw.serialize(serializer)
     }
+}
+
+#[test]
+fn test_serde_variable_index() {
+    let value: VariableIndex<GoldilocksField> = 20u8.into();
+    let encoded = serde_json::to_string(&value).unwrap();
+    let decoded: VariableIndex<GoldilocksField> = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(decoded, value);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

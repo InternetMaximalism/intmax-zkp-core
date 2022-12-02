@@ -1,6 +1,6 @@
 use intmax_zkp_core::sparse_merkle_tree::{
     goldilocks_poseidon::{GoldilocksHashOut, PoseidonNodeHash, PoseidonSparseMerkleTreeMemory},
-    proof::process::verify_smt_process_proof,
+    proof::verify_smt_process_proof,
 };
 use plonky2::{field::types::Sample, hash::hash_types::HashOut};
 

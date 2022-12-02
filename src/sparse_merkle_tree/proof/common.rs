@@ -63,10 +63,22 @@ mod tests {
 
     #[test]
     fn test_to_le() {
-        assert_eq!(to_le_bits(1), vec![true]);
-        assert_eq!(to_le_bits(2), vec![false, true]);
-        assert_eq!(to_le_bits(3), vec![true, true]);
-        assert_eq!(to_le_bits(8), vec![false, false, false, true]);
+        assert_eq!(
+            to_le_bits(1),
+            vec![true, false, false, false, false, false, false, false]
+        );
+        assert_eq!(
+            to_le_bits(2),
+            vec![false, true, false, false, false, false, false, false]
+        );
+        assert_eq!(
+            to_le_bits(3),
+            vec![true, true, false, false, false, false, false, false]
+        );
+        assert_eq!(
+            to_le_bits(8),
+            vec![false, false, false, true, false, false, false, false]
+        );
     }
 }
 

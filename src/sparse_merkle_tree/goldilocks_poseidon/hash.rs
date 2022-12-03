@@ -12,6 +12,7 @@ use plonky2::{
     plonk::config::GenericHashOut,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_hex::{SerHexSeq, StrictPfx};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
@@ -42,22 +43,21 @@ impl<F: Field> Default for WrappedHashOut<F> {
 
 impl<F: RichField> Display for WrappedHashOut<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut bytes = self.0.to_bytes(); // little endian
-        bytes.reverse(); // big endian
+        let s = serde_json::to_string(self)
+            .map(|v| v.replace('\"', ""))
+            .unwrap();
 
-        write!(f, "{}", hex::encode(&bytes))
+        write!(f, "{}", s)
     }
 }
 
 impl<F: RichField> FromStr for WrappedHashOut<F> {
-    type Err = hex::FromHexError;
+    type Err = serde_json::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut raw = hex::decode(&s)?;
-        raw.reverse();
-        raw.resize(32, 0);
+        let json = "\"".to_string() + s + "\"";
 
-        Ok(Wrapper(HashOut::from_bytes(&raw)))
+        serde_json::from_str(&json)
     }
 }
 
@@ -67,26 +67,31 @@ fn test_fmt_goldilocks_hashout() {
     let encoded_value = format!("{}", value);
     assert_eq!(
         encoded_value,
-        "0000000000000000000000000000000000000000000000000000000000000001"
+        "0x0000000000000000000000000000000000000000000000000000000000000001"
     );
-    let decoded_value = GoldilocksHashOut::from_str("01").unwrap();
+    let decoded_value = GoldilocksHashOut::from_str("0x01").unwrap();
     assert_eq!(decoded_value, value);
 
     let value = GoldilocksHashOut::rand();
     let encoded_value = format!("{}", value);
-    assert_eq!(encoded_value.len(), 64);
+    assert_eq!(encoded_value.len(), 66);
     let decoded_value = GoldilocksHashOut::from_str(&encoded_value).unwrap();
     assert_eq!(decoded_value, value);
 }
+
+#[derive(Serialize, Deserialize)]
+struct SerializableHashOut(#[serde(with = "SerHexSeq::<StrictPfx>")] pub Vec<u8>);
 
 impl<F: RichField> Serialize for WrappedHashOut<F> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let raw = format!("0x{}", self);
+        let mut bytes = self.0.to_bytes(); // little endian
+        bytes.reverse(); // big endian
+        let raw = SerializableHashOut(bytes);
 
-        serializer.serialize_str(&raw)
+        raw.serialize(serializer)
     }
 }
 
@@ -95,9 +100,12 @@ impl<'de, F: RichField> Deserialize<'de> for WrappedHashOut<F> {
     where
         D: Deserializer<'de>,
     {
-        let raw = String::deserialize(deserializer)?;
+        let raw = SerializableHashOut::deserialize(deserializer)?;
+        let mut bytes = raw.0;
+        bytes.reverse(); // little endian
+        bytes.resize(32, 0);
 
-        Ok(WrappedHashOut::from_str(&raw[2..]).unwrap())
+        Ok(Wrapper(HashOut::from_bytes(&bytes)))
     }
 }
 
@@ -133,7 +141,7 @@ impl<F: RichField> GenericHashOut<F> for WrappedHashOut<F> {
     }
 }
 
-impl<F: RichField> WrappedHashOut<F> {
+impl<F: Field> WrappedHashOut<F> {
     pub const ZERO: Self = Wrapper(HashOut::ZERO);
 
     pub fn read(inputs: &mut core::slice::Iter<F>) -> Self {

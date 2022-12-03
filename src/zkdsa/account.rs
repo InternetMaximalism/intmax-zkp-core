@@ -1,4 +1,4 @@
-use std::{fmt::Display, str::FromStr};
+use std::str::FromStr;
 
 use plonky2::{
     field::{
@@ -23,27 +23,23 @@ pub type PublicKey<F> = HashOut<F>;
 #[repr(transparent)]
 pub struct Address<F: Field>(pub HashOut<F>);
 
-#[derive(Serialize, Deserialize)]
-pub struct SerializableAddress(#[serde(with = "SerHexSeq::<StrictPfx>")] pub Vec<u8>);
-
-impl<F: RichField> Display for Address<F> {
+impl<F: RichField> std::fmt::Display for Address<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut bytes = self.0.to_bytes(); // little endian
-        bytes.reverse(); // big endian
+        let s = serde_json::to_string(self)
+            .map(|v| v.replace('\"', ""))
+            .unwrap();
 
-        write!(f, "{}", hex::encode(&bytes))
+        write!(f, "{}", s)
     }
 }
 
 impl<F: RichField> FromStr for Address<F> {
-    type Err = hex::FromHexError;
+    type Err = serde_json::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut raw = hex::decode(&s)?;
-        raw.reverse();
-        raw.resize(32, 0);
+        let json = "\"".to_string() + s + "\"";
 
-        Ok(Address(HashOut::from_bytes(&raw)))
+        serde_json::from_str(&json)
     }
 }
 
@@ -55,26 +51,31 @@ fn test_fmt_address() {
     let encoded_value = format!("{}", value);
     assert_eq!(
         encoded_value,
-        "0000000000000000000000000000000000000000000000000000000000000001"
+        "0x0000000000000000000000000000000000000000000000000000000000000001"
     );
-    let decoded_value: Address<GoldilocksField> = Address::from_str("01").unwrap();
+    let decoded_value: Address<GoldilocksField> = Address::from_str("0x01").unwrap();
     assert_eq!(decoded_value, value);
 
     let value: Address<GoldilocksField> = Address::rand();
     let encoded_value = format!("{}", value);
-    assert_eq!(encoded_value.len(), 64);
+    assert_eq!(encoded_value.len(), 66);
     let decoded_value = Address::from_str(&encoded_value).unwrap();
     assert_eq!(decoded_value, value);
 }
+
+#[derive(Serialize, Deserialize)]
+struct SerializableAddress(#[serde(with = "SerHexSeq::<StrictPfx>")] pub Vec<u8>);
 
 impl<F: RichField> Serialize for Address<F> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let raw = format!("0x{}", self);
+        let mut bytes = self.0.to_bytes(); // little endian
+        bytes.reverse(); // big endian
+        let raw = SerializableAddress(bytes);
 
-        serializer.serialize_str(&raw)
+        raw.serialize(serializer)
     }
 }
 
@@ -83,9 +84,12 @@ impl<'de, F: RichField> Deserialize<'de> for Address<F> {
     where
         D: Deserializer<'de>,
     {
-        let raw = String::deserialize(deserializer)?;
+        let raw = SerializableAddress::deserialize(deserializer)?;
+        let mut bytes = raw.0;
+        bytes.reverse(); // little endian
+        bytes.resize(32, 0);
 
-        Ok(Address::from_str(&raw[2..]).unwrap())
+        Ok(Address(HashOut::from_bytes(&bytes)))
     }
 }
 

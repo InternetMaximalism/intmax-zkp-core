@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     merkle_tree::tree::MerkleProof,
+    rollup::gadgets::deposit_block::VariableIndex,
     sparse_merkle_tree::{
         gadgets::verify::verify_smt::SmtInclusionProof, goldilocks_poseidon::WrappedHashOut,
     },
@@ -18,10 +19,10 @@ pub struct TokenKind<F: RichField> {
     ))]
     pub contract_address: Address<F>,
     #[serde(bound(
-        serialize = "WrappedHashOut<F>: Serialize",
-        deserialize = "WrappedHashOut<F>: Deserialize<'de>"
+        serialize = "VariableIndex<F>: Serialize",
+        deserialize = "VariableIndex<F>: Deserialize<'de>"
     ))]
-    pub variable_index: WrappedHashOut<F>,
+    pub variable_index: VariableIndex<F>,
 }
 
 #[test]
@@ -33,7 +34,7 @@ fn test_serde_token_kind() {
 
     let kind: TokenKind<GoldilocksField> = TokenKind {
         contract_address: Address::rand(),
-        variable_index: HashOut::rand().into(),
+        variable_index: VariableIndex::from_hash_out(HashOut::<GoldilocksField>::rand()),
     };
     let encoded_kind = serde_json::to_string(&kind).unwrap();
     let decoded_kind: TokenKind<GoldilocksField> = serde_json::from_str(&encoded_kind).unwrap();

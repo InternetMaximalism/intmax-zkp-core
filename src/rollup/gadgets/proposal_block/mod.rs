@@ -110,17 +110,18 @@ impl<const D: usize, const N_LOG_USERS: usize, const N_TXS: usize>
 
         assert!(!world_state_process_proofs.is_empty());
         assert!(world_state_process_proofs.len() <= self.world_state_process_proofs.len());
+        let mut prev_world_state_root = old_world_state_root.into();
         for (p_t, p) in self
             .world_state_process_proofs
             .iter()
             .zip(world_state_process_proofs.iter())
         {
+            assert_eq!(p.old_root, prev_world_state_root);
+            prev_world_state_root = p.new_root;
             p_t.set_witness(pw, p);
         }
 
-        let latest_root = world_state_process_proofs.last().unwrap().new_root;
-
-        let default_proof = SmtProcessProof::with_root(latest_root);
+        let default_proof = SmtProcessProof::with_root(prev_world_state_root);
         for p_t in self
             .world_state_process_proofs
             .iter()
@@ -267,7 +268,7 @@ fn test_proposal_block() {
             circuits::make_user_proof_circuit,
             gadgets::merge::MergeProof,
         },
-        zkdsa::{account::private_key_to_account, circuits::make_simple_signature_circuit},
+        zkdsa::account::private_key_to_account,
     };
 
     const D: usize = 2;
@@ -400,6 +401,15 @@ fn test_proposal_block() {
     let mut sender2_tx_diff_tree =
         LayeredLayeredPoseidonSparseMerkleTreeMemory::new(node_data.clone(), Default::default());
 
+    world_state_tree
+        .set(
+            sender2_address.into(),
+            sender2_user_asset_tree.get_root().unwrap(),
+        )
+        .unwrap();
+
+    let prev_approved_world_state_digest = world_state_tree.get_root().unwrap();
+
     let mut deposit_sender2_tree =
         LayeredLayeredPoseidonSparseMerkleTree::new(node_data, Default::default());
 
@@ -414,27 +424,31 @@ fn test_proposal_block() {
 
     let merge_inclusion_proof2 = deposit_sender2_tree.find(&sender2_address.into()).unwrap();
 
+    // `merge_inclusion_proof2` の root を `diff_root`, `hash(diff_root, nonce)` の値を `tx_hash` とよぶ.
     let deposit_nonce = HashOut::ZERO;
-    let deposit_tx_hash = PoseidonHash::two_to_one(*merge_inclusion_proof2.root, deposit_nonce);
+    let deposit_diff_root = merge_inclusion_proof2.root;
+    let deposit_tx_hash = PoseidonHash::two_to_one(*deposit_diff_root, deposit_nonce).into();
 
-    let merge_inclusion_proof1 = get_merkle_proof(&[deposit_tx_hash.into()], 0, N_LOG_TXS);
+    let merge_inclusion_proof1 = get_merkle_proof(&[deposit_tx_hash], 0, N_LOG_TXS);
 
     let default_hash = HashOut::ZERO;
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
     let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
+    let prev_block_number = 1;
     let prev_block_header = BlockHeader {
-        block_number: 0,
+        block_number: prev_block_number,
         prev_block_header_digest: default_hash,
         transactions_digest: *default_merkle_root,
         deposit_digest: *merge_inclusion_proof1.root,
-        proposed_world_state_digest: default_hash,
-        approved_world_state_digest: default_hash,
+        proposed_world_state_digest: *prev_approved_world_state_digest,
+        approved_world_state_digest: *prev_approved_world_state_digest,
         latest_account_digest: default_hash,
     };
 
     let block_hash = get_block_hash(&prev_block_header);
 
-    let deposit_merge_key = PoseidonHash::two_to_one(deposit_tx_hash, block_hash).into();
+    // deposit の場合は, `hash(tx_hash, block_hash)` を `merge_key` とよぶ.
+    let deposit_merge_key = PoseidonHash::two_to_one(*deposit_tx_hash, block_hash).into();
 
     let merge_process_proof = sender2_user_asset_tree
         .set(deposit_merge_key, merge_inclusion_proof2.value)
@@ -443,7 +457,7 @@ fn test_proposal_block() {
     let merge_proof = MergeProof {
         is_deposit: true,
         diff_tree_inclusion_proof: (
-            prev_block_header,
+            prev_block_header.clone(),
             merge_inclusion_proof1,
             merge_inclusion_proof2,
         ),
@@ -451,13 +465,6 @@ fn test_proposal_block() {
         latest_account_tree_inclusion_proof: default_inclusion_proof,
         nonce: deposit_nonce.into(),
     };
-
-    world_state_tree
-        .set(
-            sender2_address.into(),
-            sender2_user_asset_tree.get_root().unwrap(),
-        )
-        .unwrap();
 
     let mut sender2_user_asset_tree: LayeredLayeredPoseidonSparseMerkleTreeMemory =
         sender2_user_asset_tree.into();
@@ -570,41 +577,9 @@ fn test_proposal_block() {
         .unwrap();
 
     world_state_process_proofs.push(sender1_world_state_process_proof);
-    user_tx_proofs.push(sender1_tx_proof.clone());
+    user_tx_proofs.push(sender1_tx_proof);
     world_state_process_proofs.push(sender2_world_state_process_proof);
-    user_tx_proofs.push(sender2_tx_proof.clone());
-
-    let zkdsa_circuit = make_simple_signature_circuit();
-
-    let mut pw = PartialWitness::new();
-    zkdsa_circuit.targets.set_witness(
-        &mut pw,
-        sender1_account.private_key,
-        *world_state_tree.get_root().unwrap(),
-    );
-
-    println!("start proving: sender1_received_signature");
-    let start = Instant::now();
-    let sender1_received_signature = zkdsa_circuit.prove(pw).unwrap();
-    let end = start.elapsed();
-    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
-
-    // dbg!(&sender1_received_signature.public_inputs);
-
-    let mut pw = PartialWitness::new();
-    zkdsa_circuit.targets.set_witness(
-        &mut pw,
-        sender2_account.private_key,
-        *world_state_tree.get_root().unwrap(),
-    );
-
-    println!("start proving: sender2_received_signature");
-    let start = Instant::now();
-    let sender2_received_signature = zkdsa_circuit.prove(pw).unwrap();
-    let end = start.elapsed();
-    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
-
-    // dbg!(&sender2_received_signature.public_inputs);
+    user_tx_proofs.push(sender2_tx_proof);
 
     // proposal block
     let config = CircuitConfig::standard_recursion_config();
@@ -613,52 +588,7 @@ fn test_proposal_block() {
         ProposalBlockProofTarget::add_virtual_to(&mut builder, &merge_and_purge_circuit.data);
     let circuit_data = builder.build::<C>();
 
-    let block_number = 1;
-
-    let accounts_in_block: Vec<(Option<_>, _)> = vec![
-        (Some(sender1_received_signature), sender1_tx_proof),
-        (Some(sender2_received_signature), sender2_tx_proof),
-    ];
-
-    let mut latest_account_tree: PoseidonSparseMerkleTreeMemory =
-        PoseidonSparseMerkleTree::new(Default::default(), Default::default());
-
-    // NOTICE: merge proof の中に deposit が混ざっていると, revert proof がうまく出せない場合がある.
-    // deposit してそれを消費して old: 0 -> middle: non-zero -> new: 0 となった場合は,
-    // u.enabled かつ w.fnc == NoOp だが revert ではない.
-    let mut world_state_revert_proofs = vec![];
-    let mut latest_account_tree_process_proofs = vec![];
-    let mut received_signatures = vec![];
-    for (opt_received_signature, user_tx_proof) in accounts_in_block {
-        let user_address = user_tx_proof.public_inputs.sender_address;
-        let (last_block_number, confirmed_user_asset_root) = if opt_received_signature.is_none() {
-            let old_block_number = latest_account_tree.get(&user_address.0.into()).unwrap();
-            (
-                old_block_number.to_u32(),
-                user_tx_proof.public_inputs.old_user_asset_root,
-            )
-        } else {
-            (
-                block_number,
-                user_tx_proof.public_inputs.new_user_asset_root,
-            )
-        };
-        latest_account_tree_process_proofs.push(
-            latest_account_tree
-                .set(
-                    user_address.0.into(),
-                    GoldilocksHashOut::from_u32(last_block_number),
-                )
-                .unwrap(),
-        );
-
-        let proof = world_state_tree
-            .set(user_address.0.into(), confirmed_user_asset_root)
-            .unwrap();
-        world_state_revert_proofs.push(proof);
-        received_signatures.push(opt_received_signature);
-    }
-
+    dbg!(&world_state_process_proofs, &prev_block_header);
     let mut pw = PartialWitness::new();
     proposal_block_target.set_witness(
         &mut pw,
@@ -667,7 +597,7 @@ fn test_proposal_block() {
             .iter()
             .map(|p| ProofWithPublicInputs::from(p.clone()))
             .collect::<Vec<_>>(),
-        *world_state_process_proofs.first().unwrap().old_root,
+        prev_block_header.approved_world_state_digest,
     );
 
     println!("start proving: block_proof");

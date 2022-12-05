@@ -1,5 +1,5 @@
 use plonky2::{
-    field::{extension::Extendable, types::Field},
+    field::extension::Extendable,
     hash::hash_types::{HashOut, HashOutTarget, RichField},
     iop::{target::Target, witness::PartialWitness},
     plonk::{
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut;
 
-use super::gadgets::signature::SimpleSignatureTarget;
+use super::{account::PublicKey, gadgets::signature::SimpleSignatureTarget};
 
 type C = PoseidonGoldilocksConfig;
 type H = <C as GenericConfig<D>>::InnerHasher;
@@ -48,13 +48,13 @@ pub struct SimpleSignatureCircuit<
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound = "")]
-pub struct SimpleSignaturePublicInputs<F: Field> {
+pub struct SimpleSignaturePublicInputs<F: RichField> {
     pub message: HashOut<F>,
-    pub public_key: HashOut<F>,
+    pub public_key: PublicKey<F>,
     pub signature: HashOut<F>,
 }
 
-impl<F: Field> SimpleSignaturePublicInputs<F> {
+impl<F: RichField> SimpleSignaturePublicInputs<F> {
     pub fn encode(&self) -> Vec<F> {
         let mut public_inputs = vec![];
         public_inputs.append(&mut self.message.elements.into());

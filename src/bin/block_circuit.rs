@@ -53,6 +53,7 @@ fn main() {
     const N_LOG_CONTRACTS: usize = 3;
     const N_LOG_VARIABLES: usize = 3;
     const N_DEPOSITS: usize = 2;
+    const N_REGISTERS: usize = 2;
     const N_DIFFS: usize = 2;
     const N_MERGES: usize = 2;
     const N_TXS: usize = 2usize.pow(N_LOG_TXS as u32);
@@ -173,6 +174,15 @@ fn main() {
     let mut sender2_tx_diff_tree =
         LayeredLayeredPoseidonSparseMerkleTreeMemory::new(node_data.clone(), Default::default());
 
+    world_state_tree
+        .set(
+            sender2_address.into(),
+            sender2_user_asset_tree.get_root().unwrap(),
+        )
+        .unwrap();
+
+    let prev_approved_world_state_digest = world_state_tree.get_root().unwrap();
+
     let mut deposit_sender2_tree =
         LayeredLayeredPoseidonSparseMerkleTree::new(node_data, Default::default());
 
@@ -197,13 +207,14 @@ fn main() {
     let default_hash = HashOut::ZERO;
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
     let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
+    let prev_block_number = 1;
     let prev_block_header = BlockHeader {
-        block_number: 0,
+        block_number: prev_block_number,
         prev_block_header_digest: default_hash,
         transactions_digest: *default_merkle_root,
         deposit_digest: *merge_inclusion_proof1.root,
-        proposed_world_state_digest: default_hash,
-        approved_world_state_digest: default_hash,
+        proposed_world_state_digest: *prev_approved_world_state_digest,
+        approved_world_state_digest: *prev_approved_world_state_digest,
         latest_account_digest: default_hash,
     };
 
@@ -227,13 +238,6 @@ fn main() {
         latest_account_tree_inclusion_proof: default_inclusion_proof,
         nonce: deposit_nonce.into(),
     };
-
-    world_state_tree
-        .set(
-            sender2_address.into(),
-            sender2_user_asset_tree.get_root().unwrap(),
-        )
-        .unwrap();
 
     let mut sender2_user_asset_tree: LayeredLayeredPoseidonSparseMerkleTreeMemory =
         sender2_user_asset_tree.into();
@@ -409,9 +413,10 @@ fn main() {
         N_MERGES,
         N_TXS,
         N_DEPOSITS,
+        N_REGISTERS,
     >(&merge_and_purge_circuit, &zkdsa_circuit);
 
-    let block_number = 1;
+    let block_number = prev_block_number + 1;
 
     let accounts_in_block: Vec<(Option<_>, _)> = vec![
         (Some(sender1_received_signature), sender1_tx_proof),
@@ -421,11 +426,8 @@ fn main() {
     let mut latest_account_tree: PoseidonSparseMerkleTreeMemory =
         PoseidonSparseMerkleTree::new(Default::default(), Default::default());
 
-    // NOTICE: merge proof の中に deposit が混ざっていると, revert proof がうまく出せない場合がある.
-    // deposit してそれを消費して old: 0 -> middle: non-zero -> new: 0 となった場合は,
-    // u.enabled かつ w.fnc == NoOp だが revert ではない.
     let mut world_state_revert_proofs = vec![];
-    let mut latest_account_tree_process_proofs = vec![];
+    let mut latest_account_transaction_process_proofs = vec![];
     let mut received_signatures = vec![];
     for (opt_received_signature, user_tx_proof) in accounts_in_block {
         let user_address = user_tx_proof.public_inputs.sender_address;
@@ -441,7 +443,7 @@ fn main() {
                 user_tx_proof.public_inputs.new_user_asset_root,
             )
         };
-        latest_account_tree_process_proofs.push(
+        latest_account_transaction_process_proofs.push(
             latest_account_tree
                 .set(
                     user_address.0.into(),
@@ -457,9 +459,8 @@ fn main() {
         received_signatures.push(opt_received_signature);
     }
 
-    let block_headers = vec![HashOut::ZERO];
-    let prev_block_number = block_number - 1;
     let prev_block_hash = get_block_hash(&prev_block_header); // TODO: `prev_block_number` 番目の block header
+    let block_headers = vec![HashOut::ZERO, prev_block_hash];
     let MerkleProof {
         siblings: block_header_siblings,
         ..
@@ -495,6 +496,8 @@ fn main() {
         })
         .collect::<Vec<_>>();
 
+    let latest_account_register_process_proofs = vec![];
+
     let mut pw = PartialWitness::new();
     block_circuit.targets.set_witness(
         &mut pw,
@@ -505,13 +508,15 @@ fn main() {
         &world_state_revert_proofs,
         &received_signatures,
         &default_simple_signature,
-        &latest_account_tree_process_proofs,
+        &latest_account_register_process_proofs,
+        &latest_account_transaction_process_proofs,
         &block_header_siblings
             .into_iter()
             .map(|v| *v)
             .collect::<Vec<_>>(),
         prev_block_hash,
-        *world_state_process_proofs.first().unwrap().old_root,
+        prev_block_header.approved_world_state_digest,
+        prev_block_header.latest_account_digest,
     );
 
     println!("start proving: block_proof");

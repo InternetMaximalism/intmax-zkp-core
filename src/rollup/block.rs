@@ -20,6 +20,11 @@ pub struct BlockInfo<F: RichField> {
     ))]
     pub transactions: Vec<WrappedHashOut<F>>,
     #[serde(bound(
+        serialize = "WrappedHashOut<F>: Serialize",
+        deserialize = "WrappedHashOut<F>: Deserialize<'de>"
+    ))]
+    pub new_accounts: Vec<WrappedHashOut<F>>,
+    #[serde(bound(
         serialize = "DepositInfo<F>: Serialize",
         deserialize = "DepositInfo<F>: Deserialize<'de>"
     ))]
@@ -38,6 +43,7 @@ impl<F: RichField> BlockInfo<F> {
         Self {
             header: BlockHeader::with_tree_depth(depth),
             transactions: Default::default(),
+            new_accounts: Default::default(),
             deposit_list: Default::default(),
             address_list: Default::default(),
         }

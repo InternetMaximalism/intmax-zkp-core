@@ -20,6 +20,7 @@ use crate::{
         approval_block::ApprovalBlockProofTarget,
         deposit_block::{DepositBlockProofTarget, DepositInfo, DepositInfoTarget, VariableIndex},
         proposal_block::ProposalBlockProofTarget,
+        register_block::RegisterBlockProofTarget,
     },
     sparse_merkle_tree::{
         gadgets::process::process_smt::SmtProcessProof, goldilocks_poseidon::WrappedHashOut,
@@ -48,18 +49,20 @@ const N_LOG_MAX_BLOCKS: usize = 32;
 
 pub struct OneBlockProofTarget<
     const D: usize,
-    const N_LOG_USERS: usize, // N_LOG_MAX_USERS
+    const N_LOG_MAX_USERS: usize, // N_LOG_MAX_USERS
     const N_LOG_TXS: usize,
     const N_LOG_RECIPIENTS: usize,
     const N_LOG_CONTRACTS: usize,
     const N_LOG_VARIABLES: usize,
     const N_TXS: usize,
     const N_DEPOSITS: usize,
+    const N_REGISTERS: usize,
 > {
     pub deposit_block_target:
         DepositBlockProofTarget<D, N_LOG_RECIPIENTS, N_LOG_CONTRACTS, N_LOG_VARIABLES, N_DEPOSITS>,
-    pub proposal_block_target: ProposalBlockProofTarget<D, N_LOG_USERS, N_TXS>,
-    pub approval_block_target: ApprovalBlockProofTarget<D, N_LOG_USERS, N_TXS>,
+    pub proposal_block_target: ProposalBlockProofTarget<D, N_LOG_MAX_USERS, N_TXS>,
+    pub approval_block_target: ApprovalBlockProofTarget<D, N_LOG_MAX_USERS, N_TXS>,
+    pub register_block_target: RegisterBlockProofTarget<N_LOG_MAX_USERS, N_REGISTERS>,
     pub block_number: Target,
     pub prev_block_header_proof: MerkleProofTarget<N_LOG_MAX_BLOCKS>,
     pub prev_block_hash: HashOutTarget,
@@ -75,6 +78,7 @@ impl<
         const N_LOG_VARIABLES: usize,
         const N_TXS: usize,
         const N_DEPOSITS: usize,
+        const N_REGISTERS: usize,
     >
     OneBlockProofTarget<
         D,
@@ -85,6 +89,7 @@ impl<
         N_LOG_VARIABLES,
         N_TXS,
         N_DEPOSITS,
+        N_REGISTERS,
     >
 {
     #[allow(clippy::too_many_arguments)]
@@ -98,13 +103,21 @@ impl<
         world_state_revert_proofs: &[SmtProcessProof<F>],
         received_signatures: &[Option<SimpleSignatureProofWithPublicInputs<F, C, D>>],
         default_simple_signature: &SimpleSignatureProofWithPublicInputs<F, C, D>,
-        latest_account_tree_process_proofs: &[SmtProcessProof<F>],
+        latest_account_register_process_proofs: &[SmtProcessProof<F>],
+        latest_account_transaction_process_proofs: &[SmtProcessProof<F>],
         block_header_siblings: &[HashOut<F>],
-        prev_block_hash: HashOut<F>,
-        old_world_state_root: HashOut<F>,
+        prev_block_hash: HashOut<F>, // TODO: prev_block_header にまとめることもできる
+        old_world_state_root: HashOut<F>, // TODO: prev_block_header にまとめることもできる
+        old_latest_account_root: HashOut<F>, // TODO: prev_block_header にまとめることもできる
     ) where
         C::Hasher: AlgebraicHasher<F>,
     {
+        self.register_block_target.set_witness::<F, C::Hasher, D>(
+            pw,
+            latest_account_register_process_proofs,
+            old_latest_account_root.into(),
+            block_number,
+        );
         self.deposit_block_target
             .set_witness::<F, C::Hasher>(pw, deposit_process_proofs);
         self.proposal_block_target.set_witness(
@@ -129,7 +142,7 @@ impl<
                 .map(|p| p.clone().map(ProofWithPublicInputs::from))
                 .collect::<Vec<_>>(),
             &ProofWithPublicInputs::from(default_simple_signature.clone()),
-            latest_account_tree_process_proofs,
+            latest_account_transaction_process_proofs,
         );
 
         self.prev_block_header_proof.set_witness(
@@ -182,6 +195,7 @@ pub fn make_block_proof_circuit<
     const N_MERGES: usize,
     const N_TXS: usize,
     const N_DEPOSITS: usize,
+    const N_REGISTERS: usize,
 >(
     merge_and_purge_circuit: &MergeAndPurgeTransitionCircuit<
         F,
@@ -210,6 +224,7 @@ pub fn make_block_proof_circuit<
     N_LOG_VARIABLES,
     N_TXS,
     N_DEPOSITS,
+    N_REGISTERS,
 >
 where
     C::Hasher: AlgebraicHasher<F>,
@@ -225,7 +240,7 @@ where
         N_LOG_CONTRACTS,
         N_LOG_VARIABLES,
         N_DEPOSITS,
-    > = DepositBlockProofTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(&mut builder);
+    > = DepositBlockProofTarget::add_virtual_to::<F, C::Hasher>(&mut builder);
 
     // proposal block
     let proposal_block_target: ProposalBlockProofTarget<D, N_LOG_MAX_USERS, N_TXS> =
@@ -235,6 +250,8 @@ where
     let approval_block_target: ApprovalBlockProofTarget<D, N_LOG_MAX_USERS, N_TXS> =
         ApprovalBlockProofTarget::add_virtual_to(&mut builder, &simple_signature_circuit.data);
 
+    let register_block_target: RegisterBlockProofTarget<N_LOG_MAX_USERS, N_REGISTERS> =
+        RegisterBlockProofTarget::add_virtual_to::<F, C::Hasher, D>(&mut builder);
     for (user_tx_proof, received_signature) in proposal_block_target
         .user_tx_proofs
         .iter()
@@ -307,6 +324,7 @@ where
         proposal_block_target,
         approval_block_target,
         deposit_block_target,
+        register_block_target,
         block_number,
         prev_block_header_proof,
         prev_block_hash,
@@ -330,6 +348,7 @@ pub struct ProposalAndApprovalBlockCircuit<
     const N_LOG_VARIABLES: usize,
     const N_TXS: usize,
     const N_DEPOSITS: usize,
+    const N_REGISTERS: usize,
 > {
     pub data: CircuitData<F, C, D>,
     pub targets: OneBlockProofTarget<
@@ -341,6 +360,7 @@ pub struct ProposalAndApprovalBlockCircuit<
         N_LOG_VARIABLES,
         N_TXS,
         N_DEPOSITS,
+        N_REGISTERS,
     >,
 }
 
@@ -553,6 +573,7 @@ impl<
         const N_LOG_VARIABLES: usize,
         const N_TXS: usize,
         const N_DEPOSITS: usize,
+        const N_REGISTERS: usize,
     >
     ProposalAndApprovalBlockCircuit<
         F,
@@ -565,6 +586,7 @@ impl<
         N_LOG_VARIABLES,
         N_TXS,
         N_DEPOSITS,
+        N_REGISTERS,
     >
 {
     pub fn parse_public_inputs(

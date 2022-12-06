@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use plonky2::{
     field::extension::Extendable,
     hash::hash_types::{HashOut, HashOutTarget, RichField},
@@ -175,10 +174,8 @@ pub fn verify_valid_proposal_block<
     }
 
     // 各 user asset root は world state tree に含まれていることの検証.
-    for (w, u) in world_state_process_proofs
-        .iter()
-        .zip_eq(user_tx_proofs.iter())
-    {
+    assert_eq!(world_state_process_proofs.len(), user_tx_proofs.len());
+    for (w, u) in world_state_process_proofs.iter().zip(user_tx_proofs.iter()) {
         let public_inputs = parse_merge_and_purge_public_inputs(&u.inner.0.public_inputs);
         let old_user_asset_root = public_inputs.middle_user_asset_root;
         let new_user_asset_root = public_inputs.new_user_asset_root;

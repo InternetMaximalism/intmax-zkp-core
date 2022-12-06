@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use plonky2::{
     field::extension::Extendable,
     hash::hash_types::{HashOut, HashOutTarget, RichField},
@@ -304,12 +303,19 @@ pub fn verify_valid_approval_block<
     let old_account_tree_root = latest_account_tree_process_proofs.first().unwrap().old_root;
     let new_account_tree_root = latest_account_tree_process_proofs.last().unwrap().new_root;
 
+    assert_eq!(world_state_revert_proofs.len(), user_transactions.len());
+    assert_eq!(received_signatures.len(), user_transactions.len());
+    assert_eq!(
+        latest_account_tree_process_proofs.len(),
+        user_transactions.len(),
+    );
+    assert_eq!(enabled_list.len(), user_transactions.len());
     for ((((w, u), r), a), enabled) in world_state_revert_proofs
         .iter()
-        .zip_eq(user_transactions)
-        .zip_eq(received_signatures)
-        .zip_eq(latest_account_tree_process_proofs)
-        .zip_eq(enabled_list.iter().cloned())
+        .zip(user_transactions)
+        .zip(received_signatures)
+        .zip(latest_account_tree_process_proofs)
+        .zip(enabled_list.iter().cloned())
     {
         // signature is enabled <=> user asset root is not reverted
         let enabled_signature = r.enabled;

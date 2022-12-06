@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use plonky2::{
     field::{extension::Extendable, types::Field},
     hash::hash_types::RichField,
@@ -30,9 +29,10 @@ pub fn make_address_list<
     received_signatures: &[Option<SimpleSignatureProofWithPublicInputs<F, C, D>>],
     _num_transactions: usize,
 ) -> Vec<TransactionSenderWithValidity<F>> {
+    assert_eq!(user_tx_proofs.len(), received_signatures.len());
     user_tx_proofs
         .iter()
-        .zip_eq(received_signatures.iter())
+        .zip(received_signatures.iter())
         .map(
             |(user_tx_proof, received_signature)| TransactionSenderWithValidity {
                 sender_address: user_tx_proof.public_inputs.sender_address,

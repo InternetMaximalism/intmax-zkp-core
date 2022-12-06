@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use plonky2::{
     field::extension::Extendable,
     hash::hash_types::{HashOut, HashOutTarget, RichField},
@@ -235,10 +234,14 @@ where
     let approval_block_target: ApprovalBlockProofTarget<D, N_LOG_MAX_USERS, N_TXS> =
         ApprovalBlockProofTarget::add_virtual_to(&mut builder, &simple_signature_circuit.data);
 
+    assert_eq!(
+        proposal_block_target.user_tx_proofs.len(),
+        approval_block_target.received_signatures.len()
+    );
     for (user_tx_proof, received_signature) in proposal_block_target
         .user_tx_proofs
         .iter()
-        .zip_eq(approval_block_target.received_signatures.iter())
+        .zip(approval_block_target.received_signatures.iter())
     {
         // publish ID list
         // public_inputs[(5*i)..(5*i+5)]

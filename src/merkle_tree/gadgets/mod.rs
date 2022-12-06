@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use plonky2::{
     field::extension::Extendable,
     hash::hash_types::{HashOutTarget, RichField},
@@ -57,12 +56,8 @@ impl<const N_LEVELS: usize> MerkleProofTarget<N_LEVELS> {
         pw.set_target(self.index, F::from_canonical_usize(index));
         pw.set_hash_target(self.value, *value);
 
-        for (sibling_t, sibling) in self
-            .siblings
-            .iter()
-            .cloned()
-            .zip_eq(siblings.iter().cloned())
-        {
+        assert_eq!(self.siblings.len(), siblings.len());
+        for (sibling_t, sibling) in self.siblings.iter().cloned().zip(siblings.iter().cloned()) {
             pw.set_hash_target(sibling_t, *sibling);
         }
 

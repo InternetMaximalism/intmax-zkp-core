@@ -471,6 +471,8 @@ fn test_purge_proof_by_plonky2() {
     use std::time::Instant;
 
     use plonky2::{
+        field::types::Field,
+        hash::hash_types::HashOut,
         iop::witness::PartialWitness,
         plonk::{
             circuit_builder::CircuitBuilder,
@@ -485,6 +487,7 @@ fn test_purge_proof_by_plonky2() {
             PoseidonSparseMerkleTree, RootDataTmp,
         },
         transaction::tree::user_asset::UserAssetTree,
+        zkdsa::account::private_key_to_account,
     };
 
     const D: usize = 2;
@@ -541,13 +544,22 @@ fn test_purge_proof_by_plonky2() {
     );
     let value4 = GoldilocksHashOut::from_u128(1);
 
-    let user_address = GoldilocksHashOut::from_u128(4);
+    let private_key = HashOut {
+        elements: [
+            F::from_canonical_u64(15657143458229430356),
+            F::from_canonical_u64(6012455030006979790),
+            F::from_canonical_u64(4280058849535143691),
+            F::from_canonical_u64(5153662694263190591),
+        ],
+    };
+    dbg!(&private_key);
+    let user_account = private_key_to_account(private_key);
+    let user_address = user_account.address;
 
     let mut world_state_tree =
         PoseidonSparseMerkleTree::new(NodeDataMemory::default(), RootDataTmp::default());
 
-    let nodes_db = NodeDataMemory::default();
-    let mut user_asset_tree = UserAssetTree::new(nodes_db, RootDataTmp::default());
+    let mut user_asset_tree = UserAssetTree::new(NodeDataMemory::default(), RootDataTmp::default());
     let mut tx_diff_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
         NodeDataMemory::default(),
         RootDataTmp::default(),
@@ -558,7 +570,10 @@ fn test_purge_proof_by_plonky2() {
     user_asset_tree.set(key2.0, key2.1, key2.2, value2).unwrap();
 
     world_state_tree
-        .set(user_address, user_asset_tree.get_root().unwrap())
+        .set(
+            user_address.to_hash_out().into(),
+            user_asset_tree.get_root().unwrap(),
+        )
         .unwrap();
 
     let proof1 = user_asset_tree.set(key2.0, key2.1, key2.2, zero).unwrap();
@@ -567,15 +582,22 @@ fn test_purge_proof_by_plonky2() {
     let proof3 = tx_diff_tree.set(key3.0, key3.1, key3.2, value3).unwrap();
     let proof4 = tx_diff_tree.set(key4.0, key4.1, key4.2, value4).unwrap();
 
-    let sender_address = Address::rand();
     let input_witness = vec![proof1, proof2];
     let output_witness = vec![proof3, proof4];
-    let nonce = WrappedHashOut::rand();
+    let nonce = WrappedHashOut::from(HashOut {
+        elements: [
+            F::from_canonical_u64(6657881311364026367),
+            F::from_canonical_u64(11761473381903976612),
+            F::from_canonical_u64(10768494808833234712),
+            F::from_canonical_u64(3223267375194257474),
+        ],
+    });
+    dbg!(nonce);
 
     let mut pw = PartialWitness::new();
     target.set_witness(
         &mut pw,
-        sender_address,
+        user_address,
         &input_witness,
         &output_witness,
         input_witness.first().unwrap().0.old_root,

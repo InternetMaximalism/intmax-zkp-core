@@ -422,7 +422,7 @@ fn test_merge_proof_by_plonky2() {
     use std::time::Instant;
 
     use plonky2::{
-        field::types::Sample,
+        field::types::Field,
         iop::witness::PartialWitness,
         plonk::{
             circuit_builder::CircuitBuilder,
@@ -478,39 +478,44 @@ fn test_merge_proof_by_plonky2() {
     let variable_index2 = GoldilocksHashOut::from_u128(8012);
     let amount2 = GoldilocksHashOut::from_u128(1111);
 
-    let sender2_private_key: HashOut<F> = HashOut::rand();
-    dbg!(&sender2_private_key);
-    let sender2_account = private_key_to_account(sender2_private_key);
-    let sender2_address = sender2_account.address.0;
+    let private_key = HashOut {
+        elements: [
+            F::from_canonical_u64(15657143458229430356),
+            F::from_canonical_u64(6012455030006979790),
+            F::from_canonical_u64(4280058849535143691),
+            F::from_canonical_u64(5153662694263190591),
+        ],
+    };
+    let user_account = private_key_to_account(private_key);
+    let user_address = user_account.address.0;
 
-    let node_data = NodeDataMemory::default();
-    let mut sender2_user_asset_tree = UserAssetTree::new(node_data, RootDataTmp::default());
+    let mut user_asset_tree = UserAssetTree::new(NodeDataMemory::default(), RootDataTmp::default());
 
-    let mut deposit_sender2_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
+    let mut deposit_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
         NodeDataMemory::default(),
         RootDataTmp::default(),
     );
 
-    deposit_sender2_tree
+    deposit_tree
         .set(
-            sender2_address.into(),
+            user_address.into(),
             contract_address1,
             variable_index1,
             amount1,
         )
         .unwrap();
-    deposit_sender2_tree
+    deposit_tree
         .set(
-            sender2_address.into(),
+            user_address.into(),
             contract_address2,
             variable_index2,
             amount2,
         )
         .unwrap();
 
-    let deposit_sender2_tree: PoseidonSparseMerkleTree<_, _> = deposit_sender2_tree.into();
+    let deposit_tree: PoseidonSparseMerkleTree<_, _> = deposit_tree.into();
 
-    let merge_inclusion_proof2 = deposit_sender2_tree.find(&sender2_address.into()).unwrap();
+    let merge_inclusion_proof2 = deposit_tree.find(&user_address.into()).unwrap();
 
     let deposit_nonce = HashOut::ZERO;
     let deposit_tx_hash =
@@ -535,7 +540,7 @@ fn test_merge_proof_by_plonky2() {
     let deposit_merge_key = PoseidonHash::two_to_one(*deposit_tx_hash, block_hash).into();
 
     // user asset tree に deposit を merge する.
-    sender2_user_asset_tree
+    user_asset_tree
         .set(
             deposit_merge_key,
             contract_address1,
@@ -543,7 +548,7 @@ fn test_merge_proof_by_plonky2() {
             amount1,
         )
         .unwrap();
-    sender2_user_asset_tree
+    user_asset_tree
         .set(
             deposit_merge_key,
             contract_address2,
@@ -552,21 +557,18 @@ fn test_merge_proof_by_plonky2() {
         )
         .unwrap();
 
-    let mut sender2_user_asset_tree: PoseidonSparseMerkleTree<_, _> =
-        sender2_user_asset_tree.into();
-    let asset_root = sender2_user_asset_tree.get(&deposit_merge_key).unwrap();
+    let mut user_asset_tree: PoseidonSparseMerkleTree<_, _> = user_asset_tree.into();
+    let asset_root = user_asset_tree.get(&deposit_merge_key).unwrap();
     {
         let given_asset_root =
             PoseidonHash::two_to_one(*merge_inclusion_proof2.value, *deposit_merge_key).into();
         assert_eq!(asset_root, given_asset_root);
     }
 
-    sender2_user_asset_tree
+    user_asset_tree
         .set(deposit_merge_key, Default::default())
         .unwrap();
-    let merge_process_proof = sender2_user_asset_tree
-        .set(deposit_merge_key, asset_root)
-        .unwrap();
+    let merge_process_proof = user_asset_tree.set(deposit_merge_key, asset_root).unwrap();
 
     let merge_proof = MergeProof {
         is_deposit: true,
@@ -584,9 +586,9 @@ fn test_merge_proof_by_plonky2() {
 
     merge_proof_target.set_witness(&mut pw, &[merge_proof], default_hash);
 
-    println!("start proving: sender2_tx_proof");
+    println!("start proving: user_tx_proof");
     let start = Instant::now();
-    let _sender2_tx_proof = data.prove(pw).unwrap();
+    let _user_tx_proof = data.prove(pw).unwrap();
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 }

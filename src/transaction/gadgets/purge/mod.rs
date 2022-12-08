@@ -18,10 +18,11 @@ use crate::{
             common::{enforce_equal_if_enabled, logical_or, logical_xor},
             process::{
                 process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
-                utils::verify_layered_smt_connection,
+                utils::verify_layered_smt_target_connection,
             },
         },
         goldilocks_poseidon::WrappedHashOut,
+        layered_tree::verify_layered_smt_connection,
         proof::ProcessMerkleProofRole,
     },
     zkdsa::{account::Address, gadgets::account::AddressTarget},
@@ -149,8 +150,46 @@ impl<
         pw.set_hash_target(self.old_user_asset_root, *old_user_asset_root);
         pw.set_hash_target(self.nonce, *nonce);
         assert!(input_witness.len() <= self.input_proofs.len());
-        for ((p0_t, p1_t, p2_t), (w0, w1, w2)) in self.input_proofs.iter().zip(input_witness.iter())
+        for (i, ((p0_t, p1_t, p2_t), (w0, w1, w2))) in self
+            .input_proofs
+            .iter()
+            .zip(input_witness.iter())
+            .enumerate()
         {
+            let merge_key = w0.new_key;
+            let old_root_with_nonce = PoseidonHash::two_to_one(*w1.old_root, *merge_key).into();
+            let new_root_with_nonce = PoseidonHash::two_to_one(*w1.new_root, *merge_key).into();
+            assert_eq!(w0.fnc, ProcessMerkleProofRole::ProcessUpdate);
+            verify_layered_smt_connection(
+                w0.fnc,
+                w0.old_value,
+                w0.new_value,
+                old_root_with_nonce,
+                new_root_with_nonce,
+            )
+            .unwrap_or_else(|_| {
+                panic!(
+                    "invalid connection between second and third SMT proof of index {} in output witnesses",
+                    i
+                )
+            }); // XXX
+            assert!(
+                w1.fnc == ProcessMerkleProofRole::ProcessUpdate
+                    || w1.fnc == ProcessMerkleProofRole::ProcessDelete
+            );
+            verify_layered_smt_connection(
+                w1.fnc,
+                w1.old_value,
+                w1.new_value,
+                w2.old_root,
+                w2.new_root,
+            )
+            .unwrap_or_else(|_| {
+                panic!(
+                    "invalid connection between second and third SMT proof of index {} in output witnesses",
+                    i
+                )
+            });
             assert_eq!(w2.fnc, ProcessMerkleProofRole::ProcessDelete);
             assert!(w2.old_value.elements[0].to_canonical_u64() < 1u64 << 56);
             assert_eq!(w2.old_value.elements[1], F::ZERO);
@@ -187,9 +226,46 @@ impl<
         }
 
         assert!(output_witness.len() <= self.output_proofs.len());
-        for ((p0_t, p1_t, p2_t), (w0, w1, w2)) in
-            self.output_proofs.iter().zip(output_witness.iter())
+        for (i, ((p0_t, p1_t, p2_t), (w0, w1, w2))) in self
+            .output_proofs
+            .iter()
+            .zip(output_witness.iter())
+            .enumerate()
         {
+            assert!(
+                w0.fnc == ProcessMerkleProofRole::ProcessUpdate
+                    || w0.fnc == ProcessMerkleProofRole::ProcessInsert
+            );
+            verify_layered_smt_connection(
+                w0.fnc,
+                w0.old_value,
+                w0.new_value,
+                w1.old_root,
+                w1.new_root,
+            )
+            .unwrap_or_else(|_| {
+                panic!(
+                    "invalid connection between second and third SMT proof of index {} in output witnesses",
+                    i
+                )
+            });
+            assert!(
+                w1.fnc == ProcessMerkleProofRole::ProcessUpdate
+                    || w1.fnc == ProcessMerkleProofRole::ProcessInsert
+            );
+            verify_layered_smt_connection(
+                w1.fnc,
+                w1.old_value,
+                w1.new_value,
+                w2.old_root,
+                w2.new_root,
+            )
+            .unwrap_or_else(|_| {
+                panic!(
+                    "invalid connection between second and third SMT proof of index {} in output witnesses",
+                    i
+                )
+            });
             assert_eq!(w2.fnc, ProcessMerkleProofRole::ProcessInsert);
             assert!(w2.old_value.elements[0].to_canonical_u64() < 1u64 << 56);
             assert_eq!(w2.old_value.elements[1], F::ZERO);
@@ -270,16 +346,21 @@ pub fn verify_user_asset_purge_proof<
     assert_eq!(input_proofs_t.len(), output_proofs_t.len());
     let mut input_assets_t = Vec::with_capacity(input_proofs_t.len());
     for (proof0_t, proof1_t, proof2_t) in input_proofs_t {
-        verify_layered_smt_connection::<F, D>(
+        let merge_key = proof0_t.new_key;
+        let old_root_with_nonce =
+            poseidon_two_to_one::<F, H, D>(builder, proof1_t.old_root, merge_key);
+        let new_root_with_nonce =
+            poseidon_two_to_one::<F, H, D>(builder, proof1_t.new_root, merge_key);
+        verify_layered_smt_target_connection::<F, D>(
             builder,
             proof0_t.fnc,
             proof0_t.old_value,
             proof0_t.new_value,
-            proof1_t.old_root,
-            proof1_t.new_root,
+            old_root_with_nonce,
+            new_root_with_nonce,
         );
 
-        verify_layered_smt_connection::<F, D>(
+        verify_layered_smt_target_connection::<F, D>(
             builder,
             proof1_t.fnc,
             proof1_t.old_value,
@@ -322,7 +403,7 @@ pub fn verify_user_asset_purge_proof<
 
     let mut output_assets_t = Vec::with_capacity(output_proofs_t.len());
     for (proof0_t, proof1_t, proof2_t) in output_proofs_t {
-        verify_layered_smt_connection::<F, D>(
+        verify_layered_smt_target_connection::<F, D>(
             builder,
             proof0_t.fnc,
             proof0_t.old_value,
@@ -331,7 +412,7 @@ pub fn verify_user_asset_purge_proof<
             proof1_t.new_root,
         );
 
-        verify_layered_smt_connection::<F, D>(
+        verify_layered_smt_target_connection::<F, D>(
             builder,
             proof1_t.fnc,
             proof1_t.old_value,

@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use super::{
     node_data::NodeData,
     node_hash::NodeHash,
-    proof::{SparseMerkleInclusionProof, SparseMerkleProcessProof},
+    proof::{ProcessMerkleProofRole, SparseMerkleInclusionProof, SparseMerkleProcessProof},
     root_data::RootData,
     tree::{
         calc_inclusion_proof, calc_process_proof, get, HashLike, KeyLike, SparseMerkleTree,
@@ -173,4 +173,61 @@ impl<
 
         Ok((result1, result2))
     }
+}
+
+pub fn verify_layered_smt_connection<I: Default + PartialEq>(
+    upper_smt_fnc: ProcessMerkleProofRole,
+    old_upper_smt_value: I,
+    new_upper_smt_value: I,
+    old_lower_smt_root: I,
+    new_lower_smt_root: I,
+) -> anyhow::Result<()> {
+    match upper_smt_fnc {
+        ProcessMerkleProofRole::ProcessUpdate => {
+            if old_lower_smt_root != old_upper_smt_value {
+                anyhow::bail!("`old_lower_smt_root` must be the same with `old_upper_smt_value` in the case of updating a node");
+            }
+
+            if new_lower_smt_root != new_upper_smt_value {
+                anyhow::bail!("`new_lower_smt_root` must be the same with `new_upper_smt_value` in the case of updating a node");
+            }
+        }
+        ProcessMerkleProofRole::ProcessInsert => {
+            if old_lower_smt_root != I::default() {
+                anyhow::bail!(
+                    "`old_lower_smt_root` must be the default value in the case of inserting a node"
+                );
+            }
+
+            if new_lower_smt_root != new_upper_smt_value {
+                anyhow::bail!("`new_lower_smt_root` must be the same with `new_upper_smt_value` in the case of inserting a node");
+            }
+        }
+        ProcessMerkleProofRole::ProcessDelete => {
+            if old_lower_smt_root != old_upper_smt_value {
+                anyhow::bail!("`old_lower_smt_root` must be the same with `old_upper_smt_value` in the case of removing a node");
+            }
+
+            if new_lower_smt_root != I::default() {
+                anyhow::bail!(
+                    "`new_lower_smt_root` must be the default value in the case of removing a node"
+                );
+            }
+        }
+        ProcessMerkleProofRole::ProcessNoOp => {
+            if old_lower_smt_root != I::default() {
+                anyhow::bail!(
+                    "`old_lower_smt_root` must be the default value in the case of no-operation"
+                );
+            }
+
+            if new_lower_smt_root != I::default() {
+                anyhow::bail!(
+                    "`new_lower_smt_root` must be the default value in the case of no-operation"
+                );
+            }
+        }
+    }
+
+    Ok(())
 }

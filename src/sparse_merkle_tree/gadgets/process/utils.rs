@@ -66,7 +66,7 @@ pub fn verify_smt_transition<F: RichField + Extendable<D>, const D: usize>(
     enforce_equal_if_enabled(builder, prev_new_smt_root, cur_old_smt_root, is_not_no_op)
 }
 
-pub fn verify_layered_smt_connection<F: RichField + Extendable<D>, const D: usize>(
+pub fn verify_layered_smt_target_connection<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     upper_smt_fnc: [BoolTarget; 2],
     old_upper_smt_value: HashOutTarget,
@@ -80,15 +80,19 @@ pub fn verify_layered_smt_connection<F: RichField + Extendable<D>, const D: usiz
     };
 
     let ProcessMerkleProofRoleTarget {
-        is_no_op,
-        is_insert_op,
-        is_remove_op,
+        is_insert_or_no_op,
+        is_remove_or_no_op,
         is_insert_or_update_op,
         is_remove_or_update_op,
         ..
     } = get_process_merkle_proof_role(builder, upper_smt_fnc);
 
-    enforce_equal_if_enabled(builder, old_lower_smt_root, default_hash, is_insert_op);
+    enforce_equal_if_enabled(
+        builder,
+        old_lower_smt_root,
+        default_hash,
+        is_insert_or_no_op,
+    );
     enforce_equal_if_enabled(
         builder,
         new_lower_smt_root,
@@ -96,13 +100,16 @@ pub fn verify_layered_smt_connection<F: RichField + Extendable<D>, const D: usiz
         is_insert_or_update_op,
     );
 
-    enforce_equal_if_enabled(builder, new_lower_smt_root, default_hash, is_remove_op);
+    enforce_equal_if_enabled(
+        builder,
+        new_lower_smt_root,
+        default_hash,
+        is_remove_or_no_op,
+    );
     enforce_equal_if_enabled(
         builder,
         old_lower_smt_root,
         old_upper_smt_value,
         is_remove_or_update_op,
     );
-
-    enforce_equal_if_enabled(builder, new_lower_smt_root, old_lower_smt_root, is_no_op);
 }

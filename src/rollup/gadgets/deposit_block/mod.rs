@@ -16,7 +16,7 @@ use crate::{
             process::{
                 process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
                 utils::{
-                    get_process_merkle_proof_role, verify_layered_smt_connection,
+                    get_process_merkle_proof_role, verify_layered_smt_target_connection,
                     ProcessMerkleProofRoleTarget,
                 },
             },
@@ -321,7 +321,7 @@ pub fn calc_deposit_digest<
         } = get_process_merkle_proof_role(builder, proof_t.2.fnc);
         let constant_true = builder._true();
         builder.connect(is_insert_or_no_op.target, constant_true.target);
-        verify_layered_smt_connection(
+        verify_layered_smt_target_connection(
             builder,
             proof_t.0.fnc,
             proof_t.0.old_value,
@@ -329,7 +329,7 @@ pub fn calc_deposit_digest<
             proof_t.1.old_root,
             proof_t.1.new_root,
         );
-        verify_layered_smt_connection(
+        verify_layered_smt_target_connection(
             builder,
             proof_t.1.fnc,
             proof_t.1.old_value,

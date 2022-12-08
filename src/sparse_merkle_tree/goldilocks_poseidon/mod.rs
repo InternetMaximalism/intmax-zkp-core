@@ -64,7 +64,7 @@ pub struct NodeDataMemory {
 impl NodeData<K, V, I> for NodeDataMemory {
     type Error = anyhow::Error;
 
-    fn get(&self, key: &K) -> Result<Option<Node<K, V, I>>, Self::Error> {
+    fn get(&self, key: &I) -> Result<Option<Node<K, V, I>>, Self::Error> {
         if let Some(some_data) = self.nodes.lock().expect("mutex poison error").get(key) {
             Ok(Some(some_data.clone()))
         } else {
@@ -72,7 +72,7 @@ impl NodeData<K, V, I> for NodeDataMemory {
         }
     }
 
-    fn multi_insert(&mut self, insert_entries: Vec<(K, Node<K, V, I>)>) -> Result<(), Self::Error> {
+    fn multi_insert(&mut self, insert_entries: Vec<(I, Node<K, V, I>)>) -> Result<(), Self::Error> {
         for (key, value) in insert_entries {
             self.nodes
                 .lock()
@@ -83,7 +83,7 @@ impl NodeData<K, V, I> for NodeDataMemory {
         Ok(())
     }
 
-    fn multi_delete(&mut self, _delete_keys: &[K]) -> Result<(), Self::Error> {
+    fn multi_delete(&mut self, _delete_keys: &[I]) -> Result<(), Self::Error> {
         // あとで過去の root を参照したい時に役立つので消さない.
         // for key in _delete_keys {
         //     self.nodes.remove(key);

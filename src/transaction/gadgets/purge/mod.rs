@@ -169,7 +169,7 @@ impl<
             )
             .unwrap_or_else(|_| {
                 panic!(
-                    "invalid connection between second and third SMT proof of index {} in output witnesses",
+                    "invalid connection between first and second SMT proof of index {} in output witnesses",
                     i
                 )
             }); // XXX
@@ -245,7 +245,7 @@ impl<
             )
             .unwrap_or_else(|_| {
                 panic!(
-                    "invalid connection between second and third SMT proof of index {} in output witnesses",
+                    "invalid connection between first and second SMT proof of index {} in output witnesses",
                     i
                 )
             });
@@ -479,9 +479,12 @@ fn test_purge_proof_by_plonky2() {
         },
     };
 
-    use crate::sparse_merkle_tree::goldilocks_poseidon::{
-        GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTreeMemory, NodeDataMemory,
-        PoseidonSparseMerkleTreeMemory,
+    use crate::{
+        sparse_merkle_tree::goldilocks_poseidon::{
+            GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory,
+            PoseidonSparseMerkleTree, RootDataTmp,
+        },
+        transaction::tree::user_asset::UserAssetTree,
     };
 
     const D: usize = 2;
@@ -510,7 +513,7 @@ fn test_purge_proof_by_plonky2() {
     > = PurgeTransitionTarget::add_virtual_to::<F, H, D>(&mut builder);
     let data = builder.build::<C>();
 
-    dbg!(&data.common);
+    // dbg!(&data.common);
 
     let key1 = (
         GoldilocksHashOut::from_u128(1),
@@ -541,11 +544,14 @@ fn test_purge_proof_by_plonky2() {
     let user_address = GoldilocksHashOut::from_u128(4);
 
     let mut world_state_tree =
-        PoseidonSparseMerkleTreeMemory::new(NodeDataMemory::default(), Default::default());
+        PoseidonSparseMerkleTree::new(NodeDataMemory::default(), RootDataTmp::default());
 
-    let mut user_asset_tree = LayeredLayeredPoseidonSparseMerkleTreeMemory::default();
-
-    let mut tx_diff_tree = LayeredLayeredPoseidonSparseMerkleTreeMemory::default();
+    let nodes_db = NodeDataMemory::default();
+    let mut user_asset_tree = UserAssetTree::new(nodes_db, RootDataTmp::default());
+    let mut tx_diff_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
+        NodeDataMemory::default(),
+        RootDataTmp::default(),
+    );
 
     let zero = GoldilocksHashOut::from_u128(0);
     user_asset_tree.set(key1.0, key1.1, key1.2, value1).unwrap();
@@ -556,7 +562,6 @@ fn test_purge_proof_by_plonky2() {
         .unwrap();
 
     let proof1 = user_asset_tree.set(key2.0, key2.1, key2.2, zero).unwrap();
-    dbg!(serde_json::to_string(&proof1).unwrap());
     let proof2 = user_asset_tree.set(key1.0, key1.1, key1.2, zero).unwrap();
 
     let proof3 = tx_diff_tree.set(key3.0, key3.1, key3.2, value3).unwrap();

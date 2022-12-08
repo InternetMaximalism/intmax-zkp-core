@@ -189,10 +189,13 @@ impl<
                 witness.merge_process_proof.fnc,
                 ProcessMerkleProofRole::ProcessInsert
             );
+            let asset_root = witness.diff_tree_inclusion_proof.2.value;
+            let asset_root_with_merge_key =
+                PoseidonHash::two_to_one(*asset_root, *merge_key).into();
             assert_eq!(
                 witness.merge_process_proof.new_value,
-                witness.diff_tree_inclusion_proof.2.value,
-            );
+                asset_root_with_merge_key
+            ); // XXX: test_merge_proof_by_plonky2
             assert_eq!(
                 witness.diff_tree_inclusion_proof.0.latest_account_digest,
                 *witness.latest_account_tree_inclusion_proof.root,
@@ -379,10 +382,13 @@ pub fn verify_user_asset_merge_proof<
         // noop でないならば insert である
         builder.connect(is_not_no_op.target, is_insert_op.target);
 
+        let asset_root = diff_tree_inclusion_proof.2.value;
+        let asset_root_with_merge_key =
+            poseidon_two_to_one::<F, H, D>(builder, asset_root, merge_key);
         enforce_equal_if_enabled(
             builder,
             merge_process_proof.new_value,
-            diff_tree_inclusion_proof.2.value,
+            asset_root_with_merge_key,
             is_not_no_op,
         );
         enforce_equal_if_enabled(
@@ -430,11 +436,11 @@ fn test_merge_proof_by_plonky2() {
         sparse_merkle_tree::{
             goldilocks_poseidon::{
                 GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory,
-                PoseidonSparseMerkleTreeMemory,
+                PoseidonSparseMerkleTree, RootDataTmp,
             },
             proof::SparseMerkleInclusionProof,
         },
-        transaction::block_header::BlockHeader,
+        transaction::{block_header::BlockHeader, tree::user_asset::UserAssetTree},
         zkdsa::account::private_key_to_account,
     };
 
@@ -478,11 +484,12 @@ fn test_merge_proof_by_plonky2() {
     let sender2_address = sender2_account.address.0;
 
     let node_data = NodeDataMemory::default();
-    let mut sender2_user_asset_tree =
-        PoseidonSparseMerkleTreeMemory::new(node_data.clone(), Default::default());
+    let mut sender2_user_asset_tree = UserAssetTree::new(node_data, RootDataTmp::default());
 
-    let mut deposit_sender2_tree =
-        LayeredLayeredPoseidonSparseMerkleTree::new(node_data, Default::default());
+    let mut deposit_sender2_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
+        NodeDataMemory::default(),
+        RootDataTmp::default(),
+    );
 
     deposit_sender2_tree
         .set(
@@ -501,7 +508,7 @@ fn test_merge_proof_by_plonky2() {
         )
         .unwrap();
 
-    let deposit_sender2_tree: PoseidonSparseMerkleTreeMemory = deposit_sender2_tree.into();
+    let deposit_sender2_tree: PoseidonSparseMerkleTree<_, _> = deposit_sender2_tree.into();
 
     let merge_inclusion_proof2 = deposit_sender2_tree.find(&sender2_address.into()).unwrap();
 
@@ -527,8 +534,38 @@ fn test_merge_proof_by_plonky2() {
 
     let deposit_merge_key = PoseidonHash::two_to_one(*deposit_tx_hash, block_hash).into();
 
+    // user asset tree に deposit を merge する.
+    sender2_user_asset_tree
+        .set(
+            deposit_merge_key,
+            contract_address1,
+            variable_index1,
+            amount1,
+        )
+        .unwrap();
+    sender2_user_asset_tree
+        .set(
+            deposit_merge_key,
+            contract_address2,
+            variable_index2,
+            amount2,
+        )
+        .unwrap();
+
+    let mut sender2_user_asset_tree: PoseidonSparseMerkleTree<_, _> =
+        sender2_user_asset_tree.into();
+    let asset_root = sender2_user_asset_tree.get(&deposit_merge_key).unwrap();
+    {
+        let given_asset_root =
+            PoseidonHash::two_to_one(*merge_inclusion_proof2.value, *deposit_merge_key).into();
+        assert_eq!(asset_root, given_asset_root);
+    }
+
+    sender2_user_asset_tree
+        .set(deposit_merge_key, Default::default())
+        .unwrap();
     let merge_process_proof = sender2_user_asset_tree
-        .set(deposit_merge_key, merge_inclusion_proof2.value)
+        .set(deposit_merge_key, asset_root)
         .unwrap();
 
     let merge_proof = MergeProof {

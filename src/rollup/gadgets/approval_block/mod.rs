@@ -407,6 +407,7 @@ fn test_approval_block() {
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = <C as GenericConfig<D>>::F;
+    const N_LOG_MAX_BLOCKS: usize = 32;
     const N_LOG_MAX_USERS: usize = 3;
     const N_LOG_MAX_TXS: usize = 3;
     const N_LOG_MAX_CONTRACTS: usize = 3;
@@ -535,19 +536,19 @@ fn test_approval_block() {
     let mut sender2_tx_diff_tree =
         LayeredLayeredPoseidonSparseMerkleTree::new(sender2_nodes_db, RootDataTmp::default());
 
-    let mut block0_deposit_tree =
+    let mut block1_deposit_tree =
         LayeredLayeredPoseidonSparseMerkleTree::new(aggregator_nodes_db, RootDataTmp::default());
 
-    block0_deposit_tree
+    block1_deposit_tree
         .set(sender2_address.into(), key1.1, key1.2, value1)
         .unwrap();
-    block0_deposit_tree
+    block1_deposit_tree
         .set(sender2_address.into(), key2.1, key2.2, value2)
         .unwrap();
 
-    let block0_deposit_tree: PoseidonSparseMerkleTree<_, _> = block0_deposit_tree.into();
+    let block1_deposit_tree: PoseidonSparseMerkleTree<_, _> = block1_deposit_tree.into();
 
-    let merge_inclusion_proof2 = block0_deposit_tree.find(&sender2_address.into()).unwrap();
+    let merge_inclusion_proof2 = block1_deposit_tree.find(&sender2_address.into()).unwrap();
 
     // `merge_inclusion_proof2` の root を `diff_root`, `hash(diff_root, nonce)` の値を `tx_hash` とよぶ.
     let deposit_nonce = HashOut::ZERO;
@@ -559,20 +560,33 @@ fn test_approval_block() {
     let default_hash = HashOut::ZERO;
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
     let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
+    let prev_block_number = 1u32;
+    let mut block_headers: Vec<WrappedHashOut<F>> =
+        vec![WrappedHashOut::ZERO; prev_block_number as usize];
+    let prev_block_headers_digest = get_merkle_proof(
+        &block_headers,
+        prev_block_number as usize - 1,
+        N_LOG_MAX_BLOCKS,
+    )
+    .root;
+
+    let prev_world_state_digest = world_state_tree.get_root().unwrap();
+    let prev_latest_account_digest = WrappedHashOut::default();
     let prev_block_header = BlockHeader {
-        block_number: 1,
-        block_headers_digest: default_hash,
+        block_number: prev_block_number,
+        block_headers_digest: *prev_block_headers_digest,
         transactions_digest: *default_merkle_root,
         deposit_digest: *merge_inclusion_proof1.root,
-        proposed_world_state_digest: default_hash,
-        approved_world_state_digest: default_hash,
-        latest_account_digest: default_hash,
+        proposed_world_state_digest: *prev_world_state_digest,
+        approved_world_state_digest: *prev_world_state_digest,
+        latest_account_digest: *prev_latest_account_digest,
     };
 
-    let block_hash = get_block_hash(&prev_block_header);
+    let prev_block_hash = get_block_hash(&prev_block_header);
+    block_headers.push(prev_block_hash.into());
 
     // deposit の場合は, `hash(tx_hash, block_hash)` を `merge_key` とよぶ.
-    let deposit_merge_key = PoseidonHash::two_to_one(*deposit_tx_hash, block_hash).into();
+    let deposit_merge_key = PoseidonHash::two_to_one(*deposit_tx_hash, prev_block_hash).into();
 
     // user_asset_tree に deposit を merge する.
     sender2_user_asset_tree

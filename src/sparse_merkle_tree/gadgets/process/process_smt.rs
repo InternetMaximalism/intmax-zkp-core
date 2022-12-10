@@ -138,8 +138,9 @@ pub fn verify_smt_process_proof<
     let default_hash = HashOutTarget::from_partial(&[], zero);
     let num_levels = siblings.len();
 
-    let ProcessMerkleProofRoleTarget { is_remove_op, .. } =
-        get_process_merkle_proof_role(builder, fnc);
+    // let ProcessMerkleProofRoleTarget { is_remove_op, .. } =
+    //     get_process_merkle_proof_role(builder, fnc);
+    let is_remove_op = builder.and(fnc[0], fnc[1]);
 
     // remove proof は old と new をひっくり返せば insert proof になる
     let fnc0 = fnc[0];

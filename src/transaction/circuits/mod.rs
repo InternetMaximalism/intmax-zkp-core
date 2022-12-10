@@ -311,6 +311,23 @@ impl MergeAndPurgeTransitionPublicInputsTarget {
         pw.set_hash_target(self.diff_root, *public_inputs.diff_root);
         pw.set_hash_target(self.tx_hash, *public_inputs.tx_hash);
     }
+
+    pub fn connect<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+        a: &Self,
+        b: &Self,
+    ) {
+        builder.connect_hashes(a.sender_address, b.sender_address);
+        builder.connect_hashes(a.old_user_asset_root, b.old_user_asset_root);
+        builder.connect_hashes(a.middle_user_asset_root, b.middle_user_asset_root);
+        builder.connect_hashes(a.new_user_asset_root, b.new_user_asset_root);
+        builder.connect_hashes(a.diff_root, b.diff_root);
+        builder.connect_hashes(a.tx_hash, b.tx_hash);
+    }
+
+    pub fn decode(public_inputs_t: &[Target]) -> Self {
+        parse_merge_and_purge_public_inputs(public_inputs_t)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

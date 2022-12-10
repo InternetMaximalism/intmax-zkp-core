@@ -15,10 +15,10 @@ use crate::{
     poseidon::gadgets::poseidon_two_to_one,
     sparse_merkle_tree::{
         gadgets::{
-            common::{enforce_equal_if_enabled, logical_or, logical_xor},
+            common::{conditionally_select, logical_xor},
             process::{
                 process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
-                utils::verify_layered_smt_target_connection,
+                utils::{get_process_merkle_proof_role, verify_layered_smt_target_connection},
             },
         },
         goldilocks_poseidon::WrappedHashOut,
@@ -150,12 +150,16 @@ impl<
         pw.set_hash_target(self.old_user_asset_root, *old_user_asset_root);
         pw.set_hash_target(self.nonce, *nonce);
         assert!(input_witness.len() <= self.input_proofs.len());
+        let mut prev_user_asset_root = old_user_asset_root;
         for (i, ((p0_t, p1_t, p2_t), (w0, w1, w2))) in self
             .input_proofs
             .iter()
             .zip(input_witness.iter())
             .enumerate()
         {
+            assert_eq!(w0.old_root, prev_user_asset_root);
+            prev_user_asset_root = w0.new_root;
+
             let merge_key = w0.new_key;
             let old_root_with_nonce = PoseidonHash::two_to_one(*w1.old_root, *merge_key).into();
             let new_root_with_nonce = PoseidonHash::two_to_one(*w1.new_root, *merge_key).into();
@@ -195,29 +199,16 @@ impl<
             assert_eq!(w2.old_value.elements[1], F::ZERO);
             assert_eq!(w2.old_value.elements[2], F::ZERO);
             assert_eq!(w2.old_value.elements[3], F::ZERO);
+
             p0_t.set_witness(pw, w0);
             p1_t.set_witness(pw, w1);
             p2_t.set_witness(pw, w2);
         }
+        let new_user_asset_root = prev_user_asset_root;
 
-        let first_input_root = old_user_asset_root;
-        if let Some(first_input_witness) = input_witness.first() {
-            assert_eq!(first_input_witness.0.old_root, first_input_root);
-        }
-
-        let (last_input_root0, last_input_root1, last_input_root2) =
-            if let Some(last_input_witness) = input_witness.last() {
-                (
-                    last_input_witness.0.new_root,
-                    last_input_witness.1.new_root,
-                    last_input_witness.2.new_root,
-                )
-            } else {
-                (first_input_root, Default::default(), Default::default())
-            };
-        let default_witness0 = SmtProcessProof::with_root(last_input_root0);
-        let default_witness1 = SmtProcessProof::with_root(last_input_root1);
-        let default_witness2 = SmtProcessProof::with_root(last_input_root2);
+        let default_witness0 = SmtProcessProof::with_root(new_user_asset_root);
+        let default_witness1 = SmtProcessProof::with_root(Default::default());
+        let default_witness2 = SmtProcessProof::with_root(Default::default());
 
         for (p0_t, p1_t, p2_t) in self.input_proofs.iter().skip(input_witness.len()) {
             p0_t.set_witness(pw, &default_witness0);
@@ -226,12 +217,16 @@ impl<
         }
 
         assert!(output_witness.len() <= self.output_proofs.len());
+        let mut prev_diff_root = WrappedHashOut::default();
         for (i, ((p0_t, p1_t, p2_t), (w0, w1, w2))) in self
             .output_proofs
             .iter()
             .zip(output_witness.iter())
             .enumerate()
         {
+            assert_eq!(w0.old_root, prev_diff_root);
+            prev_diff_root = w0.new_root;
+
             assert!(
                 w0.fnc == ProcessMerkleProofRole::ProcessUpdate
                     || w0.fnc == ProcessMerkleProofRole::ProcessInsert
@@ -275,26 +270,11 @@ impl<
             p1_t.set_witness(pw, w1);
             p2_t.set_witness(pw, w2);
         }
+        let diff_root = prev_diff_root;
 
-        let first_output_root = Default::default();
-        if let Some(first_output_witness) = output_witness.first() {
-            assert_eq!(first_output_witness.0.old_root, first_output_root);
-        }
-
-        let (last_output_root0, last_output_root1, last_output_root2) =
-            if let Some(last_output_witness) = output_witness.last() {
-                (
-                    last_output_witness.0.new_root,
-                    last_output_witness.1.new_root,
-                    last_output_witness.2.new_root,
-                )
-            } else {
-                (first_output_root, Default::default(), Default::default())
-            };
-
-        let default_witness0 = SmtProcessProof::with_root(last_output_root0);
-        let default_witness1 = SmtProcessProof::with_root(last_output_root1);
-        let default_witness2 = SmtProcessProof::with_root(last_output_root2);
+        let default_witness0 = SmtProcessProof::with_root(diff_root);
+        let default_witness1 = SmtProcessProof::with_root(Default::default());
+        let default_witness2 = SmtProcessProof::with_root(Default::default());
 
         for (p0_t, p1_t, p2_t) in self.output_proofs.iter().skip(output_witness.len()) {
             p0_t.set_witness(pw, &default_witness0);
@@ -302,8 +282,6 @@ impl<
             p2_t.set_witness(pw, &default_witness2);
         }
 
-        let new_user_asset_root = last_input_root0;
-        let diff_root = last_output_root0;
         let tx_hash = PoseidonHash::two_to_one(*diff_root, *nonce).into();
 
         (new_user_asset_root, diff_root, tx_hash)
@@ -346,11 +324,16 @@ pub fn verify_user_asset_purge_proof<
     assert_eq!(input_proofs_t.len(), output_proofs_t.len());
     let mut input_assets_t = Vec::with_capacity(input_proofs_t.len());
     for (proof0_t, proof1_t, proof2_t) in input_proofs_t {
+        let is_no_op = get_process_merkle_proof_role(builder, proof0_t.fnc).is_no_op;
         let merge_key = proof0_t.new_key;
         let old_root_with_nonce =
             poseidon_two_to_one::<F, H, D>(builder, proof1_t.old_root, merge_key);
+        let old_root_with_nonce =
+            conditionally_select(builder, default_hash, old_root_with_nonce, is_no_op);
         let new_root_with_nonce =
             poseidon_two_to_one::<F, H, D>(builder, proof1_t.new_root, merge_key);
+        let new_root_with_nonce =
+            conditionally_select(builder, default_hash, new_root_with_nonce, is_no_op);
         verify_layered_smt_target_connection::<F, D>(
             builder,
             proof0_t.fnc,
@@ -388,18 +371,13 @@ pub fn verify_user_asset_purge_proof<
         });
     }
 
-    let mut prev_target = &input_proofs_t[0];
-    for cur_target in input_proofs_t.iter().skip(1) {
-        let is_not_no_op = logical_or(builder, cur_target.0.fnc[0], cur_target.0.fnc[1]);
-        enforce_equal_if_enabled(
-            builder,
-            prev_target.0.new_root,
-            cur_target.0.old_root,
-            is_not_no_op,
-        );
+    let mut prev_user_asset_root = old_user_asset_root;
+    for cur_target in input_proofs_t {
+        builder.connect_hashes(prev_user_asset_root, cur_target.0.old_root);
 
-        prev_target = cur_target;
+        prev_user_asset_root = cur_target.0.new_root;
     }
+    let new_user_asset_root = prev_user_asset_root;
 
     let mut output_assets_t = Vec::with_capacity(output_proofs_t.len());
     for (proof0_t, proof1_t, proof2_t) in output_proofs_t {
@@ -438,29 +416,16 @@ pub fn verify_user_asset_purge_proof<
         });
     }
 
-    let mut prev_target = &output_proofs_t[0];
-    for cur_target in output_proofs_t.iter().skip(1) {
-        let is_not_no_op = logical_or(builder, cur_target.0.fnc[0], cur_target.0.fnc[1]);
+    let mut prev_diff_root = default_hash;
+    for cur_target in output_proofs_t.iter() {
+        builder.connect_hashes(prev_diff_root, cur_target.0.old_root);
 
-        enforce_equal_if_enabled(
-            builder,
-            prev_target.0.new_root,
-            cur_target.0.old_root,
-            is_not_no_op,
-        );
-
-        prev_target = cur_target;
+        prev_diff_root = cur_target.0.new_root;
     }
+    let diff_root = prev_diff_root;
 
     verify_equal_assets::<F, H, D>(builder, &input_assets_t, &output_assets_t);
 
-    builder.connect_hashes(
-        input_proofs_t.first().unwrap().0.old_root,
-        old_user_asset_root,
-    );
-    let new_user_asset_root = input_proofs_t.last().unwrap().0.new_root;
-    builder.connect_hashes(output_proofs_t.first().unwrap().0.old_root, default_hash);
-    let diff_root = output_proofs_t.last().unwrap().0.new_root;
     let tx_hash = poseidon_two_to_one::<F, H, D>(builder, diff_root, nonce);
 
     (new_user_asset_root, diff_root, tx_hash)
@@ -514,6 +479,9 @@ fn test_purge_proof_by_plonky2() {
         LOG_N_VARIABLES,
         N_DIFFS,
     > = PurgeTransitionTarget::add_virtual_to::<F, H, D>(&mut builder);
+    builder.register_public_inputs(&target.new_user_asset_root.elements);
+    builder.register_public_inputs(&target.diff_root.elements);
+    builder.register_public_inputs(&target.tx_hash.elements);
     let data = builder.build::<C>();
 
     // dbg!(&data.common);
@@ -552,7 +520,6 @@ fn test_purge_proof_by_plonky2() {
             F::from_canonical_u64(5153662694263190591),
         ],
     };
-    dbg!(&private_key);
     let user_account = private_key_to_account(private_key);
     let user_address = user_account.address;
 
@@ -592,7 +559,6 @@ fn test_purge_proof_by_plonky2() {
             F::from_canonical_u64(3223267375194257474),
         ],
     });
-    dbg!(nonce);
 
     let mut pw = PartialWitness::new();
     target.set_witness(
@@ -604,13 +570,34 @@ fn test_purge_proof_by_plonky2() {
         nonce,
     );
 
-    println!("start proving");
+    println!("start proving: proof");
     let start = Instant::now();
     let proof = data.prove(pw).unwrap();
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
     match data.verify(proof) {
+        Ok(()) => println!("Ok!"),
+        Err(x) => println!("{}", x),
+    }
+
+    let mut pw = PartialWitness::new();
+    target.set_witness(
+        &mut pw,
+        Default::default(),
+        &[],
+        &[],
+        Default::default(),
+        Default::default(),
+    );
+
+    println!("start proving: default_proof");
+    let start = Instant::now();
+    let default_proof = data.prove(pw).unwrap();
+    let end = start.elapsed();
+    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+
+    match data.verify(default_proof) {
         Ok(()) => println!("Ok!"),
         Err(x) => println!("{}", x),
     }

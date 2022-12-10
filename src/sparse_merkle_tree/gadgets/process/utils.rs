@@ -73,6 +73,8 @@ pub fn verify_layered_smt_target_connection<F: RichField + Extendable<D>, const 
     new_upper_smt_value: HashOutTarget,
     old_lower_smt_root: HashOutTarget,
     new_lower_smt_root: HashOutTarget,
+    // default_old_lower_smt_root: HashOutTarget,
+    // default_new_lower_smt_root: HashOutTarget,
 ) {
     let zero = builder.zero();
     let default_hash = HashOutTarget {
@@ -90,7 +92,7 @@ pub fn verify_layered_smt_target_connection<F: RichField + Extendable<D>, const 
     enforce_equal_if_enabled(
         builder,
         old_lower_smt_root,
-        default_hash,
+        default_hash, // default_old_lower_smt_root
         is_insert_or_no_op,
     );
     enforce_equal_if_enabled(
@@ -103,7 +105,7 @@ pub fn verify_layered_smt_target_connection<F: RichField + Extendable<D>, const 
     enforce_equal_if_enabled(
         builder,
         new_lower_smt_root,
-        default_hash,
+        default_hash, // default_new_lower_smt_root
         is_remove_or_no_op,
     );
     enforce_equal_if_enabled(

@@ -586,9 +586,29 @@ fn test_merge_proof_by_plonky2() {
 
     merge_proof_target.set_witness(&mut pw, &[merge_proof], default_hash);
 
-    println!("start proving: user_tx_proof");
+    println!("start proving: proof");
     let start = Instant::now();
-    let _user_tx_proof = data.prove(pw).unwrap();
+    let proof = data.prove(pw).unwrap();
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+
+    match data.verify(proof) {
+        Ok(()) => println!("Ok!"),
+        Err(x) => println!("{}", x),
+    }
+
+    let mut pw = PartialWitness::new();
+
+    merge_proof_target.set_witness(&mut pw, &[], default_hash);
+
+    println!("start proving: default proof");
+    let start = Instant::now();
+    let default_proof = data.prove(pw).unwrap();
+    let end = start.elapsed();
+    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+
+    match data.verify(default_proof) {
+        Ok(()) => println!("Ok!"),
+        Err(x) => println!("{}", x),
+    }
 }

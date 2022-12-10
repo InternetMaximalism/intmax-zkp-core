@@ -122,7 +122,7 @@ impl<F: Field> std::ops::Deref for Address<F> {
     }
 }
 
-impl<F: Field + Sample> Address<F> {
+impl<F: Field> Address<F> {
     pub fn to_hash_out(&self) -> HashOut<F> {
         self.0
     }

@@ -83,9 +83,18 @@ impl<const N_LEVELS: usize> SparseMerkleProcessProofTarget<N_LEVELS> {
         pw: &mut impl Witness<F>,
         witness: &SmtProcessProof<F>,
     ) {
-        assert!(witness.siblings.len() <= N_LEVELS);
-        // `witness.old_key` と `witness.new_key` は一致するか, 末尾の `N_LEVELS` 桁が一致しない.
-        assert!(first_different_bit_index(witness.old_key, witness.new_key) <= Some(N_LEVELS));
+        if witness.siblings.len() >= N_LEVELS {
+            dbg!(witness);
+            panic!("siblings are too long");
+        }
+        // `witness.old_key` と `witness.new_key` は一致するか, 末尾の `N_LEVELS` 桁が完全には一致しない.
+        if !witness.is_old0
+            && first_different_bit_index(witness.old_key, witness.new_key) >= Some(N_LEVELS)
+        {
+            dbg!(witness);
+            panic!("invalid `new_key`");
+        }
+
         for i in 0..witness.siblings.len() {
             pw.set_hash_target(self.siblings[i], *witness.siblings[i]);
         }

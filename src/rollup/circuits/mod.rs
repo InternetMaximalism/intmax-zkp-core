@@ -15,6 +15,7 @@ use plonky2::{
 
 use crate::{
     merkle_tree::gadgets::{get_merkle_root_target, MerkleProofTarget},
+    recursion::gadgets::RecursiveProofTarget,
     rollup::gadgets::{
         approval_block::ApprovalBlockProofTarget,
         deposit_block::{DepositBlockProofTarget, DepositInfo, DepositInfoTarget, VariableIndex},
@@ -24,12 +25,18 @@ use crate::{
         gadgets::process::process_smt::SmtProcessProof, goldilocks_poseidon::WrappedHashOut,
     },
     transaction::{
-        circuits::{MergeAndPurgeTransitionCircuit, MergeAndPurgeTransitionProofWithPublicInputs},
+        circuits::{
+            MergeAndPurgeTransitionCircuit, MergeAndPurgeTransitionProofWithPublicInputs,
+            MergeAndPurgeTransitionPublicInputsTarget,
+        },
         gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
     },
     zkdsa::{
         account::Address,
-        circuits::{SimpleSignatureCircuit, SimpleSignatureProofWithPublicInputs},
+        circuits::{
+            SimpleSignatureCircuit, SimpleSignatureProofWithPublicInputs,
+            SimpleSignaturePublicInputsTarget,
+        },
         gadgets::account::AddressTarget,
     },
 };
@@ -59,6 +66,8 @@ pub struct OneBlockProofTarget<
         DepositBlockProofTarget<D, N_LOG_RECIPIENTS, N_LOG_CONTRACTS, N_LOG_VARIABLES, N_DEPOSITS>,
     pub proposal_block_target: ProposalBlockProofTarget<D, N_LOG_USERS, N_TXS>,
     pub approval_block_target: ApprovalBlockProofTarget<D, N_LOG_USERS, N_TXS>,
+    pub user_tx_proofs: [RecursiveProofTarget<D>; N_TXS],
+    pub received_signatures: [RecursiveProofTarget<D>; N_TXS],
     pub block_number: Target,
     pub prev_block_header_proof: MerkleProofTarget<N_LOG_MAX_BLOCKS>,
     pub prev_block_hash: HashOutTarget,
@@ -92,6 +101,7 @@ impl<
         pw: &mut impl Witness<F>,
         block_number: u32,
         user_tx_proofs: &[MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>],
+        default_user_tx_proofs: &MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>,
         deposit_process_proofs: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
         world_state_process_proofs: &[SmtProcessProof<F>],
         world_state_revert_proofs: &[SmtProcessProof<F>],
@@ -100,21 +110,24 @@ impl<
         latest_account_tree_process_proofs: &[SmtProcessProof<F>],
         block_header_siblings: &[HashOut<F>],
         prev_block_hash: HashOut<F>,
-        old_world_state_root: HashOut<F>,
+        old_world_state_root: WrappedHashOut<F>,
+        old_latest_account_root: WrappedHashOut<F>,
     ) where
         C::Hasher: AlgebraicHasher<F>,
     {
         self.deposit_block_target
-            .set_witness::<F, C::Hasher>(pw, deposit_process_proofs);
-        self.proposal_block_target.set_witness(
-            pw,
-            world_state_process_proofs,
-            &user_tx_proofs
-                .iter()
-                .map(|p| ProofWithPublicInputs::from(p.clone()))
-                .collect::<Vec<_>>(),
-            old_world_state_root,
-        );
+            .set_witness(pw, deposit_process_proofs);
+        let (_transactions_digest, proposal_world_state_root) =
+            self.proposal_block_target.set_witness(
+                pw,
+                world_state_process_proofs,
+                &user_tx_proofs
+                    .iter()
+                    .cloned()
+                    .map(|p| p.public_inputs)
+                    .collect::<Vec<_>>(),
+                old_world_state_root,
+            );
         self.approval_block_target.set_witness(
             pw,
             block_number,
@@ -125,11 +138,52 @@ impl<
                 .collect::<Vec<_>>(),
             &received_signatures
                 .iter()
-                .map(|p| p.clone().map(ProofWithPublicInputs::from))
+                .cloned()
+                .map(|p| p.map(|p| p.public_inputs))
                 .collect::<Vec<_>>(),
-            &ProofWithPublicInputs::from(default_simple_signature.clone()),
             latest_account_tree_process_proofs,
+            proposal_world_state_root,
+            old_latest_account_root,
         );
+
+        assert!(user_tx_proofs.len() <= self.user_tx_proofs.len());
+        for (r_t, r) in self.user_tx_proofs.iter().zip(user_tx_proofs.iter()) {
+            r_t.set_witness(pw, &ProofWithPublicInputs::from(r.clone()), true);
+        }
+
+        for r_t in self.user_tx_proofs.iter().skip(user_tx_proofs.len()) {
+            r_t.set_witness(
+                pw,
+                &ProofWithPublicInputs::from(default_user_tx_proofs.clone()),
+                false,
+            );
+        }
+
+        assert!(received_signatures.len() <= self.received_signatures.len());
+        for (r_t, r) in self
+            .received_signatures
+            .iter()
+            .zip(received_signatures.iter())
+        {
+            let r: Option<&_> = r.into();
+            r_t.set_witness(
+                pw,
+                &ProofWithPublicInputs::from(r.unwrap_or(default_simple_signature).clone()),
+                r.is_some(),
+            );
+        }
+
+        for r_t in self
+            .received_signatures
+            .iter()
+            .skip(received_signatures.len())
+        {
+            r_t.set_witness(
+                pw,
+                &ProofWithPublicInputs::from(default_simple_signature.clone()),
+                false,
+            );
+        }
 
         self.prev_block_header_proof.set_witness(
             pw,
@@ -215,7 +269,7 @@ where
 {
     let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
-    // builder.debug_gate_row = Some(529); // xors in SparseMerkleProcessProof in DepositBlock
+    // builder.debug_gate_row = Some(22927);
 
     // deposit block
     let deposit_block_target: DepositBlockProofTarget<
@@ -228,25 +282,60 @@ where
 
     // proposal block
     let proposal_block_target: ProposalBlockProofTarget<D, N_LOG_MAX_USERS, N_TXS> =
-        ProposalBlockProofTarget::add_virtual_to(&mut builder, &merge_and_purge_circuit.data);
+        ProposalBlockProofTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(
+            &mut builder,
+        );
 
     // approval block
     let approval_block_target: ApprovalBlockProofTarget<D, N_LOG_MAX_USERS, N_TXS> =
-        ApprovalBlockProofTarget::add_virtual_to(&mut builder, &simple_signature_circuit.data);
+        ApprovalBlockProofTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(
+            &mut builder,
+        );
+
+    let mut user_tx_proofs = vec![];
+    for _ in 0..N_TXS {
+        let b = RecursiveProofTarget::add_virtual_to(&mut builder, &merge_and_purge_circuit.data);
+        user_tx_proofs.push(b);
+    }
+
+    for ((u, p), a) in user_tx_proofs
+        .iter()
+        .zip(proposal_block_target.user_transactions.iter())
+        .zip(approval_block_target.user_transactions.iter())
+    {
+        let user_tx_public_inputs =
+            MergeAndPurgeTransitionPublicInputsTarget::decode(&u.inner.0.public_inputs);
+        MergeAndPurgeTransitionPublicInputsTarget::connect(&mut builder, p, &user_tx_public_inputs);
+        MergeAndPurgeTransitionPublicInputsTarget::connect(&mut builder, a, &user_tx_public_inputs);
+    }
+
+    let mut received_signatures = vec![];
+    for _ in 0..N_TXS {
+        let b = RecursiveProofTarget::add_virtual_to(&mut builder, &simple_signature_circuit.data);
+        received_signatures.push(b);
+    }
+
+    for (r, a) in received_signatures
+        .iter()
+        .zip(approval_block_target.received_signatures.iter())
+    {
+        let signature = SimpleSignaturePublicInputsTarget::decode(&r.inner.0.public_inputs);
+        SimpleSignaturePublicInputsTarget::connect(&mut builder, &a.0, &signature);
+    }
 
     assert_eq!(
-        proposal_block_target.user_tx_proofs.len(),
+        proposal_block_target.user_transactions.len(),
         approval_block_target.received_signatures.len()
     );
     for (user_tx_proof, received_signature) in proposal_block_target
-        .user_tx_proofs
+        .user_transactions
         .iter()
         .zip(approval_block_target.received_signatures.iter())
     {
         // publish ID list
         // public_inputs[(5*i)..(5*i+5)]
-        builder.register_public_inputs(&user_tx_proof.inner.public_inputs[16..20]); // sender_address
-        builder.register_public_input(received_signature.enabled.target); // not_cancel_flag
+        builder.register_public_inputs(&user_tx_proof.sender_address.elements); // sender_address
+        builder.register_public_input(received_signature.1.target); // not_cancel_flag
     }
 
     for proof_t in deposit_block_target.deposit_process_proofs.iter() {
@@ -260,8 +349,8 @@ where
         builder.register_public_input(amount_t.elements[0]);
     }
 
-    builder.register_public_inputs(&approval_block_target.old_account_tree_root.elements);
-    builder.register_public_inputs(&approval_block_target.new_account_tree_root.elements);
+    builder.register_public_inputs(&approval_block_target.old_latest_account_root.elements);
+    builder.register_public_inputs(&approval_block_target.new_latest_account_root.elements);
 
     builder.register_public_inputs(&proposal_block_target.old_world_state_root.elements);
     builder.register_public_inputs(&proposal_block_target.new_world_state_root.elements);
@@ -269,13 +358,13 @@ where
     // block header
     let block_number = builder.add_virtual_target();
     builder.range_check(block_number, N_LOG_MAX_BLOCKS);
-    let transactions_digest = proposal_block_target.block_tx_root;
+    let transactions_digest = proposal_block_target.transactions_digest;
     let deposit_digest = deposit_block_target.deposit_digest;
     let proposed_world_state_digest = proposal_block_target.new_world_state_root;
     let approved_world_state_digest = approval_block_target.new_world_state_root;
-    let latest_account_digest = approval_block_target.new_account_tree_root;
+    let latest_account_digest = approval_block_target.new_latest_account_root;
 
-    // `block_number -　1` までの block header で block header tree を作る.
+    // `block_number - 1` までの block header で block header tree を作る.
     let prev_block_header_proof: MerkleProofTarget<N_LOG_MAX_BLOCKS> =
         MerkleProofTarget::add_virtual_to::<F, C::Hasher, D>(&mut builder);
     let prev_block_hash = builder.add_virtual_hash();
@@ -310,6 +399,14 @@ where
         proposal_block_target,
         approval_block_target,
         deposit_block_target,
+        user_tx_proofs: user_tx_proofs
+            .try_into()
+            .map_err(|_| "user_tx_proofs is too long")
+            .unwrap(),
+        received_signatures: received_signatures
+            .try_into()
+            .map_err(|_| "received_signatures is too long")
+            .unwrap(),
         block_number,
         prev_block_header_proof,
         prev_block_hash,

@@ -1,7 +1,10 @@
 use plonky2::{
     field::{extension::Extendable, types::Field},
     hash::hash_types::{HashOut, HashOutTarget, RichField},
-    iop::{target::Target, witness::PartialWitness},
+    iop::{
+        target::Target,
+        witness::{PartialWitness, Witness},
+    },
     plonk::{
         circuit_builder::CircuitBuilder,
         circuit_data::{CircuitConfig, CircuitData},
@@ -46,7 +49,7 @@ pub struct SimpleSignatureCircuit<
     pub targets: SimpleSignatureTarget,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound = "")]
 pub struct SimpleSignaturePublicInputs<F: Field> {
     pub message: HashOut<F>,
@@ -82,6 +85,46 @@ pub struct SimpleSignaturePublicInputsTarget {
     pub message: HashOutTarget,
     pub public_key: HashOutTarget,
     pub signature: HashOutTarget,
+}
+
+impl SimpleSignaturePublicInputsTarget {
+    pub fn add_virtual_to<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+    ) -> Self {
+        let message = builder.add_virtual_hash();
+        let public_key = builder.add_virtual_hash();
+        let signature = builder.add_virtual_hash();
+
+        Self {
+            message,
+            public_key,
+            signature,
+        }
+    }
+
+    pub fn set_witness<F: RichField>(
+        &self,
+        pw: &mut impl Witness<F>,
+        public_inputs: &SimpleSignaturePublicInputs<F>,
+    ) {
+        pw.set_hash_target(self.message, public_inputs.message);
+        pw.set_hash_target(self.public_key, public_inputs.public_key);
+        pw.set_hash_target(self.signature, public_inputs.signature);
+    }
+
+    pub fn connect<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+        a: &Self,
+        b: &Self,
+    ) {
+        builder.connect_hashes(a.message, b.message);
+        builder.connect_hashes(a.public_key, b.public_key);
+        builder.connect_hashes(a.signature, b.signature);
+    }
+
+    pub fn decode(public_inputs_t: &[Target]) -> Self {
+        parse_simple_signature_public_inputs(public_inputs_t)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

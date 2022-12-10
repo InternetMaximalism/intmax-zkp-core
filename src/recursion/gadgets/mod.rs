@@ -96,7 +96,6 @@ impl<const D: usize> RecursiveProofTarget<D> {
         let circuit_digest = builder.constant_hash(circuit_data.verifier_only.circuit_digest);
         let vd_target = VerifierCircuitTarget {
             constants_sigmas_cap,
-            // circuit_digest: builder.add_virtual_hash(),
             circuit_digest,
         };
 
@@ -124,14 +123,6 @@ impl<const D: usize> RecursiveProofTarget<D> {
         C::Hasher: AlgebraicHasher<F>,
     {
         pw.set_proof_with_pis_target(&self.inner, proof);
-        // pw.set_cap_target(
-        //     &self.verifier_only_data.constants_sigmas_cap,
-        //     &verifier_only_data.constants_sigmas_cap,
-        // );
-        // pw.set_hash_target(
-        //     self.verifier_only_data.circuit_digest,
-        //     verifier_only_data.circuit_digest,
-        // );
         pw.set_bool_target(self.enabled, enabled);
     }
 }

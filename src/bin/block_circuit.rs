@@ -234,6 +234,13 @@ fn main() {
         .set(deposit_merge_key, key2.1, key2.2, value2)
         .unwrap();
 
+    world_state_tree
+        .set(
+            sender2_address.into(),
+            sender2_user_asset_tree.get_root().unwrap(),
+        )
+        .unwrap();
+
     let mut sender2_user_asset_tree: PoseidonSparseMerkleTree<_, _> =
         sender2_user_asset_tree.into();
     let asset_root = sender2_user_asset_tree.get(&deposit_merge_key).unwrap();

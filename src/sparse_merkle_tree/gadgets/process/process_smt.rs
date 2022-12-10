@@ -13,7 +13,7 @@ use super::super::common::{
     element_wise_add, enforce_equal_if_enabled, logical_and_not, logical_or, logical_xor,
     smt_lev_ins,
 };
-use super::utils::{get_process_merkle_proof_role, ProcessMerkleProofRoleTarget};
+use super::utils::ProcessMerkleProofRoleTarget;
 
 pub type SmtProcessProof<F> =
     SparseMerkleProcessProof<Wrapper<HashOut<F>>, Wrapper<HashOut<F>>, Wrapper<HashOut<F>>>;
@@ -33,7 +33,7 @@ pub struct SparseMerkleProcessProofTarget<const N_LEVELS: usize> {
     pub new_key: HashOutTarget,
     pub new_value: HashOutTarget,
     pub is_old0: BoolTarget,
-    pub fnc: [BoolTarget; 2],
+    pub fnc: ProcessMerkleProofRoleTarget,
 }
 
 impl<const N_LEVELS: usize> SparseMerkleProcessProofTarget<N_LEVELS> {
@@ -48,21 +48,12 @@ impl<const N_LEVELS: usize> SparseMerkleProcessProofTarget<N_LEVELS> {
         let new_key = builder.add_virtual_hash();
         let new_value = builder.add_virtual_hash();
         let is_old0 = builder.add_virtual_bool_target_safe();
-        let fnc0 = builder.add_virtual_bool_target_safe();
-        let fnc1 = builder.add_virtual_bool_target_safe();
+        let fnc = ProcessMerkleProofRoleTarget::add_virtual_to(builder);
 
         // let new_root =
         verify_smt_process_proof::<F, H, D>(
-            builder,
-            &siblings,
-            old_root,
-            old_key,
-            old_value,
-            new_root,
-            new_key,
-            new_value,
-            is_old0,
-            [fnc0, fnc1],
+            builder, &siblings, old_root, old_key, old_value, new_root, new_key, new_value,
+            is_old0, fnc,
         );
 
         Self {
@@ -74,7 +65,7 @@ impl<const N_LEVELS: usize> SparseMerkleProcessProofTarget<N_LEVELS> {
             new_key,
             new_value,
             is_old0,
-            fnc: [fnc0, fnc1],
+            fnc,
         }
     }
 
@@ -108,10 +99,7 @@ impl<const N_LEVELS: usize> SparseMerkleProcessProofTarget<N_LEVELS> {
         pw.set_hash_target(self.new_key, *witness.new_key);
         pw.set_hash_target(self.new_value, *witness.new_value);
         pw.set_bool_target(self.is_old0, witness.is_old0);
-
-        let fnc: [bool; 2] = witness.fnc.into();
-        pw.set_bool_target(self.fnc[0], fnc[0]);
-        pw.set_bool_target(self.fnc[1], fnc[1]);
+        self.fnc.set_witness(pw, witness.fnc);
     }
 }
 
@@ -130,7 +118,7 @@ pub fn verify_smt_process_proof<
     new_key: HashOutTarget,
     new_value: HashOutTarget,
     is_old0: BoolTarget,
-    fnc: [BoolTarget; 2],
+    fnc: ProcessMerkleProofRoleTarget,
 ) {
     let constant_true = builder.constant_bool(true);
     let constant_false = builder.constant_bool(false);
@@ -140,27 +128,25 @@ pub fn verify_smt_process_proof<
 
     // let ProcessMerkleProofRoleTarget { is_remove_op, .. } =
     //     get_process_merkle_proof_role(builder, fnc);
-    let is_remove_op = builder.and(fnc[0], fnc[1]);
+    let is_remove_op = fnc.is_remove_op(builder);
 
     // remove proof は old と new をひっくり返せば insert proof になる
-    let fnc0 = fnc[0];
+    let fnc0 = fnc.0[0];
     let fnc1 =
-        BoolTarget::new_unsafe(builder._if(is_remove_op, constant_false.target, fnc[1].target));
-    let fnc = [fnc0, fnc1];
+        BoolTarget::new_unsafe(builder._if(is_remove_op, constant_false.target, fnc.0[1].target));
+    let fnc = ProcessMerkleProofRoleTarget([fnc0, fnc1]);
     let (old_key, new_key) = conditionally_reverse(builder, old_key, new_key, is_remove_op);
     let (old_value, new_value) = conditionally_reverse(builder, old_value, new_value, is_remove_op);
     let (old_root, new_root) = conditionally_reverse(builder, old_root, new_root, is_remove_op);
 
     // この時点で remove proof を扱う必要がなくなった.
-    let ProcessMerkleProofRoleTarget {
-        is_not_no_op: enabled,
-        is_no_op,
-        is_remove_op,
-        is_update_or_no_op,
-        is_insert_or_remove_op,
-        ..
-    } = get_process_merkle_proof_role(builder, fnc);
+    let is_remove_op = fnc.is_remove_op(builder);
     builder.connect(is_remove_op.target, constant_false.target);
+
+    let enabled = fnc.is_not_no_op(builder);
+    let is_no_op = fnc.is_no_op(builder);
+    let is_update_or_no_op = fnc.is_update_or_no_op(builder);
+    let is_insert_or_remove_op = fnc.is_insert_or_remove_op(builder);
 
     // component hash1Old = SMTHash1();
     // hash1Old.key <== oldKey;

@@ -288,7 +288,7 @@ where
     let mut builder = CircuitBuilder::<F, D>::new(config);
     // builder.debug_gate_row = Some(861);
     // builder.debug_slot_index = Some(10);
-    // builder.debug_target_index = Some(50368);
+    builder.debug_target_index = Some(38);
     // builder.debug_target_index = Some(66451);
 
     // deposit block

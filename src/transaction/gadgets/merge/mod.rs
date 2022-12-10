@@ -17,11 +17,8 @@ use crate::{
     poseidon::gadgets::poseidon_two_to_one,
     sparse_merkle_tree::{
         gadgets::{
-            common::{conditionally_select, enforce_equal_if_enabled, logical_and_not},
-            process::{
-                process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
-                utils::{get_process_merkle_proof_role, ProcessMerkleProofRoleTarget},
-            },
+            common::{conditionally_select, enforce_equal_if_enabled},
+            process::process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
             verify::verify_smt::{SmtInclusionProof, SparseMerkleInclusionProofTarget},
         },
         goldilocks_poseidon::WrappedHashOut,
@@ -313,17 +310,8 @@ pub fn verify_user_asset_merge_proof<
     } in proofs
     {
         let is_not_deposit = latest_account_tree_inclusion_proof.enabled;
-
-        let ProcessMerkleProofRoleTarget {
-            // is_insert_op,
-            is_not_no_op,
-            ..
-        } = get_process_merkle_proof_role::<F, D>(builder, merge_process_proof.fnc);
-        let is_insert_op = logical_and_not(
-            builder,
-            merge_process_proof.fnc[0],
-            merge_process_proof.fnc[1],
-        );
+        let is_insert_op = merge_process_proof.fnc.is_insert_op(builder);
+        let is_not_no_op = merge_process_proof.fnc.is_not_no_op(builder);
 
         let block_header_t = diff_tree_inclusion_proof.0.clone();
 

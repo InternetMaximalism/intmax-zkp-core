@@ -13,10 +13,7 @@ use crate::{
     sparse_merkle_tree::{
         gadgets::process::{
             process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
-            utils::{
-                get_process_merkle_proof_role, verify_layered_smt_target_connection,
-                ProcessMerkleProofRoleTarget,
-            },
+            utils::verify_layered_smt_target_connection,
         },
         goldilocks_poseidon::{GoldilocksHashOut, WrappedHashOut},
         layered_tree::verify_layered_smt_connection,
@@ -340,9 +337,7 @@ pub fn calc_deposit_digest<
         elements: [zero; 4],
     };
     for proof_t in deposit_process_proofs {
-        let ProcessMerkleProofRoleTarget {
-            is_insert_or_no_op, ..
-        } = get_process_merkle_proof_role(builder, proof_t.2.fnc);
+        let is_insert_or_no_op = proof_t.2.fnc.is_insert_or_no_op(builder);
         let constant_true = builder._true();
         builder.connect(is_insert_or_no_op.target, constant_true.target);
         verify_layered_smt_target_connection(

@@ -15,10 +15,10 @@ use crate::{
     poseidon::gadgets::poseidon_two_to_one,
     sparse_merkle_tree::{
         gadgets::{
-            common::{conditionally_select, logical_xor},
+            common::conditionally_select,
             process::{
                 process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
-                utils::{get_process_merkle_proof_role, verify_layered_smt_target_connection},
+                utils::verify_layered_smt_target_connection,
             },
         },
         goldilocks_poseidon::WrappedHashOut,
@@ -324,7 +324,7 @@ pub fn verify_user_asset_purge_proof<
     assert_eq!(input_proofs_t.len(), output_proofs_t.len());
     let mut input_assets_t = Vec::with_capacity(input_proofs_t.len());
     for (proof0_t, proof1_t, proof2_t) in input_proofs_t {
-        let is_no_op = get_process_merkle_proof_role(builder, proof0_t.fnc).is_no_op;
+        let is_no_op = proof0_t.fnc.is_no_op(builder);
         let merge_key = proof0_t.new_key;
         let old_root_with_nonce =
             poseidon_two_to_one::<F, H, D>(builder, proof1_t.old_root, merge_key);
@@ -353,10 +353,8 @@ pub fn verify_user_asset_purge_proof<
         );
 
         // proof2_t.fnc が ProcessDeleteOp または ProcessNoOp であること
-        let is_not_remove_op = logical_xor(builder, proof2_t.fnc[0], proof2_t.fnc[1]);
-        // let is_not_remove_op =
-        //     get_process_merkle_proof_role(builder, proof2_t.fnc).is_insert_or_update_op;
-        // builder.connect(is_not_remove_op.target, constant_false.target); // XXX: row 453
+        let is_insert_or_update_op = proof2_t.fnc.is_insert_or_update_op(builder);
+        // builder.connect(is_insert_or_update_op.target, constant_false.target); // XXX: row 453
 
         // proof2_t.old_value (取り除いた asset) が 2^56 未満の値であること
         builder.range_check(proof2_t.old_value.elements[0], 56);
@@ -400,8 +398,8 @@ pub fn verify_user_asset_purge_proof<
         );
 
         // proof2_t.fnc が ProcessInsertOp または ProcessNoOp であること
-        let is_insert_op = builder.not(proof2_t.fnc[1]);
-        builder.connect(is_insert_op.target, constant_true.target);
+        let is_insert_or_no_op = proof2_t.fnc.is_insert_or_no_op(builder);
+        builder.connect(is_insert_or_no_op.target, constant_true.target);
 
         // proof2_t.new_value が 2^56 未満の値であること
         builder.range_check(proof2_t.new_value.elements[0], 56);

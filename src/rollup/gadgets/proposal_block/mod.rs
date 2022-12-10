@@ -12,11 +12,8 @@ use crate::{
     },
     sparse_merkle_tree::{
         gadgets::{
-            common::{enforce_equal_if_enabled, logical_and_not, logical_or},
-            process::{
-                process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
-                utils::{get_process_merkle_proof_role, ProcessMerkleProofRoleTarget},
-            },
+            common::{enforce_equal_if_enabled, logical_or},
+            process::process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
         },
         goldilocks_poseidon::WrappedHashOut,
     },
@@ -185,13 +182,8 @@ pub fn verify_valid_proposal_block<
     // world state process proof は正しい遷移になるように並んでいる.
     let mut new_world_state_root = old_world_state_root;
     for proof in world_state_process_proofs {
-        let fnc = get_process_merkle_proof_role(builder, proof.fnc);
-        enforce_equal_if_enabled(
-            builder,
-            proof.old_root,
-            new_world_state_root,
-            fnc.is_not_no_op,
-        );
+        let is_not_no_op = proof.fnc.is_not_no_op(builder);
+        enforce_equal_if_enabled(builder, proof.old_root, new_world_state_root, is_not_no_op);
 
         new_world_state_root = proof.new_root;
     }
@@ -206,14 +198,10 @@ pub fn verify_valid_proposal_block<
         let old_user_asset_root = u.middle_user_asset_root;
         let new_user_asset_root = u.new_user_asset_root;
 
-        let ProcessMerkleProofRoleTarget {
-            is_no_op,
-            // is_insert_op,
-            is_update_op,
-            is_remove_op,
-            ..
-        } = get_process_merkle_proof_role(builder, w.fnc);
-        let is_insert_op = logical_and_not(builder, w.fnc[0], w.fnc[1]);
+        let is_no_op = w.fnc.is_no_op(builder);
+        let is_insert_op = w.fnc.is_insert_op(builder);
+        let is_update_op = w.fnc.is_update_op(builder);
+        let is_remove_op = w.fnc.is_remove_op(builder);
 
         // If user transaction is not enabled, corresponding process proof is for noop process.
         let is_no_op_or_enabled = logical_or(builder, is_no_op, enabled);

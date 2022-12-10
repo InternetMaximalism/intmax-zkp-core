@@ -256,13 +256,6 @@ fn main() {
         nonce: deposit_nonce.into(),
     };
 
-    world_state_tree
-        .set(
-            sender2_address.into(),
-            sender2_user_asset_tree.get_root().unwrap(),
-        )
-        .unwrap();
-
     let mut sender2_user_asset_tree: UserAssetTree<_, _> = sender2_user_asset_tree.into();
     let proof1 = sender2_user_asset_tree
         .set(deposit_merge_key, key2.1, key2.2, zero)

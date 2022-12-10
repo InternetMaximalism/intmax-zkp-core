@@ -37,7 +37,7 @@ use crate::{
         account::Address,
         circuits::{
             SimpleSignatureCircuit, SimpleSignatureProofWithPublicInputs,
-            SimpleSignaturePublicInputsTarget,
+            SimpleSignaturePublicInputs, SimpleSignaturePublicInputsTarget,
         },
         gadgets::account::AddressTarget,
     },
@@ -102,13 +102,13 @@ impl<
         &self,
         pw: &mut impl Witness<F>,
         block_number: u32,
-        user_tx_proofs: &[MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>],
-        default_user_tx_proofs: &MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>,
+        user_transactions: &[MergeAndPurgeTransitionPublicInputs<F>],
+        // default_user_tx_proofs: &MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>,
         deposit_process_proofs: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
         world_state_process_proofs: &[SmtProcessProof<F>],
         world_state_revert_proofs: &[SmtProcessProof<F>],
-        received_signature_proofs: &[Option<SimpleSignatureProofWithPublicInputs<F, C, D>>],
-        default_simple_signature: &SimpleSignatureProofWithPublicInputs<F, C, D>,
+        received_signatures: &[Option<SimpleSignaturePublicInputs<F>>],
+        // default_simple_signature: &SimpleSignatureProofWithPublicInputs<F, C, D>,
         latest_account_tree_process_proofs: &[SmtProcessProof<F>],
         block_headers_proof_siblings: &[WrappedHashOut<F>],
         prev_block_header: BlockHeader<F>,
@@ -120,11 +120,11 @@ impl<
             .deposit_block_target
             .set_witness(pw, deposit_process_proofs);
         let old_world_state_root = prev_block_header.approved_world_state_digest.into();
-        let user_transactions = user_tx_proofs
-            .iter()
-            .cloned()
-            .map(|p| p.public_inputs)
-            .collect::<Vec<_>>();
+        // let user_transactions = user_tx_proofs
+        //     .iter()
+        //     .cloned()
+        //     .map(|p| p.public_inputs)
+        //     .collect::<Vec<_>>();
         let (transactions_digest, proposed_world_state_digest) =
             self.proposal_block_target.set_witness(
                 pw,
@@ -133,18 +133,18 @@ impl<
                 old_world_state_root,
             );
         let old_latest_account_root = prev_block_header.latest_account_digest.into();
-        let signatures = received_signature_proofs
-            .iter()
-            .cloned()
-            .map(|p| p.map(|p| p.public_inputs))
-            .collect::<Vec<_>>();
+        // let received_signatures = received_signature_proofs
+        //     .iter()
+        //     .cloned()
+        //     .map(|p| p.map(|p| p.public_inputs))
+        //     .collect::<Vec<_>>();
         let (approved_world_state_digest, latest_account_digest) =
             self.approval_block_target.set_witness(
                 pw,
                 block_number,
                 world_state_revert_proofs,
                 &user_transactions,
-                &signatures,
+                &received_signatures,
                 latest_account_tree_process_proofs,
                 proposed_world_state_digest,
                 old_latest_account_root,

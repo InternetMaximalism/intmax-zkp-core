@@ -208,12 +208,11 @@ pub fn verify_valid_proposal_block<
 
         let ProcessMerkleProofRoleTarget {
             is_no_op,
-            // is_insert_op,
+            is_insert_op,
             is_update_op,
             is_remove_op,
             ..
         } = get_process_merkle_proof_role(builder, w.fnc);
-        let is_insert_op = logical_and_not(builder, w.fnc[0], w.fnc[1]);
 
         // If user transaction is not enabled, corresponding process proof is for noop process.
         let is_no_op_or_enabled = logical_or(builder, is_no_op, enabled);

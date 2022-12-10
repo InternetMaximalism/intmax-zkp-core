@@ -12,7 +12,7 @@ use super::super::common::{
 #[derive(Copy, Clone, Debug)]
 pub struct ProcessMerkleProofRoleTarget {
     pub is_no_op: BoolTarget,
-    // pub is_insert_op: BoolTarget,
+    pub is_insert_op: BoolTarget,
     pub is_update_op: BoolTarget,
     pub is_remove_op: BoolTarget,
     pub is_insert_or_update_op: BoolTarget,
@@ -29,7 +29,7 @@ pub fn get_process_merkle_proof_role<F: RichField + Extendable<D>, const D: usiz
     fnc: [BoolTarget; 2],
 ) -> ProcessMerkleProofRoleTarget {
     let is_no_op = logical_nor(builder, fnc[0], fnc[1]); // [0, 0]
-                                                         // let is_insert_op = logical_and_not(builder, fnc[0], fnc[1]); // [1, 0]
+    let is_insert_op = logical_and_not(builder, fnc[0], fnc[1]); // [1, 0]
     let is_update_op = logical_and_not(builder, fnc[1], fnc[0]); // [0, 1]
     let is_remove_op = builder.and(fnc[0], fnc[1]); // [1, 1]
     let is_insert_or_update_op = logical_xor(builder, fnc[0], fnc[1]); // [x, 1 - x]
@@ -42,7 +42,7 @@ pub fn get_process_merkle_proof_role<F: RichField + Extendable<D>, const D: usiz
 
     ProcessMerkleProofRoleTarget {
         is_no_op,
-        // is_insert_op,
+        is_insert_op,
         is_update_op,
         is_remove_op,
         is_insert_or_update_op,

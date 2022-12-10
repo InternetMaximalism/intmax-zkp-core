@@ -59,15 +59,19 @@ pub struct SimpleSignaturePublicInputs<F: Field> {
 
 impl<F: Field> SimpleSignaturePublicInputs<F> {
     pub fn encode(&self) -> Vec<F> {
-        let mut public_inputs = vec![];
-        public_inputs.append(&mut self.message.elements.into());
-        public_inputs.append(&mut self.public_key.elements.into());
-        public_inputs.append(&mut self.signature.elements.into());
+        let public_inputs = vec![
+            self.message.elements,
+            self.public_key.elements,
+            self.signature.elements,
+        ]
+        .concat();
+        assert_eq!(public_inputs.len(), 12);
 
         public_inputs
     }
 
     pub fn decode(public_inputs: &[F]) -> Self {
+        assert_eq!(public_inputs.len(), 12);
         let message = HashOut::from_partial(&public_inputs[0..4]);
         let public_key = HashOut::from_partial(&public_inputs[4..8]);
         let signature = HashOut::from_partial(&public_inputs[8..12]);
@@ -122,8 +126,35 @@ impl SimpleSignaturePublicInputsTarget {
         builder.connect_hashes(a.signature, b.signature);
     }
 
+    pub fn encode(&self) -> Vec<Target> {
+        let public_inputs_t = vec![
+            self.message.elements,
+            self.public_key.elements,
+            self.signature.elements,
+        ]
+        .concat();
+        assert_eq!(public_inputs_t.len(), 12);
+
+        public_inputs_t
+    }
+
     pub fn decode(public_inputs_t: &[Target]) -> Self {
-        parse_simple_signature_public_inputs(public_inputs_t)
+        assert_eq!(public_inputs_t.len(), 12);
+        let message = HashOutTarget {
+            elements: public_inputs_t[0..4].try_into().unwrap(),
+        };
+        let public_key = HashOutTarget {
+            elements: public_inputs_t[4..8].try_into().unwrap(),
+        };
+        let signature = HashOutTarget {
+            elements: public_inputs_t[8..12].try_into().unwrap(),
+        };
+
+        SimpleSignaturePublicInputsTarget {
+            message,
+            public_key,
+            signature,
+        }
     }
 }
 
@@ -164,25 +195,25 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     }
 }
 
-pub fn parse_simple_signature_public_inputs(
-    public_inputs_t: &[Target],
-) -> SimpleSignaturePublicInputsTarget {
-    let message = HashOutTarget {
-        elements: public_inputs_t[0..4].try_into().unwrap(),
-    };
-    let public_key = HashOutTarget {
-        elements: public_inputs_t[4..8].try_into().unwrap(),
-    };
-    let signature = HashOutTarget {
-        elements: public_inputs_t[8..12].try_into().unwrap(),
-    };
+// pub fn parse_simple_signature_public_inputs(
+//     public_inputs_t: &[Target],
+// ) -> SimpleSignaturePublicInputsTarget {
+//     let message = HashOutTarget {
+//         elements: public_inputs_t[0..4].try_into().unwrap(),
+//     };
+//     let public_key = HashOutTarget {
+//         elements: public_inputs_t[4..8].try_into().unwrap(),
+//     };
+//     let signature = HashOutTarget {
+//         elements: public_inputs_t[8..12].try_into().unwrap(),
+//     };
 
-    SimpleSignaturePublicInputsTarget {
-        message,
-        public_key,
-        signature,
-    }
-}
+//     SimpleSignaturePublicInputsTarget {
+//         message,
+//         public_key,
+//         signature,
+//     }
+// }
 
 impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     SimpleSignatureCircuit<F, C, D>
@@ -190,7 +221,7 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     pub fn parse_public_inputs(&self) -> SimpleSignaturePublicInputsTarget {
         let public_inputs_t = self.data.prover_only.public_inputs.clone();
 
-        parse_simple_signature_public_inputs(&public_inputs_t)
+        SimpleSignaturePublicInputsTarget::decode(&public_inputs_t)
     }
 
     pub fn prove(

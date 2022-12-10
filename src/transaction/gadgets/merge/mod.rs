@@ -97,7 +97,7 @@ impl<
             let target = MergeProofTarget {
                 // is_deposit: builder.add_virtual_bool_target_safe(),
                 diff_tree_inclusion_proof: (
-                    BlockHeaderTarget::add_virtual_to::<F, H, D>(builder),
+                    BlockHeaderTarget::add_virtual_to::<F, D>(builder),
                     MerkleProofTarget::add_virtual_to::<F, H, D>(builder),
                     SparseMerkleInclusionProofTarget::add_virtual_to::<F, H, D>(builder),
                 ),
@@ -527,8 +527,8 @@ fn test_merge_proof_by_plonky2() {
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
     let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
     let prev_block_header = BlockHeader {
-        block_number: 0,
-        prev_block_header_digest: default_hash,
+        block_number: 1,
+        block_headers_digest: default_hash,
         transactions_digest: *default_merkle_root,
         deposit_digest: *merge_inclusion_proof1.root,
         proposed_world_state_digest: default_hash,

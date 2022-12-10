@@ -14,7 +14,7 @@ const N_LOG_MAX_BLOCKS: usize = 32;
 #[derive(Clone, Debug)]
 pub struct BlockHeaderTarget {
     pub block_number: Target, // u32
-    pub prev_block_header_digest: HashOutTarget,
+    pub block_headers_digest: HashOutTarget,
     pub transactions_digest: HashOutTarget,
     pub deposit_digest: HashOutTarget,
     pub proposed_world_state_digest: HashOutTarget,
@@ -23,12 +23,12 @@ pub struct BlockHeaderTarget {
 }
 
 impl BlockHeaderTarget {
-    pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+    pub fn add_virtual_to<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
         let block_number = builder.add_virtual_target();
         builder.range_check(block_number, N_LOG_MAX_BLOCKS);
-        let prev_block_header_digest = builder.add_virtual_hash();
+        let block_headers_digest = builder.add_virtual_hash();
         let transactions_digest = builder.add_virtual_hash();
         let deposit_digest = builder.add_virtual_hash();
         let proposed_world_state_digest = builder.add_virtual_hash();
@@ -37,7 +37,7 @@ impl BlockHeaderTarget {
 
         Self {
             block_number,
-            prev_block_header_digest,
+            block_headers_digest,
             transactions_digest,
             deposit_digest,
             proposed_world_state_digest,
@@ -51,10 +51,7 @@ impl BlockHeaderTarget {
             self.block_number,
             F::from_canonical_u32(block_header.block_number),
         );
-        pw.set_hash_target(
-            self.prev_block_header_digest,
-            block_header.prev_block_header_digest,
-        );
+        pw.set_hash_target(self.block_headers_digest, block_header.block_headers_digest);
         pw.set_hash_target(self.transactions_digest, block_header.transactions_digest);
         pw.set_hash_target(self.deposit_digest, block_header.deposit_digest);
         pw.set_hash_target(
@@ -100,5 +97,5 @@ pub fn get_block_hash_target<
     );
     let e = poseidon_two_to_one::<F, H, D>(builder, c, d);
 
-    poseidon_two_to_one::<F, H, D>(builder, block_header.prev_block_header_digest, e)
+    poseidon_two_to_one::<F, H, D>(builder, block_header.block_headers_digest, e)
 }

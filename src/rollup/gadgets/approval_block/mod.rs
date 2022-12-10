@@ -131,6 +131,7 @@ impl<const D: usize, const N_LOG_USERS: usize, const N_TXS: usize>
         }
     }
 
+    /// Returns `(new_world_state_root, new_latest_account_root)`.
     #[allow(clippy::too_many_arguments)]
     pub fn set_witness<F: RichField + Extendable<D>>(
         &self,
@@ -182,23 +183,23 @@ impl<const D: usize, const N_LOG_USERS: usize, const N_TXS: usize>
             dbg!(w, u, r.is_some(), a);
 
             // proposed block では, user asset root は `u.new_user_asset_root` と同じであった.
-            assert_eq!(w.old_value, u.new_user_asset_root); // XXX
+            assert_eq!(w.old_value, u.new_user_asset_root);
 
             // merge までは signature がなくても実行されるが, purge は signature がない時には実行されない.
-            let enabled_signature = r.is_some();
-            if enabled_signature {
+            let expected_new_last_block_number = if let Some(signature) = r {
+                // signature が特定のメッセージに署名している時のみ有効である.
+                assert_eq!(signature.message, *old_world_state_root);
                 // signature が提出された時, user asset root は変わらない.
                 assert_eq!(w.new_value, u.new_user_asset_root);
+
+                WrappedHashOut::from_u32(current_block_number)
             } else {
                 // signature がない時は, user asset root が merge 直後の状態 `u.middle_user_asset_root` に更新される
                 assert_eq!(w.new_value, u.middle_user_asset_root);
-            }
 
-            let expected_new_last_block_number = if enabled_signature {
-                WrappedHashOut::from_u32(current_block_number)
-            } else {
                 a.old_value
             };
+
             assert_eq!(a.new_value, expected_new_last_block_number);
         }
 
@@ -559,8 +560,8 @@ fn test_approval_block() {
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
     let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
     let prev_block_header = BlockHeader {
-        block_number: 0,
-        prev_block_header_digest: default_hash,
+        block_number: 1,
+        block_headers_digest: default_hash,
         transactions_digest: *default_merkle_root,
         deposit_digest: *merge_inclusion_proof1.root,
         proposed_world_state_digest: default_hash,
@@ -594,7 +595,7 @@ fn test_approval_block() {
     let merge_proof = MergeProof {
         is_deposit: true,
         diff_tree_inclusion_proof: (
-            prev_block_header,
+            prev_block_header.clone(),
             merge_inclusion_proof1,
             merge_inclusion_proof2,
         ),
@@ -780,7 +781,7 @@ fn test_approval_block() {
         );
     let circuit_data = builder.build::<C>();
 
-    let block_number = 1;
+    let block_number = prev_block_header.block_number + 1;
 
     let accounts_in_block: Vec<(Option<_>, _)> = vec![
         (None, sender1_tx_proof),

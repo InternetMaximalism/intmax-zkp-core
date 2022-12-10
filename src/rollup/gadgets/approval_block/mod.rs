@@ -180,8 +180,6 @@ impl<const D: usize, const N_LOG_USERS: usize, const N_TXS: usize>
             .zip(received_signatures)
             .zip(latest_account_tree_process_proofs)
         {
-            dbg!(w, u, r.is_some(), a);
-
             // proposed block では, user asset root は `u.new_user_asset_root` と同じであった.
             assert_eq!(w.old_value, u.new_user_asset_root);
 

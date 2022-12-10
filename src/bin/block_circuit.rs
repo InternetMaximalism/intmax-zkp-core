@@ -243,6 +243,7 @@ fn main() {
     let merge_process_proof = sender2_user_asset_tree
         .set(deposit_merge_key, asset_root)
         .unwrap();
+    dbg!(&merge_process_proof);
 
     let merge_proof = MergeProof {
         is_deposit: true,

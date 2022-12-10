@@ -285,9 +285,9 @@ where
 {
     let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
-    builder.debug_target_index = Some(39784);
-    // builder.debug_target_index = Some(50368);
-    // builder.debug_target_index = Some(66451);
+    // builder.debug_target_index = Some(39784);
+    builder.debug_gate_row = Some(608);
+    builder.debug_slot_index = Some(5);
 
     // deposit block
     let deposit_block_target: DepositBlockProofTarget<

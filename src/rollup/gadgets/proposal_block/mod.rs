@@ -23,6 +23,10 @@ use crate::{
     transaction::circuits::{
         MergeAndPurgeTransitionPublicInputs, MergeAndPurgeTransitionPublicInputsTarget,
     },
+    zkdsa::{
+        account::Address,
+        circuits::{make_simple_signature_circuit, SimpleSignaturePublicInputs},
+    },
 };
 
 #[derive(Clone)]
@@ -295,6 +299,7 @@ fn test_proposal_block() {
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = <C as GenericConfig<D>>::F;
+    const N_LOG_MAX_BLOCKS: usize = 32;
     const N_LOG_MAX_USERS: usize = 3;
     const N_LOG_MAX_TXS: usize = 3;
     const N_LOG_MAX_CONTRACTS: usize = 3;
@@ -303,9 +308,11 @@ fn test_proposal_block() {
     const N_LOG_RECIPIENTS: usize = 3;
     const N_LOG_CONTRACTS: usize = 3;
     const N_LOG_VARIABLES: usize = 3;
+    const N_DEPOSITS: usize = 2;
     const N_DIFFS: usize = 2;
     const N_MERGES: usize = 2;
     const N_TXS: usize = 2usize.pow(N_LOG_TXS as u32);
+    const N_BLOCKS: usize = 2;
 
     let aggregator_nodes_db = NodeDataMemory::default();
     let mut world_state_tree =
@@ -423,19 +430,19 @@ fn test_proposal_block() {
     let mut sender2_tx_diff_tree =
         LayeredLayeredPoseidonSparseMerkleTree::new(sender2_nodes_db, RootDataTmp::default());
 
-    let mut block0_deposit_tree =
+    let mut block1_deposit_tree =
         LayeredLayeredPoseidonSparseMerkleTree::new(aggregator_nodes_db, RootDataTmp::default());
 
-    block0_deposit_tree
+    block1_deposit_tree
         .set(sender2_address.into(), key1.1, key1.2, value1)
         .unwrap();
-    block0_deposit_tree
+    block1_deposit_tree
         .set(sender2_address.into(), key2.1, key2.2, value2)
         .unwrap();
 
-    let block0_deposit_tree: PoseidonSparseMerkleTree<_, _> = block0_deposit_tree.into();
+    let block1_deposit_tree: PoseidonSparseMerkleTree<_, _> = block1_deposit_tree.into();
 
-    let merge_inclusion_proof2 = block0_deposit_tree.find(&sender2_address.into()).unwrap();
+    let merge_inclusion_proof2 = block1_deposit_tree.find(&sender2_address.into()).unwrap();
 
     // `merge_inclusion_proof2` の root を `diff_root`, `hash(diff_root, nonce)` の値を `tx_hash` とよぶ.
     let deposit_nonce = HashOut::ZERO;
@@ -444,23 +451,36 @@ fn test_proposal_block() {
 
     let merge_inclusion_proof1 = get_merkle_proof(&[deposit_tx_hash], 0, N_LOG_TXS);
 
-    let default_hash = HashOut::ZERO;
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
     let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
+    let prev_block_number = 1u32;
+    let mut block_headers: Vec<WrappedHashOut<F>> =
+        vec![WrappedHashOut::ZERO; prev_block_number as usize];
+    let prev_block_headers_digest = get_merkle_proof(
+        &block_headers,
+        prev_block_number as usize - 1,
+        N_LOG_MAX_BLOCKS,
+    )
+    .root;
+
+    let prev_world_state_digest = world_state_tree.get_root().unwrap();
+    dbg!(&prev_world_state_digest);
+    let prev_latest_account_digest = WrappedHashOut::default();
     let prev_block_header = BlockHeader {
-        block_number: 1,
-        block_headers_digest: default_hash,
+        block_number: prev_block_number,
+        block_headers_digest: *prev_block_headers_digest,
         transactions_digest: *default_merkle_root,
         deposit_digest: *merge_inclusion_proof1.root,
-        proposed_world_state_digest: default_hash,
-        approved_world_state_digest: default_hash,
-        latest_account_digest: default_hash,
+        proposed_world_state_digest: *prev_world_state_digest,
+        approved_world_state_digest: *prev_world_state_digest,
+        latest_account_digest: *prev_latest_account_digest,
     };
 
-    let block_hash = get_block_hash(&prev_block_header);
+    let prev_block_hash = get_block_hash(&prev_block_header);
+    block_headers.push(prev_block_hash.into());
 
     // deposit の場合は, `hash(tx_hash, block_hash)` を `merge_key` とよぶ.
-    let deposit_merge_key = PoseidonHash::two_to_one(*deposit_tx_hash, block_hash).into();
+    let deposit_merge_key = PoseidonHash::two_to_one(*deposit_tx_hash, prev_block_hash).into();
 
     // user_asset_tree に deposit を merge する.
     sender2_user_asset_tree
@@ -492,6 +512,8 @@ fn test_proposal_block() {
         nonce: deposit_nonce.into(),
     };
 
+    dbg!(sender2_user_asset_tree.get_root().unwrap());
+
     world_state_tree
         .set(
             sender2_address.into(),
@@ -521,8 +543,8 @@ fn test_proposal_block() {
     //     serde_json::to_string(&sender2_output_witness).unwrap()
     // );
 
-    let sender1_nonce: WrappedHashOut<F> = WrappedHashOut::rand();
-    dbg!(sender1_nonce);
+    // let sender1_nonce: WrappedHashOut<F> = WrappedHashOut::rand();
+    // dbg!(sender1_nonce);
     let sender1_nonce = WrappedHashOut::from(HashOut {
         elements: [
             F::from_canonical_u64(7823975322825286183),
@@ -532,39 +554,22 @@ fn test_proposal_block() {
         ],
     });
 
-    let mut pw = PartialWitness::new();
-    merge_and_purge_circuit
-        .targets
-        .merge_proof_target
-        .set_witness(
-            &mut pw,
-            &[],
-            *sender1_input_witness.first().unwrap().0.old_root,
-        );
-    merge_and_purge_circuit
-        .targets
-        .purge_proof_target
-        .set_witness(
-            &mut pw,
-            sender1_account.address,
-            &sender1_input_witness,
-            &sender1_output_witness,
-            sender1_input_witness.first().unwrap().0.old_root,
-            sender1_nonce,
-        );
+    let sender1_transaction = {
+        let old_user_asset_root = sender1_input_witness.first().unwrap().0.old_root;
+        let middle_user_asset_root = old_user_asset_root;
+        let new_user_asset_root = sender1_input_witness.last().unwrap().0.new_root;
+        let diff_root = sender1_output_witness.last().unwrap().0.new_root;
+        let tx_hash = PoseidonHash::two_to_one(*diff_root, *sender1_nonce);
 
-    println!("start proving: sender1_tx_proof");
-    let start = Instant::now();
-    let sender1_tx_proof = merge_and_purge_circuit.prove(pw).unwrap();
-    let end = start.elapsed();
-    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
-
-    // dbg!(&sender1_tx_proof.public_inputs);
-
-    match merge_and_purge_circuit.verify(sender1_tx_proof.clone()) {
-        Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
-    }
+        MergeAndPurgeTransitionPublicInputs {
+            sender_address: Address(sender1_address),
+            old_user_asset_root,
+            middle_user_asset_root,
+            new_user_asset_root,
+            diff_root,
+            tx_hash: tx_hash.into(),
+        }
+    };
 
     let sender2_nonce = WrappedHashOut::from(HashOut {
         elements: [
@@ -575,35 +580,22 @@ fn test_proposal_block() {
         ],
     });
 
-    let mut pw = PartialWitness::new();
-    merge_and_purge_circuit
-        .targets
-        .merge_proof_target
-        .set_witness(&mut pw, &[merge_proof], default_hash);
-    merge_and_purge_circuit
-        .targets
-        .purge_proof_target
-        .set_witness(
-            &mut pw,
-            sender2_account.address,
-            &sender2_input_witness,
-            &sender2_output_witness,
-            sender2_input_witness.first().unwrap().0.old_root,
-            sender2_nonce,
-        );
+    let sender2_transaction = {
+        let old_user_asset_root = merge_proof.merge_process_proof.old_root;
+        let middle_user_asset_root = sender2_input_witness.first().unwrap().0.old_root;
+        let new_user_asset_root = sender2_input_witness.last().unwrap().0.new_root;
+        let diff_root = sender2_output_witness.last().unwrap().0.new_root;
+        let tx_hash = PoseidonHash::two_to_one(*diff_root, *sender2_nonce);
 
-    println!("start proving: sender2_tx_proof");
-    let start = Instant::now();
-    let sender2_tx_proof = merge_and_purge_circuit.prove(pw).unwrap();
-    let end = start.elapsed();
-    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
-
-    // dbg!(&sender2_tx_proof.public_inputs);
-
-    match merge_and_purge_circuit.verify(sender2_tx_proof.clone()) {
-        Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
-    }
+        MergeAndPurgeTransitionPublicInputs {
+            sender_address: Address(sender2_address),
+            old_user_asset_root,
+            middle_user_asset_root,
+            new_user_asset_root,
+            diff_root,
+            tx_hash: tx_hash.into(),
+        }
+    };
 
     let mut world_state_process_proofs = vec![];
     let mut user_transactions = vec![];
@@ -625,9 +617,9 @@ fn test_proposal_block() {
         .unwrap();
 
     world_state_process_proofs.push(sender1_world_state_process_proof);
-    user_transactions.push(sender1_tx_proof.public_inputs);
+    user_transactions.push(sender1_transaction);
     world_state_process_proofs.push(sender2_world_state_process_proof);
-    user_transactions.push(sender2_tx_proof.public_inputs);
+    user_transactions.push(sender2_transaction);
 
     // proposal block
     let config = CircuitConfig::standard_recursion_config();

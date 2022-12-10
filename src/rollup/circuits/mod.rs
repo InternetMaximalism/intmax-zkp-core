@@ -29,7 +29,7 @@ use crate::{
         block_header::{get_block_hash, BlockHeader},
         circuits::{
             MergeAndPurgeTransitionCircuit, MergeAndPurgeTransitionProofWithPublicInputs,
-            MergeAndPurgeTransitionPublicInputsTarget,
+            MergeAndPurgeTransitionPublicInputs, MergeAndPurgeTransitionPublicInputsTarget,
         },
         gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
     },
@@ -68,8 +68,8 @@ pub struct OneBlockProofTarget<
         DepositBlockProofTarget<D, N_LOG_RECIPIENTS, N_LOG_CONTRACTS, N_LOG_VARIABLES, N_DEPOSITS>,
     pub proposal_block_target: ProposalBlockProofTarget<D, N_LOG_USERS, N_TXS>,
     pub approval_block_target: ApprovalBlockProofTarget<D, N_LOG_USERS, N_TXS>,
-    pub user_tx_proofs: [RecursiveProofTarget<D>; N_TXS],
-    pub received_signature_proofs: [RecursiveProofTarget<D>; N_TXS],
+    // pub user_tx_proofs: [RecursiveProofTarget<D>; N_TXS],
+    // pub received_signature_proofs: [RecursiveProofTarget<D>; N_TXS],
     pub block_headers_proof: MerkleProofTarget<N_LOG_MAX_BLOCKS>,
     pub prev_block_header: BlockHeaderTarget,
     pub block_header: BlockHeaderTarget,
@@ -150,44 +150,44 @@ impl<
                 old_latest_account_root,
             );
 
-        assert!(user_tx_proofs.len() <= self.user_tx_proofs.len());
-        for (r_t, r) in self.user_tx_proofs.iter().zip(user_tx_proofs.iter()) {
-            r_t.set_witness(pw, &ProofWithPublicInputs::from(r.clone()), true);
-        }
+        // assert!(user_tx_proofs.len() <= self.user_tx_proofs.len());
+        // for (r_t, r) in self.user_tx_proofs.iter().zip(user_tx_proofs.iter()) {
+        //     r_t.set_witness(pw, &ProofWithPublicInputs::from(r.clone()), true);
+        // }
 
-        for r_t in self.user_tx_proofs.iter().skip(user_tx_proofs.len()) {
-            r_t.set_witness(
-                pw,
-                &ProofWithPublicInputs::from(default_user_tx_proofs.clone()),
-                false,
-            );
-        }
+        // for r_t in self.user_tx_proofs.iter().skip(user_tx_proofs.len()) {
+        //     r_t.set_witness(
+        //         pw,
+        //         &ProofWithPublicInputs::from(default_user_tx_proofs.clone()),
+        //         false,
+        //     );
+        // }
 
-        assert!(received_signature_proofs.len() <= self.received_signature_proofs.len());
-        for (r_t, r) in self
-            .received_signature_proofs
-            .iter()
-            .zip(received_signature_proofs.iter())
-        {
-            let r: Option<&_> = r.into();
-            r_t.set_witness(
-                pw,
-                &ProofWithPublicInputs::from(r.unwrap_or(default_simple_signature).clone()),
-                r.is_some(),
-            );
-        }
+        // assert!(received_signature_proofs.len() <= self.received_signature_proofs.len());
+        // for (r_t, r) in self
+        //     .received_signature_proofs
+        //     .iter()
+        //     .zip(received_signature_proofs.iter())
+        // {
+        //     let r: Option<&_> = r.into();
+        //     r_t.set_witness(
+        //         pw,
+        //         &ProofWithPublicInputs::from(r.unwrap_or(default_simple_signature).clone()),
+        //         r.is_some(),
+        //     );
+        // }
 
-        for r_t in self
-            .received_signature_proofs
-            .iter()
-            .skip(received_signature_proofs.len())
-        {
-            r_t.set_witness(
-                pw,
-                &ProofWithPublicInputs::from(default_simple_signature.clone()),
-                false,
-            );
-        }
+        // for r_t in self
+        //     .received_signature_proofs
+        //     .iter()
+        //     .skip(received_signature_proofs.len())
+        // {
+        //     r_t.set_witness(
+        //         pw,
+        //         &ProofWithPublicInputs::from(default_simple_signature.clone()),
+        //         false,
+        //     );
+        // }
 
         self.prev_block_header.set_witness(pw, &prev_block_header);
         for (sibling_t, sibling) in self
@@ -285,7 +285,7 @@ where
 {
     let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
-    // builder.debug_target_index = Some(1911);
+    builder.debug_target_index = Some(39784);
     // builder.debug_target_index = Some(50368);
     // builder.debug_target_index = Some(66451);
 
@@ -310,36 +310,36 @@ where
             &mut builder,
         );
 
-    let mut user_tx_proofs = vec![];
-    for _ in 0..N_TXS {
-        let b = RecursiveProofTarget::add_virtual_to(&mut builder, &merge_and_purge_circuit.data);
-        user_tx_proofs.push(b);
-    }
+    // let mut user_tx_proofs = vec![];
+    // for _ in 0..N_TXS {
+    //     let b = RecursiveProofTarget::add_virtual_to(&mut builder, &merge_and_purge_circuit.data);
+    //     user_tx_proofs.push(b);
+    // }
 
-    for ((u, p), a) in user_tx_proofs
-        .iter()
-        .zip(proposal_block_target.user_transactions.iter())
-        .zip(approval_block_target.user_transactions.iter())
-    {
-        let user_tx_public_inputs =
-            MergeAndPurgeTransitionPublicInputsTarget::decode(&u.inner.0.public_inputs);
-        MergeAndPurgeTransitionPublicInputsTarget::connect(&mut builder, p, &user_tx_public_inputs);
-        MergeAndPurgeTransitionPublicInputsTarget::connect(&mut builder, a, &user_tx_public_inputs);
-    }
+    // for ((u, p), a) in user_tx_proofs
+    //     .iter()
+    //     .zip(proposal_block_target.user_transactions.iter())
+    //     .zip(approval_block_target.user_transactions.iter())
+    // {
+    //     let user_tx_public_inputs =
+    //         MergeAndPurgeTransitionPublicInputsTarget::decode(&u.inner.0.public_inputs);
+    //     MergeAndPurgeTransitionPublicInputsTarget::connect(&mut builder, p, &user_tx_public_inputs);
+    //     MergeAndPurgeTransitionPublicInputsTarget::connect(&mut builder, a, &user_tx_public_inputs);
+    // }
 
-    let mut received_signature_proofs = vec![];
-    for _ in 0..N_TXS {
-        let b = RecursiveProofTarget::add_virtual_to(&mut builder, &simple_signature_circuit.data); // XXX: block_circuit
-        received_signature_proofs.push(b);
-    }
+    // let mut received_signature_proofs = vec![];
+    // for _ in 0..N_TXS {
+    //     let b = RecursiveProofTarget::add_virtual_to(&mut builder, &simple_signature_circuit.data); // XXX: block_circuit
+    //     received_signature_proofs.push(b);
+    // }
 
-    for (r, a) in received_signature_proofs
-        .iter()
-        .zip(approval_block_target.received_signatures.iter())
-    {
-        let signature = SimpleSignaturePublicInputsTarget::decode(&r.inner.0.public_inputs);
-        SimpleSignaturePublicInputsTarget::connect(&mut builder, &a.0, &signature);
-    }
+    // for (r, a) in received_signature_proofs
+    //     .iter()
+    //     .zip(approval_block_target.received_signatures.iter())
+    // {
+    //     let signature = SimpleSignaturePublicInputsTarget::decode(&r.inner.0.public_inputs);
+    //     SimpleSignaturePublicInputsTarget::connect(&mut builder, &a.0, &signature);
+    // }
 
     assert_eq!(
         proposal_block_target.user_transactions.len(),
@@ -452,14 +452,14 @@ where
         proposal_block_target,
         approval_block_target,
         deposit_block_target,
-        user_tx_proofs: user_tx_proofs
-            .try_into()
-            .map_err(|_| "user_tx_proofs is too long")
-            .unwrap(),
-        received_signature_proofs: received_signature_proofs
-            .try_into()
-            .map_err(|_| "received_signatures is too long")
-            .unwrap(),
+        // user_tx_proofs: user_tx_proofs
+        //     .try_into()
+        //     .map_err(|_| "user_tx_proofs is too long")
+        //     .unwrap(),
+        // received_signature_proofs: received_signature_proofs
+        //     .try_into()
+        //     .map_err(|_| "received_signatures is too long")
+        //     .unwrap(),
         block_headers_proof,
         prev_block_header,
         block_header,

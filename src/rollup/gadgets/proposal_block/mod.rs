@@ -31,7 +31,7 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct ProposalBlockProofTarget<
+pub struct ProposalBlockProductionTarget<
     const D: usize,
     const N_LOG_MAX_USERS: usize,
     const N_TXS: usize,
@@ -50,7 +50,7 @@ pub struct ProposalBlockProofTarget<
 }
 
 impl<const D: usize, const N_LOG_MAX_USERS: usize, const N_TXS: usize>
-    ProposalBlockProofTarget<D, N_LOG_MAX_USERS, N_TXS>
+    ProposalBlockProductionTarget<D, N_LOG_MAX_USERS, N_TXS>
 {
     pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>>(
         builder: &mut CircuitBuilder<F, D>,
@@ -612,8 +612,8 @@ fn test_proposal_block() {
     // proposal block
     let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
-    let proposal_block_target: ProposalBlockProofTarget<D, N_LOG_MAX_USERS, N_TXS> =
-        ProposalBlockProofTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(
+    let proposal_block_target: ProposalBlockProductionTarget<D, N_LOG_MAX_USERS, N_TXS> =
+        ProposalBlockProductionTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(
             &mut builder,
         );
     builder.register_public_inputs(&proposal_block_target.transactions_digest.elements);

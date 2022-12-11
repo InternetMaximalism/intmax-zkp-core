@@ -214,7 +214,7 @@ impl DepositInfoTarget {
 }
 
 #[derive(Clone, Debug)]
-pub struct DepositBlockProofTarget<
+pub struct DepositBlockProductionTarget<
     const D: usize,
     const N_LOG_RECIPIENTS: usize,
     const N_LOG_CONTRACTS: usize,
@@ -236,7 +236,8 @@ impl<
         const N_LOG_CONTRACTS: usize,
         const N_LOG_VARIABLES: usize,
         const N_DEPOSITS: usize,
-    > DepositBlockProofTarget<D, N_LOG_RECIPIENTS, N_LOG_CONTRACTS, N_LOG_VARIABLES, N_DEPOSITS>
+    >
+    DepositBlockProductionTarget<D, N_LOG_RECIPIENTS, N_LOG_CONTRACTS, N_LOG_VARIABLES, N_DEPOSITS>
 {
     pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>>(
         builder: &mut CircuitBuilder<F, D>,
@@ -419,13 +420,15 @@ fn test_deposit_block() {
     // builder.debug_gate_row = Some(529); // xors in SparseMerkleProcessProof in DepositBlock
 
     // deposit block
-    let deposit_block_target: DepositBlockProofTarget<
+    let deposit_block_target: DepositBlockProductionTarget<
         D,
         N_LOG_RECIPIENTS,
         N_LOG_CONTRACTS,
         N_LOG_VARIABLES,
         N_DEPOSITS,
-    > = DepositBlockProofTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(&mut builder);
+    > = DepositBlockProductionTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(
+        &mut builder,
+    );
     builder.register_public_inputs(&deposit_block_target.deposit_digest.elements);
     let circuit_data = builder.build::<C>();
 

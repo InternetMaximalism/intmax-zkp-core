@@ -15,7 +15,7 @@ use intmax_zkp_core::{
     merkle_tree::tree::{get_merkle_proof, MerkleProof},
     rollup::{
         circuits::make_block_proof_circuit,
-        gadgets::{batch::BatchBlockProofTarget, deposit_block::DepositInfo},
+        gadgets::{batch::BlockBatchTarget, deposit_block::DepositInfo},
     },
     sparse_merkle_tree::{
         goldilocks_poseidon::{
@@ -564,8 +564,8 @@ fn main() {
 
     let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
-    let block_proof_targets: BatchBlockProofTarget<D, N_BLOCKS> =
-        BatchBlockProofTarget::add_virtual_to::<F, C>(&mut builder, &block_circuit.data);
+    let block_proof_targets: BlockBatchTarget<D, N_BLOCKS> =
+        BlockBatchTarget::add_virtual_to::<F, C>(&mut builder, &block_circuit.data);
     let batch_block_circuit_data = builder.build::<C>();
 
     let mut pw = PartialWitness::new();

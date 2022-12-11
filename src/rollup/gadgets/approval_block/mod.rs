@@ -30,7 +30,7 @@ pub struct SignedMessage<F: RichField> {
 }
 
 #[derive(Clone)]
-pub struct ApprovalBlockProofTarget<
+pub struct ApprovalBlockProductionTarget<
     const D: usize,
     const N_LOG_USERS: usize, // N_LOG_MAX_USERS
     const N_TXS: usize,
@@ -57,7 +57,7 @@ pub struct ApprovalBlockProofTarget<
 }
 
 impl<const D: usize, const N_LOG_USERS: usize, const N_TXS: usize>
-    ApprovalBlockProofTarget<D, N_LOG_USERS, N_TXS>
+    ApprovalBlockProductionTarget<D, N_LOG_USERS, N_TXS>
 {
     pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>>(
         builder: &mut CircuitBuilder<F, D>,
@@ -778,8 +778,8 @@ fn test_approval_block() {
 
     let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
-    let approval_block_target: ApprovalBlockProofTarget<D, N_LOG_MAX_USERS, N_TXS> =
-        ApprovalBlockProofTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(
+    let approval_block_target: ApprovalBlockProductionTarget<D, N_LOG_MAX_USERS, N_TXS> =
+        ApprovalBlockProductionTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(
             &mut builder,
         );
     let circuit_data = builder.build::<C>();

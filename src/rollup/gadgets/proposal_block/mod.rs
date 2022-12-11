@@ -12,20 +12,21 @@ use crate::{
     },
     sparse_merkle_tree::{
         gadgets::{
-            common::{enforce_equal_if_enabled, logical_or},
+            common::logical_or,
             process::{
                 process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
-                utils::{get_process_merkle_proof_role, ProcessMerkleProofRoleTarget},
+                utils::{
+                    get_process_merkle_proof_role, verify_layered_smt_target_connection,
+                    ProcessMerkleProofRoleTarget,
+                },
             },
         },
         goldilocks_poseidon::WrappedHashOut,
+        layered_tree::verify_layered_smt_connection,
+        proof::ProcessMerkleProofRole,
     },
     transaction::circuits::{
         MergeAndPurgeTransitionPublicInputs, MergeAndPurgeTransitionPublicInputsTarget,
-    },
-    zkdsa::{
-        account::Address,
-        circuits::{make_simple_signature_circuit, SimpleSignaturePublicInputs},
     },
 };
 
@@ -109,6 +110,27 @@ impl<const D: usize, const N_LOG_MAX_USERS: usize, const N_TXS: usize>
     ) -> (WrappedHashOut<F>, WrappedHashOut<F>) {
         pw.set_hash_target(self.old_world_state_root, *old_world_state_root);
 
+        for (w, u) in world_state_process_proofs
+            .iter()
+            .zip(user_transactions.iter())
+        {
+            // double spending 防止用のフラグが付いているので u.new_user_asset_root は 0 にならない.
+            assert_ne!(
+                w.fnc,
+                ProcessMerkleProofRole::ProcessDelete,
+                "not allowed removing nodes in world state tree"
+            );
+
+            verify_layered_smt_connection(
+                w.fnc,
+                w.old_value,
+                w.new_value,
+                u.old_user_asset_root,
+                u.new_user_asset_root,
+            )
+            .unwrap();
+        }
+
         assert!(world_state_process_proofs.len() <= self.world_state_process_proofs.len());
         let mut prev_world_state_root = old_world_state_root;
         for (p_t, p) in self
@@ -181,21 +203,18 @@ pub fn verify_valid_proposal_block<
 ) -> (HashOutTarget, HashOutTarget) {
     let constant_true = builder._true();
     let constant_false = builder._false();
-    let zero = builder.zero();
-    let default_hash = HashOutTarget {
-        elements: [zero; 4],
-    };
 
     // world state process proof は正しい遷移になるように並んでいる.
     let mut new_world_state_root = old_world_state_root;
     for proof in world_state_process_proofs {
-        let fnc = get_process_merkle_proof_role(builder, proof.fnc);
-        enforce_equal_if_enabled(
-            builder,
-            proof.old_root,
-            new_world_state_root,
-            fnc.is_not_no_op,
-        );
+        // let fnc = get_process_merkle_proof_role(builder, proof.fnc);
+        // enforce_equal_if_enabled(
+        //     builder,
+        //     proof.old_root,
+        //     new_world_state_root,
+        //     fnc.is_not_no_op,
+        // );
+        builder.connect_hashes(proof.old_root, new_world_state_root);
 
         new_world_state_root = proof.new_root;
     }
@@ -207,13 +226,8 @@ pub fn verify_valid_proposal_block<
         .zip(user_transactions.iter())
         .zip(enabled_list.iter().cloned())
     {
-        let old_user_asset_root = u.middle_user_asset_root;
-        let new_user_asset_root = u.new_user_asset_root;
-
         let ProcessMerkleProofRoleTarget {
             is_no_op,
-            is_insert_op,
-            is_update_op,
             is_remove_op,
             ..
         } = get_process_merkle_proof_role(builder, w.fnc);
@@ -222,32 +236,16 @@ pub fn verify_valid_proposal_block<
         let is_no_op_or_enabled = logical_or(builder, is_no_op, enabled);
         builder.connect(is_no_op_or_enabled.target, constant_true.target);
 
-        // 古い world state には古い user asset root が格納されている
-        enforce_equal_if_enabled(builder, old_user_asset_root, w.old_value, enabled);
+        // double spending 防止用のフラグが付いているので u.new_user_asset_root は 0 にならない.
+        builder.connect(is_remove_op.target, constant_false.target);
 
-        // purge では world state への insert は行われない
-        builder.connect(is_insert_op.target, constant_false.target);
-
-        let is_update_op_and_enabled = builder.and(is_update_op, enabled);
-        enforce_equal_if_enabled(
+        verify_layered_smt_target_connection(
             builder,
-            new_user_asset_root,
+            w.fnc,
+            w.old_value,
             w.new_value,
-            is_update_op_and_enabled,
-        );
-        let is_remove_op_and_enabled = builder.and(is_remove_op, enabled);
-        enforce_equal_if_enabled(
-            builder,
-            new_user_asset_root,
-            default_hash,
-            is_remove_op_and_enabled,
-        );
-        let is_no_op_and_enabled = builder.and(is_no_op, enabled);
-        enforce_equal_if_enabled(
-            builder,
-            new_user_asset_root,
-            old_user_asset_root,
-            is_no_op_and_enabled,
+            u.old_user_asset_root,
+            u.new_user_asset_root,
         );
     }
 
@@ -289,11 +287,11 @@ fn test_proposal_block() {
         },
         transaction::{
             block_header::{get_block_hash, BlockHeader},
-            circuits::make_user_proof_circuit,
+            // circuits::make_user_proof_circuit,
             gadgets::merge::MergeProof,
             tree::user_asset::UserAssetTree,
         },
-        zkdsa::account::private_key_to_account,
+        zkdsa::account::{private_key_to_account, Address},
     };
 
     const D: usize = 2;
@@ -301,38 +299,36 @@ fn test_proposal_block() {
     type F = <C as GenericConfig<D>>::F;
     const N_LOG_MAX_BLOCKS: usize = 32;
     const N_LOG_MAX_USERS: usize = 3;
-    const N_LOG_MAX_TXS: usize = 3;
-    const N_LOG_MAX_CONTRACTS: usize = 3;
-    const N_LOG_MAX_VARIABLES: usize = 3;
+    // const N_LOG_MAX_TXS: usize = 3;
+    // const N_LOG_MAX_CONTRACTS: usize = 3;
+    // const N_LOG_MAX_VARIABLES: usize = 3;
     const N_LOG_TXS: usize = 2;
-    const N_LOG_RECIPIENTS: usize = 3;
-    const N_LOG_CONTRACTS: usize = 3;
-    const N_LOG_VARIABLES: usize = 3;
-    const N_DEPOSITS: usize = 2;
-    const N_DIFFS: usize = 2;
-    const N_MERGES: usize = 2;
+    // const N_LOG_RECIPIENTS: usize = 3;
+    // const N_LOG_CONTRACTS: usize = 3;
+    // const N_LOG_VARIABLES: usize = 3;
+    // const N_DIFFS: usize = 2;
+    // const N_MERGES: usize = 2;
     const N_TXS: usize = 2usize.pow(N_LOG_TXS as u32);
-    const N_BLOCKS: usize = 2;
 
     let aggregator_nodes_db = NodeDataMemory::default();
     let mut world_state_tree =
         PoseidonSparseMerkleTree::new(aggregator_nodes_db.clone(), RootDataTmp::default());
 
-    let merge_and_purge_circuit = make_user_proof_circuit::<
-        F,
-        C,
-        D,
-        N_LOG_MAX_USERS,
-        N_LOG_MAX_TXS,
-        N_LOG_MAX_CONTRACTS,
-        N_LOG_MAX_VARIABLES,
-        N_LOG_TXS,
-        N_LOG_RECIPIENTS,
-        N_LOG_CONTRACTS,
-        N_LOG_VARIABLES,
-        N_DIFFS,
-        N_MERGES,
-    >();
+    // let merge_and_purge_circuit = make_user_proof_circuit::<
+    //     F,
+    //     C,
+    //     D,
+    //     N_LOG_MAX_USERS,
+    //     N_LOG_MAX_TXS,
+    //     N_LOG_MAX_CONTRACTS,
+    //     N_LOG_MAX_VARIABLES,
+    //     N_LOG_TXS,
+    //     N_LOG_RECIPIENTS,
+    //     N_LOG_CONTRACTS,
+    //     N_LOG_VARIABLES,
+    //     N_DIFFS,
+    //     N_MERGES,
+    // >();
 
     // dbg!(&purge_proof_circuit_data.common);
 
@@ -464,7 +460,6 @@ fn test_proposal_block() {
     .root;
 
     let prev_world_state_digest = world_state_tree.get_root().unwrap();
-    dbg!(&prev_world_state_digest);
     let prev_latest_account_digest = WrappedHashOut::default();
     let prev_block_header = BlockHeader {
         block_number: prev_block_number,
@@ -511,15 +506,6 @@ fn test_proposal_block() {
         latest_account_tree_inclusion_proof: default_inclusion_proof,
         nonce: deposit_nonce.into(),
     };
-
-    dbg!(sender2_user_asset_tree.get_root().unwrap());
-
-    world_state_tree
-        .set(
-            sender2_address.into(),
-            sender2_user_asset_tree.get_root().unwrap(),
-        )
-        .unwrap();
 
     let mut sender2_user_asset_tree: UserAssetTree<_, _> = sender2_user_asset_tree.into();
     let proof1 = sender2_user_asset_tree
@@ -615,6 +601,7 @@ fn test_proposal_block() {
             sender2_user_asset_tree.get_root().unwrap(),
         )
         .unwrap();
+    dbg!(&sender2_world_state_process_proof);
 
     world_state_process_proofs.push(sender1_world_state_process_proof);
     user_transactions.push(sender1_transaction);
@@ -638,6 +625,7 @@ fn test_proposal_block() {
         &world_state_process_proofs,
         &user_transactions,
         world_state_process_proofs.first().unwrap().old_root,
+        // prev_block_header.approved_world_state_digest.into(),
     );
 
     println!("start proving: block_proof");

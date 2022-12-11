@@ -139,7 +139,7 @@ pub fn verify_smt_process_proof<
     let num_levels = siblings.len();
 
     let ProcessMerkleProofRoleTarget { is_remove_op, .. } =
-        get_process_merkle_proof_role(builder, fnc);
+        get_process_merkle_proof_role(builder, fnc); // XXX: is_insert_op の値が間違っているらしい.
 
     // remove proof は old と new をひっくり返せば insert proof になる
     let fnc0 = fnc[0];

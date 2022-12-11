@@ -142,7 +142,9 @@ pub fn make_user_proof_circuit<
     const N_DIFFS: usize,
     const N_MERGES: usize,
     const N_DEPOSITS: usize,
->(// zkdsa_circuit: SimpleSignatureCircuit,
+>(
+    config: CircuitConfig,
+    // zkdsa_circuit: SimpleSignatureCircuit,
 ) -> MergeAndPurgeTransitionCircuit<
     F,
     C,
@@ -162,9 +164,6 @@ pub fn make_user_proof_circuit<
 where
     C::Hasher: AlgebraicHasher<F>,
 {
-    // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
-    let config = CircuitConfig::standard_recursion_config();
-
     let mut builder = CircuitBuilder::<F, D>::new(config);
     // builder.debug_gate_row = Some(282);
 
@@ -615,6 +614,8 @@ pub fn prove_user_transaction<
 where
     C::Hasher: AlgebraicHasher<F>,
 {
+    // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
+    let config = CircuitConfig::standard_recursion_config();
     let merge_and_purge_circuit = make_user_proof_circuit::<
         F,
         C,
@@ -630,7 +631,7 @@ where
         N_DIFFS,
         N_MERGES,
         N_DEPOSITS,
-    >();
+    >(config);
 
     let mut pw = PartialWitness::new();
     let _public_inputs = merge_and_purge_circuit.targets.set_witness(

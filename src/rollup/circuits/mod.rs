@@ -17,10 +17,12 @@ use crate::{
     merkle_tree::{gadgets::MerkleProofTarget, tree::get_merkle_root},
     recursion::gadgets::RecursiveProofTarget,
     rollup::gadgets::{
-        approval_block::ApprovalBlockProofTarget,
+        approval_block::ApprovalBlockProductionTarget,
         block_headers_tree::calc_block_headers_proof,
-        deposit_block::{DepositBlockProofTarget, DepositInfo, DepositInfoTarget, VariableIndex},
-        proposal_block::ProposalBlockProofTarget,
+        deposit_block::{
+            DepositBlockProductionTarget, DepositInfo, DepositInfoTarget, VariableIndex,
+        },
+        proposal_block::ProposalBlockProductionTarget,
     },
     sparse_merkle_tree::{
         gadgets::process::process_smt::SmtProcessProof, goldilocks_poseidon::WrappedHashOut,
@@ -54,7 +56,7 @@ use super::{
 // const D: usize = 2;
 const N_LOG_MAX_BLOCKS: usize = 32;
 
-pub struct OneBlockProofTarget<
+pub struct BlockProductionTarget<
     const D: usize,
     const N_LOG_USERS: usize, // N_LOG_MAX_USERS
     const N_LOG_TXS: usize,
@@ -64,10 +66,15 @@ pub struct OneBlockProofTarget<
     const N_TXS: usize,
     const N_DEPOSITS: usize,
 > {
-    pub deposit_block_target:
-        DepositBlockProofTarget<D, N_LOG_RECIPIENTS, N_LOG_CONTRACTS, N_LOG_VARIABLES, N_DEPOSITS>,
-    pub proposal_block_target: ProposalBlockProofTarget<D, N_LOG_USERS, N_TXS>,
-    pub approval_block_target: ApprovalBlockProofTarget<D, N_LOG_USERS, N_TXS>,
+    pub deposit_block_target: DepositBlockProductionTarget<
+        D,
+        N_LOG_RECIPIENTS,
+        N_LOG_CONTRACTS,
+        N_LOG_VARIABLES,
+        N_DEPOSITS,
+    >,
+    pub proposal_block_target: ProposalBlockProductionTarget<D, N_LOG_USERS, N_TXS>,
+    pub approval_block_target: ApprovalBlockProductionTarget<D, N_LOG_USERS, N_TXS>,
     pub user_tx_proofs: [RecursiveProofTarget<D>; N_TXS],
     pub received_signature_proofs: [RecursiveProofTarget<D>; N_TXS],
     pub block_headers_proof: MerkleProofTarget<N_LOG_MAX_BLOCKS>,
@@ -85,7 +92,7 @@ impl<
         const N_TXS: usize,
         const N_DEPOSITS: usize,
     >
-    OneBlockProofTarget<
+    BlockProductionTarget<
         D,
         N_LOG_USERS,
         N_LOG_TXS,
@@ -271,7 +278,7 @@ pub fn make_block_proof_circuit<
         N_DEPOSITS,
     >,
     simple_signature_circuit: &SimpleSignatureCircuit<F, C, D>,
-) -> ProposalAndApprovalBlockCircuit<
+) -> BlockProductionCircuit<
     F,
     C,
     D,
@@ -289,23 +296,25 @@ where
     let mut builder = CircuitBuilder::<F, D>::new(config);
 
     // deposit block
-    let deposit_block_target: DepositBlockProofTarget<
+    let deposit_block_target: DepositBlockProductionTarget<
         D,
         N_LOG_RECIPIENTS,
         N_LOG_CONTRACTS,
         N_LOG_VARIABLES,
         N_DEPOSITS,
-    > = DepositBlockProofTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(&mut builder);
+    > = DepositBlockProductionTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(
+        &mut builder,
+    );
 
     // proposal block
-    let proposal_block_target: ProposalBlockProofTarget<D, N_LOG_MAX_USERS, N_TXS> =
-        ProposalBlockProofTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(
+    let proposal_block_target: ProposalBlockProductionTarget<D, N_LOG_MAX_USERS, N_TXS> =
+        ProposalBlockProductionTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(
             &mut builder,
         );
 
     // approval block
-    let approval_block_target: ApprovalBlockProofTarget<D, N_LOG_MAX_USERS, N_TXS> =
-        ApprovalBlockProofTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(
+    let approval_block_target: ApprovalBlockProductionTarget<D, N_LOG_MAX_USERS, N_TXS> =
+        ApprovalBlockProductionTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(
             &mut builder,
         );
 
@@ -403,8 +412,8 @@ where
     };
     let block_hash = get_block_hash_target::<F, C::Hasher, D>(&mut builder, &block_header);
 
-    let public_inputs: ProposalAndApprovalBlockPublicInputsTarget<N_TXS, N_DEPOSITS> =
-        ProposalAndApprovalBlockPublicInputsTarget {
+    let public_inputs: BlockProductionPublicInputsTarget<N_TXS, N_DEPOSITS> =
+        BlockProductionPublicInputsTarget {
             address_list: address_list.try_into().unwrap(),
             deposit_list: deposit_list.try_into().unwrap(),
             old_account_tree_root: approval_block_target.old_latest_account_root,
@@ -418,7 +427,7 @@ where
     builder.register_public_inputs(&public_inputs.encode());
     let block_circuit_data = builder.build::<C>();
 
-    let targets = OneBlockProofTarget {
+    let targets = BlockProductionTarget {
         proposal_block_target,
         approval_block_target,
         deposit_block_target,
@@ -429,13 +438,13 @@ where
         block_header,
     };
 
-    ProposalAndApprovalBlockCircuit {
+    BlockProductionCircuit {
         data: block_circuit_data,
         targets,
     }
 }
 
-pub struct ProposalAndApprovalBlockCircuit<
+pub struct BlockProductionCircuit<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F = F>,
     const D: usize,
@@ -448,7 +457,7 @@ pub struct ProposalAndApprovalBlockCircuit<
     const N_DEPOSITS: usize,
 > {
     pub data: CircuitData<F, C, D>,
-    pub targets: OneBlockProofTarget<
+    pub targets: BlockProductionTarget<
         D,
         N_LOG_USERS,
         N_LOG_TXS,
@@ -461,7 +470,7 @@ pub struct ProposalAndApprovalBlockCircuit<
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProposalAndApprovalBlockPublicInputs<F: RichField> {
+pub struct BlockProductionPublicInputs<F: RichField> {
     pub address_list: Vec<TransactionSenderWithValidity<F>>,
     pub deposit_list: Vec<DepositInfo<F>>,
     pub old_account_tree_root: HashOut<F>,
@@ -473,7 +482,7 @@ pub struct ProposalAndApprovalBlockPublicInputs<F: RichField> {
     pub block_hash: HashOut<F>,
 }
 
-impl<F: RichField> ProposalAndApprovalBlockPublicInputs<F> {
+impl<F: RichField> BlockProductionPublicInputs<F> {
     pub fn encode(&self) -> Vec<F> {
         let mut public_inputs = vec![];
         for TransactionSenderWithValidity {
@@ -556,7 +565,7 @@ impl<F: RichField> ProposalAndApprovalBlockPublicInputs<F> {
 }
 
 #[derive(Clone, Debug)]
-pub struct ProposalAndApprovalBlockPublicInputsTarget<const N_TXS: usize, const N_DEPOSITS: usize> {
+pub struct BlockProductionPublicInputsTarget<const N_TXS: usize, const N_DEPOSITS: usize> {
     pub address_list: [TransactionSenderWithValidityTarget; N_TXS],
     pub deposit_list: [DepositInfoTarget; N_DEPOSITS],
     pub old_account_tree_root: HashOutTarget,
@@ -569,21 +578,20 @@ pub struct ProposalAndApprovalBlockPublicInputsTarget<const N_TXS: usize, const 
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProposalAndApprovalBlockProofWithPublicInputs<
+pub struct BlockProductionProofWithPublicInputs<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F = F>,
     const D: usize,
 > {
     pub proof: Proof<F, C, D>,
-    pub public_inputs: ProposalAndApprovalBlockPublicInputs<F>,
+    pub public_inputs: BlockProductionPublicInputs<F>,
 }
 
 impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
-    From<ProposalAndApprovalBlockProofWithPublicInputs<F, C, D>>
-    for ProofWithPublicInputs<F, C, D>
+    From<BlockProductionProofWithPublicInputs<F, C, D>> for ProofWithPublicInputs<F, C, D>
 {
     fn from(
-        value: ProposalAndApprovalBlockProofWithPublicInputs<F, C, D>,
+        value: BlockProductionProofWithPublicInputs<F, C, D>,
     ) -> ProofWithPublicInputs<F, C, D> {
         ProofWithPublicInputs {
             proof: value.proof,
@@ -593,7 +601,7 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
 }
 
 impl<const N_TXS: usize, const N_DEPOSITS: usize>
-    ProposalAndApprovalBlockPublicInputsTarget<N_TXS, N_DEPOSITS>
+    BlockProductionPublicInputsTarget<N_TXS, N_DEPOSITS>
 {
     pub fn encode(&self) -> Vec<Target> {
         let flatten_address_list_t = self
@@ -729,7 +737,7 @@ impl<const N_TXS: usize, const N_DEPOSITS: usize>
 
         assert_eq!(public_inputs_t.next(), None);
 
-        ProposalAndApprovalBlockPublicInputsTarget {
+        BlockProductionPublicInputsTarget {
             address_list: address_list.try_into().unwrap(),
             deposit_list: deposit_list.try_into().unwrap(),
             old_account_tree_root,
@@ -755,7 +763,7 @@ impl<
         const N_TXS: usize,
         const N_DEPOSITS: usize,
     >
-    ProposalAndApprovalBlockCircuit<
+    BlockProductionCircuit<
         F,
         C,
         D,
@@ -768,24 +776,21 @@ impl<
         N_DEPOSITS,
     >
 {
-    pub fn parse_public_inputs(
-        &self,
-    ) -> ProposalAndApprovalBlockPublicInputsTarget<N_TXS, N_DEPOSITS> {
+    pub fn parse_public_inputs(&self) -> BlockProductionPublicInputsTarget<N_TXS, N_DEPOSITS> {
         let public_inputs_t = self.data.prover_only.public_inputs.clone();
 
-        ProposalAndApprovalBlockPublicInputsTarget::decode(&public_inputs_t)
+        BlockProductionPublicInputsTarget::decode(&public_inputs_t)
     }
 
     pub fn prove(
         &self,
         inputs: PartialWitness<F>,
-    ) -> anyhow::Result<ProposalAndApprovalBlockProofWithPublicInputs<F, C, D>> {
+    ) -> anyhow::Result<BlockProductionProofWithPublicInputs<F, C, D>> {
         let proof_with_pis = self.data.prove(inputs)?;
-        let public_inputs = ProposalAndApprovalBlockPublicInputs::decode::<N_TXS, N_DEPOSITS>(
-            &proof_with_pis.public_inputs,
-        );
+        let public_inputs =
+            BlockProductionPublicInputs::decode::<N_TXS, N_DEPOSITS>(&proof_with_pis.public_inputs);
 
-        Ok(ProposalAndApprovalBlockProofWithPublicInputs {
+        Ok(BlockProductionProofWithPublicInputs {
             proof: proof_with_pis.proof,
             public_inputs,
         })
@@ -793,7 +798,7 @@ impl<
 
     pub fn verify(
         &self,
-        proof_with_pis: ProposalAndApprovalBlockProofWithPublicInputs<F, C, D>,
+        proof_with_pis: BlockProductionProofWithPublicInputs<F, C, D>,
     ) -> anyhow::Result<()> {
         let public_inputs = proof_with_pis.public_inputs.encode();
         assert_eq!(public_inputs.len(), 5 * N_TXS + 13 * N_DEPOSITS + 28);

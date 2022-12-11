@@ -13,11 +13,11 @@ use plonky2::{
 use crate::recursion::gadgets::RecursiveProofTarget;
 
 #[derive(Clone)]
-pub struct BatchBlockProofTarget<const D: usize, const N_BLOCKS: usize> {
+pub struct BlockBatchTarget<const D: usize, const N_BLOCKS: usize> {
     pub block_proofs: [RecursiveProofTarget<D>; N_BLOCKS],
 }
 
-impl<const D: usize, const N_BLOCKS: usize> BatchBlockProofTarget<D, N_BLOCKS> {
+impl<const D: usize, const N_BLOCKS: usize> BlockBatchTarget<D, N_BLOCKS> {
     pub fn add_virtual_to<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>>(
         builder: &mut CircuitBuilder<F, D>,
         block_circuit_data: &CircuitData<F, C, D>,

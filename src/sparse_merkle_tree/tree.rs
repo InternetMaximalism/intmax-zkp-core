@@ -532,22 +532,28 @@ fn remove<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeDa
     })
 }
 
+/// NOTICE: The transition from a non-zero value to a non-zero value deal with the updating process.
 fn noop<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeData<K, V, I>>(
-    nodes_db: &D,
+    _nodes_db: &D,
     root: &I,
     key: &K,
 ) -> anyhow::Result<SparseMerkleProcessProof<K, V, I>> {
-    let res_find = find::<K, V, I, H, D>(nodes_db, root, key)?;
+    // let res_find = find::<K, V, I, H, D>(_nodes_db, root, key)?;
+
+    // // Given key should not be found.
+    // if res_find.found {
+    //     return Err(anyhow::anyhow!("given key already exists"));
+    // }
 
     Ok(SparseMerkleProcessProof {
         old_root: *root,
         old_key: *key,
-        old_value: res_find.value,
+        old_value: V::default(),
         new_root: *root,
         new_key: *key,
-        new_value: res_find.value,
-        siblings: res_find.siblings,
-        is_old0: res_find.is_old0,
+        new_value: V::default(),
+        siblings: vec![],
+        is_old0: true,
         fnc: ProcessMerkleProofRole::ProcessNoOp,
     })
 }

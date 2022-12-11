@@ -30,8 +30,7 @@ impl<const N_LEVELS: usize> MerkleProofTarget<N_LEVELS> {
         let index = builder.add_virtual_target();
         builder.range_check(index, N_LEVELS);
         let value = builder.add_virtual_hash();
-        let siblings: [HashOutTarget; N_LEVELS] =
-            builder.add_virtual_hashes(N_LEVELS).try_into().unwrap();
+        let siblings = [0; N_LEVELS].map(|_| builder.add_virtual_hash());
         let root = get_merkle_root_target::<F, H, D>(builder, index, value, &siblings);
         // let enabled = builder.add_virtual_bool_target_safe();
 

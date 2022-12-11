@@ -819,7 +819,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hex",
- "itertools",
  "num",
  "num-bigint",
  "num-traits",

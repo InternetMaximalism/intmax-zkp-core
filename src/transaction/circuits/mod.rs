@@ -1,6 +1,9 @@
 use plonky2::{
     field::extension::Extendable,
-    hash::hash_types::{HashOut, HashOutTarget, RichField},
+    hash::{
+        hash_types::{HashOut, HashOutTarget, RichField},
+        poseidon::PoseidonHash,
+    },
     iop::{
         target::Target,
         witness::{PartialWitness, Witness},
@@ -8,7 +11,7 @@ use plonky2::{
     plonk::{
         circuit_builder::CircuitBuilder,
         circuit_data::{CircuitConfig, CircuitData},
-        config::{AlgebraicHasher, GenericConfig},
+        config::{AlgebraicHasher, GenericConfig, Hasher},
         proof::{Proof, ProofWithPublicInputs},
     },
 };
@@ -187,6 +190,15 @@ where
         purge_proof_target.nonce,
     );
 
+    // let public_inputs = MergeAndPurgeTransitionPublicInputsTarget {
+    //     sender_address: purge_proof_target.sender_address.0,
+    //     old_user_asset_root: merge_proof_target.old_user_asset_root,
+    //     middle_user_asset_root: merge_proof_target.new_user_asset_root,
+    //     new_user_asset_root: purge_proof_target.new_user_asset_root,
+    //     diff_root: purge_proof_target.diff_root,
+    //     tx_hash,
+    // };
+    // builder.register_public_inputs(&public_inputs.encode());
     builder.register_public_inputs(&merge_proof_target.old_user_asset_root.elements); // public_inputs[0..4]
     builder.register_public_inputs(&merge_proof_target.new_user_asset_root.elements); // public_inputs[4..8]
     builder.register_public_inputs(&purge_proof_target.new_user_asset_root.elements); // public_inputs[8..12]
@@ -240,7 +252,7 @@ pub struct MergeAndPurgeTransitionCircuit<
     >,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound(deserialize = "Address<F>: Deserialize<'de>, WrappedHashOut<F>: Deserialize<'de>"))]
 pub struct MergeAndPurgeTransitionPublicInputs<F: RichField> {
     pub sender_address: Address<F>,
@@ -251,17 +263,90 @@ pub struct MergeAndPurgeTransitionPublicInputs<F: RichField> {
     pub tx_hash: WrappedHashOut<F>,
 }
 
+impl<F: RichField> Default for MergeAndPurgeTransitionPublicInputs<F> {
+    fn default() -> Self {
+        let diff_root = Default::default();
+        let nonce = Default::default();
+        let tx_hash = PoseidonHash::two_to_one(diff_root, nonce);
+
+        Self {
+            sender_address: Default::default(),
+            old_user_asset_root: Default::default(),
+            middle_user_asset_root: Default::default(),
+            new_user_asset_root: Default::default(),
+            diff_root: diff_root.into(),
+            tx_hash: tx_hash.into(),
+        }
+    }
+}
+
+#[test]
+fn test_default_user_transaction() {
+    use plonky2::field::{goldilocks_field::GoldilocksField, types::Field};
+
+    type F = GoldilocksField;
+
+    let default_user_transaction = MergeAndPurgeTransitionPublicInputs::<F>::default();
+
+    let tx_hash = WrappedHashOut::from(HashOut {
+        elements: [
+            F::from_canonical_u64(4330397376401421145),
+            F::from_canonical_u64(14124799381142128323),
+            F::from_canonical_u64(8742572140681234676),
+            F::from_canonical_u64(14345658006221440202),
+        ],
+    });
+
+    assert_eq!(default_user_transaction.sender_address, Default::default());
+    assert_eq!(
+        default_user_transaction.old_user_asset_root,
+        Default::default()
+    );
+    assert_eq!(
+        default_user_transaction.middle_user_asset_root,
+        Default::default()
+    );
+    assert_eq!(
+        default_user_transaction.new_user_asset_root,
+        Default::default()
+    );
+    assert_eq!(default_user_transaction.diff_root, Default::default());
+    assert_eq!(default_user_transaction.tx_hash, tx_hash);
+}
+
 impl<F: RichField> MergeAndPurgeTransitionPublicInputs<F> {
     pub fn encode(&self) -> Vec<F> {
-        let mut public_inputs = vec![];
-        public_inputs.append(&mut self.old_user_asset_root.elements.into());
-        public_inputs.append(&mut self.middle_user_asset_root.elements.into());
-        public_inputs.append(&mut self.new_user_asset_root.elements.into());
-        public_inputs.append(&mut self.diff_root.elements.into());
-        public_inputs.append(&mut self.sender_address.elements.into());
-        public_inputs.append(&mut self.tx_hash.elements.into());
+        let public_inputs = vec![
+            self.old_user_asset_root.elements,
+            self.middle_user_asset_root.elements,
+            self.new_user_asset_root.elements,
+            self.diff_root.elements,
+            self.sender_address.elements,
+            self.tx_hash.elements,
+        ]
+        .concat();
+        assert_eq!(public_inputs.len(), 24);
 
         public_inputs
+    }
+
+    pub fn decode(public_inputs: &[F]) -> Self {
+        assert_eq!(public_inputs.len(), 24);
+        let old_user_asset_root = HashOut::from_partial(&public_inputs[0..4]).into();
+        let middle_user_asset_root = HashOut::from_partial(&public_inputs[4..8]).into();
+        let new_user_asset_root = HashOut::from_partial(&public_inputs[8..12]).into();
+        let diff_root = HashOut::from_partial(&public_inputs[12..16]).into();
+        let sender_address = Address(HashOut::from_partial(&public_inputs[16..20]));
+        let tx_hash = HashOut::from_partial(&public_inputs[20..24]).into();
+
+        Self {
+            old_user_asset_root,
+            middle_user_asset_root,
+            new_user_asset_root,
+            diff_root,
+            sender_address,
+            tx_hash,
+        }
     }
 }
 
@@ -311,6 +396,65 @@ impl MergeAndPurgeTransitionPublicInputsTarget {
         pw.set_hash_target(self.diff_root, *public_inputs.diff_root);
         pw.set_hash_target(self.tx_hash, *public_inputs.tx_hash);
     }
+
+    pub fn connect<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+        a: &Self,
+        b: &Self,
+    ) {
+        builder.connect_hashes(a.sender_address, b.sender_address);
+        builder.connect_hashes(a.old_user_asset_root, b.old_user_asset_root);
+        builder.connect_hashes(a.middle_user_asset_root, b.middle_user_asset_root);
+        builder.connect_hashes(a.new_user_asset_root, b.new_user_asset_root);
+        builder.connect_hashes(a.diff_root, b.diff_root);
+        builder.connect_hashes(a.tx_hash, b.tx_hash);
+    }
+
+    pub fn encode(&self) -> Vec<Target> {
+        let public_inputs_t = vec![
+            self.old_user_asset_root.elements,
+            self.middle_user_asset_root.elements,
+            self.new_user_asset_root.elements,
+            self.diff_root.elements,
+            self.sender_address.elements,
+            self.tx_hash.elements,
+        ]
+        .concat();
+        assert_eq!(public_inputs_t.len(), 24);
+
+        public_inputs_t
+    }
+
+    pub fn decode(public_inputs_t: &[Target]) -> Self {
+        assert_eq!(public_inputs_t.len(), 24);
+        let old_user_asset_root = HashOutTarget {
+            elements: public_inputs_t[0..4].try_into().unwrap(),
+        };
+        let middle_user_asset_root = HashOutTarget {
+            elements: public_inputs_t[4..8].try_into().unwrap(),
+        };
+        let new_user_asset_root = HashOutTarget {
+            elements: public_inputs_t[8..12].try_into().unwrap(),
+        };
+        let diff_root = HashOutTarget {
+            elements: public_inputs_t[12..16].try_into().unwrap(),
+        };
+        let sender_address = HashOutTarget {
+            elements: public_inputs_t[16..20].try_into().unwrap(),
+        };
+        let tx_hash = HashOutTarget {
+            elements: public_inputs_t[20..24].try_into().unwrap(),
+        };
+
+        MergeAndPurgeTransitionPublicInputsTarget {
+            sender_address,
+            old_user_asset_root,
+            middle_user_asset_root,
+            new_user_asset_root,
+            diff_root,
+            tx_hash,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -337,37 +481,37 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     }
 }
 
-pub fn parse_merge_and_purge_public_inputs(
-    public_inputs_t: &[Target],
-) -> MergeAndPurgeTransitionPublicInputsTarget {
-    let old_user_asset_root = HashOutTarget {
-        elements: public_inputs_t[0..4].try_into().unwrap(),
-    };
-    let middle_user_asset_root = HashOutTarget {
-        elements: public_inputs_t[4..8].try_into().unwrap(),
-    };
-    let new_user_asset_root = HashOutTarget {
-        elements: public_inputs_t[8..12].try_into().unwrap(),
-    };
-    let diff_root = HashOutTarget {
-        elements: public_inputs_t[12..16].try_into().unwrap(),
-    };
-    let sender_address = HashOutTarget {
-        elements: public_inputs_t[16..20].try_into().unwrap(),
-    };
-    let tx_hash = HashOutTarget {
-        elements: public_inputs_t[20..24].try_into().unwrap(),
-    };
+// pub fn parse_merge_and_purge_public_inputs(
+//     public_inputs_t: &[Target],
+// ) -> MergeAndPurgeTransitionPublicInputsTarget {
+//     let old_user_asset_root = HashOutTarget {
+//         elements: public_inputs_t[0..4].try_into().unwrap(),
+//     };
+//     let middle_user_asset_root = HashOutTarget {
+//         elements: public_inputs_t[4..8].try_into().unwrap(),
+//     };
+//     let new_user_asset_root = HashOutTarget {
+//         elements: public_inputs_t[8..12].try_into().unwrap(),
+//     };
+//     let diff_root = HashOutTarget {
+//         elements: public_inputs_t[12..16].try_into().unwrap(),
+//     };
+//     let sender_address = HashOutTarget {
+//         elements: public_inputs_t[16..20].try_into().unwrap(),
+//     };
+//     let tx_hash = HashOutTarget {
+//         elements: public_inputs_t[20..24].try_into().unwrap(),
+//     };
 
-    MergeAndPurgeTransitionPublicInputsTarget {
-        sender_address,
-        old_user_asset_root,
-        middle_user_asset_root,
-        new_user_asset_root,
-        diff_root,
-        tx_hash,
-    }
-}
+//     MergeAndPurgeTransitionPublicInputsTarget {
+//         sender_address,
+//         old_user_asset_root,
+//         middle_user_asset_root,
+//         new_user_asset_root,
+//         diff_root,
+//         tx_hash,
+//     }
+// }
 
 impl<
         F: RichField + Extendable<D>,
@@ -403,7 +547,7 @@ impl<
     pub fn parse_public_inputs(&self) -> MergeAndPurgeTransitionPublicInputsTarget {
         let public_inputs_t = self.data.prover_only.public_inputs.clone();
 
-        parse_merge_and_purge_public_inputs(&public_inputs_t)
+        MergeAndPurgeTransitionPublicInputsTarget::decode(&public_inputs_t)
     }
 
     pub fn prove(
@@ -411,41 +555,12 @@ impl<
         inputs: PartialWitness<F>,
     ) -> anyhow::Result<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>> {
         let proof_with_pis = self.data.prove(inputs)?;
-        let public_inputs = proof_with_pis.public_inputs;
-        let old_user_asset_root = HashOut {
-            elements: public_inputs[0..4].try_into().unwrap(),
-        }
-        .into();
-        let middle_user_asset_root = HashOut {
-            elements: public_inputs[4..8].try_into().unwrap(),
-        }
-        .into();
-        let new_user_asset_root = HashOut {
-            elements: public_inputs[8..12].try_into().unwrap(),
-        }
-        .into();
-        let diff_root = HashOut {
-            elements: public_inputs[12..16].try_into().unwrap(),
-        }
-        .into();
-        let sender_address = Address(HashOut {
-            elements: public_inputs[16..20].try_into().unwrap(),
-        });
-        let tx_hash = HashOut {
-            elements: public_inputs[20..24].try_into().unwrap(),
-        }
-        .into();
+        let public_inputs =
+            MergeAndPurgeTransitionPublicInputs::decode(&proof_with_pis.public_inputs);
 
         Ok(MergeAndPurgeTransitionProofWithPublicInputs {
             proof: proof_with_pis.proof,
-            public_inputs: MergeAndPurgeTransitionPublicInputs {
-                sender_address,
-                old_user_asset_root,
-                middle_user_asset_root,
-                new_user_asset_root,
-                diff_root,
-                tx_hash,
-            },
+            public_inputs,
         })
     }
 

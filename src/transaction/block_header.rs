@@ -19,9 +19,9 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BlockHeader<F: Field> {
     pub block_number: u32,
-    pub prev_block_header_digest: HashOut<F>, // block header tree root
-    pub transactions_digest: HashOut<F>,      // state diff tree root
-    pub deposit_digest: HashOut<F>,           // deposit tree root
+    pub block_headers_digest: HashOut<F>, // block header tree root
+    pub transactions_digest: HashOut<F>,  // state diff tree root
+    pub deposit_digest: HashOut<F>,       // deposit tree root
     pub proposed_world_state_digest: HashOut<F>,
     pub approved_world_state_digest: HashOut<F>,
     pub latest_account_digest: HashOut<F>, // latest account tree
@@ -32,7 +32,7 @@ pub struct BlockHeader<F: Field> {
 pub struct SerializableBlockHeader<F: RichField> {
     #[serde(with = "SerHex::<StrictPfx>")]
     pub block_number: u32,
-    pub prev_block_header_digest: WrappedHashOut<F>,
+    pub block_headers_digest: WrappedHashOut<F>,
     pub transactions_digest: WrappedHashOut<F>,
     pub deposit_digest: WrappedHashOut<F>,
     pub proposed_world_state_digest: WrappedHashOut<F>,
@@ -44,7 +44,7 @@ impl<F: RichField> From<SerializableBlockHeader<F>> for BlockHeader<F> {
     fn from(value: SerializableBlockHeader<F>) -> Self {
         Self {
             block_number: value.block_number,
-            prev_block_header_digest: *value.prev_block_header_digest,
+            block_headers_digest: *value.block_headers_digest,
             transactions_digest: *value.transactions_digest,
             deposit_digest: *value.deposit_digest,
             proposed_world_state_digest: *value.proposed_world_state_digest,
@@ -66,7 +66,7 @@ impl<F: RichField> From<BlockHeader<F>> for SerializableBlockHeader<F> {
     fn from(value: BlockHeader<F>) -> Self {
         Self {
             block_number: value.block_number,
-            prev_block_header_digest: value.prev_block_header_digest.into(),
+            block_headers_digest: value.block_headers_digest.into(),
             transactions_digest: value.transactions_digest.into(),
             deposit_digest: value.deposit_digest.into(),
             proposed_world_state_digest: value.proposed_world_state_digest.into(),
@@ -91,7 +91,7 @@ impl<F: RichField> BlockHeader<F> {
 
         Self {
             block_number: 0,
-            prev_block_header_digest: default_hash,
+            block_headers_digest: default_hash,
             transactions_digest: *default_merkle_root,
             deposit_digest: *default_merkle_root,
             proposed_world_state_digest: default_hash,
@@ -117,7 +117,7 @@ pub fn get_block_hash<F: RichField>(block_header: &BlockHeader<F>) -> HashOut<F>
     );
     let e = PoseidonHash::two_to_one(c, d);
 
-    PoseidonHash::two_to_one(block_header.prev_block_header_digest, e)
+    PoseidonHash::two_to_one(block_header.block_headers_digest, e)
 }
 
 pub fn get_block_header_tree_proof<F: RichField>(

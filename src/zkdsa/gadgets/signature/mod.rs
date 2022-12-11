@@ -7,7 +7,7 @@ use plonky2::{
 
 use crate::poseidon::gadgets::poseidon_two_to_one;
 
-use super::super::account::SecretKey;
+use super::{super::account::SecretKey, account::private_key_to_public_key_target};
 
 #[derive(Clone, Debug)]
 pub struct SimpleSignatureTarget {
@@ -51,7 +51,7 @@ pub fn sign_message_target<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, 
     private_key: HashOutTarget,
     message: HashOutTarget,
 ) -> (HashOutTarget, HashOutTarget) {
-    let public_key = poseidon_two_to_one::<F, H, D>(builder, private_key, private_key);
+    let public_key = private_key_to_public_key_target::<F, H, D>(builder, private_key);
     let signature = poseidon_two_to_one::<F, H, D>(builder, private_key, message);
 
     (signature, public_key)

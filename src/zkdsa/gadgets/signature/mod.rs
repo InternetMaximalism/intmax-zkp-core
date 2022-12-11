@@ -24,8 +24,7 @@ impl SimpleSignatureTarget {
         let private_key = builder.add_virtual_hash();
         let message = builder.add_virtual_hash();
 
-        let (signature, public_key) =
-            verify_simple_signature::<F, H, D>(builder, private_key, message);
+        let (signature, public_key) = sign_message_target::<F, H, D>(builder, private_key, message);
 
         Self {
             private_key,
@@ -47,11 +46,7 @@ impl SimpleSignatureTarget {
 }
 
 /// Returns `(signature, public_key)`
-pub fn verify_simple_signature<
-    F: RichField + Extendable<D>,
-    H: AlgebraicHasher<F>,
-    const D: usize,
->(
+pub fn sign_message_target<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     private_key: HashOutTarget,
     message: HashOutTarget,

@@ -73,6 +73,7 @@ fn main() {
         N_LOG_VARIABLES,
         N_DIFFS,
         N_MERGES,
+        N_DEPOSITS,
     >();
 
     // dbg!(&purge_proof_circuit_data.common);
@@ -210,6 +211,7 @@ fn main() {
     let prev_latest_account_digest = WrappedHashOut::default();
     let prev_block_header = BlockHeader {
         block_number: prev_block_number,
+        prev_block_hash: Default::default(),
         block_headers_digest: *prev_block_headers_digest,
         transactions_digest: *default_merkle_root,
         deposit_digest: *merge_inclusion_proof1.root,

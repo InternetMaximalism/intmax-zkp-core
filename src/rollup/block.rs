@@ -34,9 +34,9 @@ pub struct BlockInfo<F: RichField> {
 }
 
 impl<F: RichField> BlockInfo<F> {
-    pub fn with_tree_depth(depth: usize) -> Self {
+    pub fn with_tree_depth(deposit_tree_depth: usize, transaction_tree_depth: usize) -> Self {
         Self {
-            header: BlockHeader::with_tree_depth(depth),
+            header: BlockHeader::with_tree_depth(deposit_tree_depth, transaction_tree_depth),
             transactions: Default::default(),
             deposit_list: Default::default(),
             address_list: Default::default(),

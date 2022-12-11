@@ -415,6 +415,7 @@ fn test_approval_block() {
     const N_LOG_VARIABLES: usize = 3;
     const N_DIFFS: usize = 2;
     const N_MERGES: usize = 2;
+    const N_DEPOSITS: usize = 2;
     const N_TXS: usize = 2usize.pow(N_LOG_TXS as u32);
 
     let aggregator_nodes_db = NodeDataMemory::default();
@@ -436,6 +437,7 @@ fn test_approval_block() {
         N_LOG_VARIABLES,
         N_DIFFS,
         N_MERGES,
+        N_DEPOSITS,
     >(config);
 
     // dbg!(&purge_proof_circuit_data.common);
@@ -560,6 +562,7 @@ fn test_approval_block() {
     let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
     let prev_block_header = BlockHeader {
         block_number: 1,
+        prev_block_hash: default_hash,
         block_headers_digest: default_hash,
         transactions_digest: *default_merkle_root,
         deposit_digest: *merge_inclusion_proof1.root,

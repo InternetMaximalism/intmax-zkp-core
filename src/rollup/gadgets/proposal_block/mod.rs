@@ -448,7 +448,7 @@ fn test_proposal_block() {
     let merge_inclusion_proof1 = get_merkle_proof(&[deposit_tx_hash], 0, N_LOG_TXS);
 
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
-    let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
+    let default_transactions_digest = get_merkle_proof(&[], 0, N_LOG_TXS).root;
     let prev_block_number = 1u32;
     let mut block_headers: Vec<WrappedHashOut<F>> =
         vec![WrappedHashOut::ZERO; prev_block_number as usize];
@@ -463,8 +463,9 @@ fn test_proposal_block() {
     let prev_latest_account_digest = WrappedHashOut::default();
     let prev_block_header = BlockHeader {
         block_number: prev_block_number,
+        prev_block_hash: Default::default(),
         block_headers_digest: *prev_block_headers_digest,
-        transactions_digest: *default_merkle_root,
+        transactions_digest: *default_transactions_digest,
         deposit_digest: *merge_inclusion_proof1.root,
         proposed_world_state_digest: *prev_world_state_digest,
         approved_world_state_digest: *prev_world_state_digest,

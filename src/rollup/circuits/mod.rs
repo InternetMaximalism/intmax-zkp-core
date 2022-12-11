@@ -225,6 +225,7 @@ impl<
 
         BlockHeader {
             block_number,
+            prev_block_hash,
             transactions_digest: *transactions_digest,
             deposit_digest: *deposit_digest,
             proposed_world_state_digest: *proposed_world_state_digest,
@@ -267,6 +268,7 @@ pub fn make_block_proof_circuit<
         N_LOG_VARIABLES,
         N_DIFFS,
         N_MERGES,
+        N_DEPOSITS,
     >,
     simple_signature_circuit: &SimpleSignatureCircuit<F, C, D>,
 ) -> ProposalAndApprovalBlockCircuit<

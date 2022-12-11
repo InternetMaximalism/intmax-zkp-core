@@ -55,6 +55,7 @@ pub struct MergeProofTarget<
     const N_LOG_MAX_TXS: usize,
     const N_LOG_TXS: usize,
     const N_LOG_RECIPIENTS: usize,
+    const N_DEPOSITS: usize,
 > {
     // pub is_deposit: BoolTarget,
     pub diff_tree_inclusion_proof: (
@@ -74,9 +75,11 @@ pub struct MergeTransitionTarget<
     const N_LOG_TXS: usize,
     const N_LOG_RECIPIENTS: usize,
     const N_MERGES: usize,
+    const N_DEPOSITS: usize,
 > {
     pub proofs:
-        [MergeProofTarget<N_LOG_MAX_USERS, N_LOG_MAX_TXS, N_LOG_TXS, N_LOG_RECIPIENTS>; N_MERGES],
+        [MergeProofTarget<N_LOG_MAX_USERS, N_LOG_MAX_TXS, N_LOG_TXS, N_LOG_RECIPIENTS, N_DEPOSITS>;
+            N_MERGES],
     pub old_user_asset_root: HashOutTarget,
     pub new_user_asset_root: HashOutTarget,
 }
@@ -87,7 +90,16 @@ impl<
         const N_LOG_TXS: usize,
         const N_LOG_RECIPIENTS: usize,
         const N_MERGES: usize,
-    > MergeTransitionTarget<N_LOG_MAX_USERS, N_LOG_MAX_TXS, N_LOG_TXS, N_LOG_RECIPIENTS, N_MERGES>
+        const N_DEPOSITS: usize,
+    >
+    MergeTransitionTarget<
+        N_LOG_MAX_USERS,
+        N_LOG_MAX_TXS,
+        N_LOG_TXS,
+        N_LOG_RECIPIENTS,
+        N_MERGES,
+        N_DEPOSITS,
+    >
 {
     pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
@@ -121,6 +133,7 @@ impl<
             N_LOG_MAX_TXS,
             N_LOG_TXS,
             N_LOG_RECIPIENTS,
+            N_DEPOSITS,
         >(builder, &proofs, old_user_asset_root);
 
         Self {
@@ -248,7 +261,7 @@ impl<
             new_user_asset_root = witness.merge_process_proof.new_root
         }
 
-        let default_header = BlockHeader::with_tree_depth(N_LOG_TXS);
+        let default_header = BlockHeader::with_tree_depth(N_DEPOSITS, N_LOG_TXS);
         let default_merkle_proof = MerkleProof::new(N_LOG_TXS);
         let default_inclusion_proof = SmtInclusionProof::with_root(Default::default());
         let default_process_proof = SmtProcessProof::with_root(new_user_asset_root);
@@ -293,9 +306,16 @@ pub fn verify_user_asset_merge_proof<
     const N_LOG_MAX_TXS: usize,
     const N_LOG_TXS: usize,
     const N_LOG_RECIPIENTS: usize,
+    const N_DEPOSITS: usize,
 >(
     builder: &mut CircuitBuilder<F, D>,
-    proofs: &[MergeProofTarget<N_LOG_MAX_USERS, N_LOG_MAX_TXS, N_LOG_TXS, N_LOG_RECIPIENTS>],
+    proofs: &[MergeProofTarget<
+        N_LOG_MAX_USERS,
+        N_LOG_MAX_TXS,
+        N_LOG_TXS,
+        N_LOG_RECIPIENTS,
+        N_DEPOSITS,
+    >],
     old_user_asset_root: HashOutTarget,
 ) -> HashOutTarget {
     let zero = builder.zero();
@@ -454,6 +474,7 @@ fn test_merge_proof_by_plonky2() {
     pub const N_LOG_TXS: usize = 3;
     pub const N_LOG_RECIPIENTS: usize = 3;
     pub const N_MERGES: usize = 3;
+    pub const N_DEPOSITS: usize = 3;
 
     let config = CircuitConfig::standard_recursion_config();
 
@@ -466,6 +487,7 @@ fn test_merge_proof_by_plonky2() {
         N_LOG_TXS,
         N_LOG_RECIPIENTS,
         N_MERGES,
+        N_DEPOSITS,
     > = MergeTransitionTarget::add_virtual_to::<F, H, D>(&mut builder);
     builder.register_public_inputs(&merge_proof_target.old_user_asset_root.elements);
     builder.register_public_inputs(&merge_proof_target.new_user_asset_root.elements);
@@ -528,6 +550,7 @@ fn test_merge_proof_by_plonky2() {
     let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
     let prev_block_header = BlockHeader {
         block_number: 1,
+        prev_block_hash: default_hash,
         block_headers_digest: default_hash,
         transactions_digest: *default_merkle_root,
         deposit_digest: *merge_inclusion_proof1.root,

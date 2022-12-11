@@ -19,6 +19,7 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BlockHeader<F: Field> {
     pub block_number: u32,
+    pub prev_block_hash: HashOut<F>,
     pub block_headers_digest: HashOut<F>, // block header tree root
     pub transactions_digest: HashOut<F>,  // state diff tree root
     pub deposit_digest: HashOut<F>,       // deposit tree root
@@ -32,6 +33,7 @@ pub struct BlockHeader<F: Field> {
 pub struct SerializableBlockHeader<F: RichField> {
     #[serde(with = "SerHex::<StrictPfx>")]
     pub block_number: u32,
+    pub prev_block_hash: WrappedHashOut<F>,
     pub block_headers_digest: WrappedHashOut<F>,
     pub transactions_digest: WrappedHashOut<F>,
     pub deposit_digest: WrappedHashOut<F>,
@@ -44,6 +46,7 @@ impl<F: RichField> From<SerializableBlockHeader<F>> for BlockHeader<F> {
     fn from(value: SerializableBlockHeader<F>) -> Self {
         Self {
             block_number: value.block_number,
+            prev_block_hash: *value.prev_block_hash,
             block_headers_digest: *value.block_headers_digest,
             transactions_digest: *value.transactions_digest,
             deposit_digest: *value.deposit_digest,
@@ -66,6 +69,7 @@ impl<F: RichField> From<BlockHeader<F>> for SerializableBlockHeader<F> {
     fn from(value: BlockHeader<F>) -> Self {
         Self {
             block_number: value.block_number,
+            prev_block_hash: value.prev_block_hash.into(),
             block_headers_digest: value.block_headers_digest.into(),
             transactions_digest: value.transactions_digest.into(),
             deposit_digest: value.deposit_digest.into(),
@@ -85,15 +89,17 @@ impl<F: RichField> Serialize for BlockHeader<F> {
 }
 
 impl<F: RichField> BlockHeader<F> {
-    pub fn with_tree_depth(depth: usize) -> Self {
+    pub fn with_tree_depth(deposit_tree_depth: usize, transaction_tree_depth: usize) -> Self {
         let default_hash = HashOut::ZERO;
-        let default_merkle_root = get_merkle_proof(&[], 0, depth).root;
+        let deposit_digest = get_merkle_proof(&[], 0, deposit_tree_depth).root;
+        let transactions_digest = get_merkle_proof(&[], 0, transaction_tree_depth).root;
 
         Self {
             block_number: 0,
+            prev_block_hash: default_hash,
             block_headers_digest: default_hash,
-            transactions_digest: *default_merkle_root,
-            deposit_digest: *default_merkle_root,
+            transactions_digest: *transactions_digest,
+            deposit_digest: *deposit_digest,
             proposed_world_state_digest: default_hash,
             approved_world_state_digest: default_hash,
             latest_account_digest: default_hash,

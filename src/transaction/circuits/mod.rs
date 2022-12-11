@@ -45,6 +45,7 @@ pub struct MergeAndPurgeTransitionTarget<
     const N_LOG_VARIABLES: usize,
     const N_DIFFS: usize,
     const N_MERGES: usize,
+    const N_DEPOSITS: usize,
 > {
     pub merge_proof_target: MergeTransitionTarget<
         N_LOG_MAX_USERS,
@@ -52,6 +53,7 @@ pub struct MergeAndPurgeTransitionTarget<
         N_LOG_TXS,
         N_LOG_RECIPIENTS,
         N_MERGES,
+        N_DEPOSITS,
     >,
     pub purge_proof_target: PurgeTransitionTarget<
         N_LOG_MAX_TXS,
@@ -75,6 +77,7 @@ impl<
         const N_LOG_VARIABLES: usize,
         const N_DIFFS: usize,
         const N_MERGES: usize,
+        const N_DEPOSITS: usize,
     >
     MergeAndPurgeTransitionTarget<
         N_LOG_MAX_USERS,
@@ -87,6 +90,7 @@ impl<
         N_LOG_VARIABLES,
         N_DIFFS,
         N_MERGES,
+        N_DEPOSITS,
     >
 {
     #[allow(clippy::too_many_arguments)]
@@ -137,6 +141,7 @@ pub fn make_user_proof_circuit<
     const N_LOG_VARIABLES: usize,
     const N_DIFFS: usize,
     const N_MERGES: usize,
+    const N_DEPOSITS: usize,
 >(// zkdsa_circuit: SimpleSignatureCircuit,
 ) -> MergeAndPurgeTransitionCircuit<
     F,
@@ -152,6 +157,7 @@ pub fn make_user_proof_circuit<
     N_LOG_VARIABLES,
     N_DIFFS,
     N_MERGES,
+    N_DEPOSITS,
 >
 where
     C::Hasher: AlgebraicHasher<F>,
@@ -168,6 +174,7 @@ where
         N_LOG_TXS,
         N_LOG_RECIPIENTS,
         N_MERGES,
+        N_DEPOSITS,
     > = MergeTransitionTarget::add_virtual_to::<F, C::Hasher, D>(&mut builder);
 
     let purge_proof_target: PurgeTransitionTarget<
@@ -236,6 +243,7 @@ pub struct MergeAndPurgeTransitionCircuit<
     const N_LOG_VARIABLES: usize,
     const N_DIFFS: usize,
     const N_MERGES: usize,
+    const N_DEPOSITS: usize,
 > {
     pub data: CircuitData<F, C, D>,
     pub targets: MergeAndPurgeTransitionTarget<
@@ -249,6 +257,7 @@ pub struct MergeAndPurgeTransitionCircuit<
         N_LOG_VARIABLES,
         N_DIFFS,
         N_MERGES,
+        N_DEPOSITS,
     >,
 }
 
@@ -527,6 +536,7 @@ impl<
         const N_LOG_VARIABLES: usize,
         const N_DIFFS: usize,
         const N_MERGES: usize,
+        const N_DEPOSITS: usize,
     >
     MergeAndPurgeTransitionCircuit<
         F,
@@ -542,6 +552,7 @@ impl<
         N_LOG_VARIABLES,
         N_DIFFS,
         N_MERGES,
+        N_DEPOSITS,
     >
 {
     pub fn parse_public_inputs(&self) -> MergeAndPurgeTransitionPublicInputsTarget {
@@ -592,6 +603,7 @@ pub fn prove_user_transaction<
     const N_LOG_VARIABLES: usize,
     const N_DIFFS: usize,
     const N_MERGES: usize,
+    const N_DEPOSITS: usize,
 >(
     sender_address: Address<F>,
     merge_witnesses: &[MergeProof<F>],
@@ -617,6 +629,7 @@ where
         N_LOG_VARIABLES,
         N_DIFFS,
         N_MERGES,
+        N_DEPOSITS,
     >();
 
     let mut pw = PartialWitness::new();

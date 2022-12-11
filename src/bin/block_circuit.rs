@@ -59,6 +59,8 @@ fn main() {
     let mut world_state_tree =
         PoseidonSparseMerkleTree::new(aggregator_nodes_db.clone(), RootDataTmp::default());
 
+    // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
+    let config = CircuitConfig::standard_recursion_config();
     let merge_and_purge_circuit = make_user_proof_circuit::<
         F,
         C,
@@ -73,7 +75,7 @@ fn main() {
         N_LOG_VARIABLES,
         N_DIFFS,
         N_MERGES,
-    >();
+    >(config);
 
     // dbg!(&purge_proof_circuit_data.common);
 
@@ -385,7 +387,9 @@ fn main() {
 
     let proposal_world_state_root = world_state_tree.get_root().unwrap();
 
-    let zkdsa_circuit = make_simple_signature_circuit();
+    // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
+    let config = CircuitConfig::standard_recursion_config();
+    let zkdsa_circuit = make_simple_signature_circuit(config);
 
     // // let mut pw = PartialWitness::new();
     // // zkdsa_circuit.targets.set_witness(
@@ -428,6 +432,7 @@ fn main() {
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
+    let config = CircuitConfig::standard_recursion_config();
     let block_circuit = make_block_proof_circuit::<
         F,
         C,
@@ -444,7 +449,7 @@ fn main() {
         N_MERGES,
         N_TXS,
         N_DEPOSITS,
-    >(&merge_and_purge_circuit, &zkdsa_circuit);
+    >(config, &merge_and_purge_circuit, &zkdsa_circuit);
 
     let block_number = prev_block_header.block_number + 1;
 

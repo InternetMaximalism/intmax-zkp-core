@@ -421,6 +421,7 @@ fn test_approval_block() {
     let mut world_state_tree =
         PoseidonSparseMerkleTree::new(aggregator_nodes_db.clone(), RootDataTmp::default());
 
+    let config = CircuitConfig::standard_recursion_config();
     let merge_and_purge_circuit = make_user_proof_circuit::<
         F,
         C,
@@ -435,7 +436,7 @@ fn test_approval_block() {
         N_LOG_VARIABLES,
         N_DIFFS,
         N_MERGES,
-    >();
+    >(config);
 
     // dbg!(&purge_proof_circuit_data.common);
 
@@ -739,7 +740,8 @@ fn test_approval_block() {
     world_state_process_proofs.push(sender2_world_state_process_proof);
     user_tx_proofs.push(sender2_tx_proof.clone());
 
-    let zkdsa_circuit = make_simple_signature_circuit();
+    let config = CircuitConfig::standard_recursion_config();
+    let zkdsa_circuit = make_simple_signature_circuit(config);
 
     // let mut pw = PartialWitness::new();
     // zkdsa_circuit.targets.set_witness(

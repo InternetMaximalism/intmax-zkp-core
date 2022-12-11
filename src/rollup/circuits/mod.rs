@@ -252,6 +252,7 @@ pub fn make_block_proof_circuit<
     const N_TXS: usize,
     const N_DEPOSITS: usize,
 >(
+    config: CircuitConfig,
     merge_and_purge_circuit: &MergeAndPurgeTransitionCircuit<
         F,
         C,
@@ -283,7 +284,6 @@ pub fn make_block_proof_circuit<
 where
     C::Hasher: AlgebraicHasher<F>,
 {
-    let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
 
     // deposit block

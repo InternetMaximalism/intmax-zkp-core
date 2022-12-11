@@ -26,9 +26,7 @@ type H = <C as GenericConfig<D>>::InnerHasher;
 type F = <C as GenericConfig<D>>::F;
 const D: usize = 2;
 
-pub fn make_simple_signature_circuit() -> SimpleSignatureCircuit<F, C, D> {
-    // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
-    let config = CircuitConfig::standard_recursion_config();
+pub fn make_simple_signature_circuit(config: CircuitConfig) -> SimpleSignatureCircuit<F, C, D> {
     let mut builder = CircuitBuilder::<F, D>::new(config);
 
     let targets = SimpleSignatureTarget::add_virtual_to::<F, H, D>(&mut builder);
@@ -312,7 +310,8 @@ fn test_verify_simple_signature_by_plonky2() {
     type F = <C as GenericConfig<D>>::F;
     // type F = GoldilocksField;
 
-    let simple_signature_circuit = make_simple_signature_circuit();
+    let config = CircuitConfig::standard_recursion_config();
+    let simple_signature_circuit = make_simple_signature_circuit(config);
 
     let private_key = HashOut::<F>::rand();
     let account = private_key_to_account(private_key);
@@ -355,7 +354,9 @@ pub fn prove_simple_signature<
     private_key: WrappedHashOut<F>,
     message: WrappedHashOut<F>,
 ) -> anyhow::Result<SimpleSignatureProofWithPublicInputs<F, C, D>> {
-    let simple_signature_circuit = make_simple_signature_circuit();
+    // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
+    let config = CircuitConfig::standard_recursion_config();
+    let simple_signature_circuit = make_simple_signature_circuit(config);
 
     let mut pw = PartialWitness::new();
     simple_signature_circuit

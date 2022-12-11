@@ -1,6 +1,9 @@
 use plonky2::{
     field::extension::Extendable,
-    hash::hash_types::{HashOut, HashOutTarget, RichField},
+    hash::{
+        hash_types::{HashOut, HashOutTarget, RichField},
+        poseidon::PoseidonHash,
+    },
     iop::{
         target::Target,
         witness::{PartialWitness, Witness},
@@ -8,7 +11,7 @@ use plonky2::{
     plonk::{
         circuit_builder::CircuitBuilder,
         circuit_data::{CircuitConfig, CircuitData},
-        config::{AlgebraicHasher, GenericConfig},
+        config::{AlgebraicHasher, GenericConfig, Hasher},
         proof::{Proof, ProofWithPublicInputs},
     },
 };
@@ -249,7 +252,7 @@ pub struct MergeAndPurgeTransitionCircuit<
     >,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound(deserialize = "Address<F>: Deserialize<'de>, WrappedHashOut<F>: Deserialize<'de>"))]
 pub struct MergeAndPurgeTransitionPublicInputs<F: RichField> {
     pub sender_address: Address<F>,
@@ -258,6 +261,57 @@ pub struct MergeAndPurgeTransitionPublicInputs<F: RichField> {
     pub new_user_asset_root: WrappedHashOut<F>,
     pub diff_root: WrappedHashOut<F>,
     pub tx_hash: WrappedHashOut<F>,
+}
+
+impl<F: RichField> Default for MergeAndPurgeTransitionPublicInputs<F> {
+    fn default() -> Self {
+        let diff_root = Default::default();
+        let nonce = Default::default();
+        let tx_hash = PoseidonHash::two_to_one(diff_root, nonce);
+
+        Self {
+            sender_address: Default::default(),
+            old_user_asset_root: Default::default(),
+            middle_user_asset_root: Default::default(),
+            new_user_asset_root: Default::default(),
+            diff_root: diff_root.into(),
+            tx_hash: tx_hash.into(),
+        }
+    }
+}
+
+#[test]
+fn test_default_user_transaction() {
+    use plonky2::field::{goldilocks_field::GoldilocksField, types::Field};
+
+    type F = GoldilocksField;
+
+    let default_user_transaction = MergeAndPurgeTransitionPublicInputs::<F>::default();
+
+    let tx_hash = WrappedHashOut::from(HashOut {
+        elements: [
+            F::from_canonical_u64(4330397376401421145),
+            F::from_canonical_u64(14124799381142128323),
+            F::from_canonical_u64(8742572140681234676),
+            F::from_canonical_u64(14345658006221440202),
+        ],
+    });
+
+    assert_eq!(default_user_transaction.sender_address, Default::default());
+    assert_eq!(
+        default_user_transaction.old_user_asset_root,
+        Default::default()
+    );
+    assert_eq!(
+        default_user_transaction.middle_user_asset_root,
+        Default::default()
+    );
+    assert_eq!(
+        default_user_transaction.new_user_asset_root,
+        Default::default()
+    );
+    assert_eq!(default_user_transaction.diff_root, Default::default());
+    assert_eq!(default_user_transaction.tx_hash, tx_hash);
 }
 
 impl<F: RichField> MergeAndPurgeTransitionPublicInputs<F> {

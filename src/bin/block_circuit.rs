@@ -26,13 +26,13 @@ use intmax_zkp_core::{
     },
     transaction::{
         block_header::{get_block_hash, BlockHeader},
-        circuits::{make_user_proof_circuit, MergeAndPurgeTransitionPublicInputs},
+        circuits::make_user_proof_circuit,
         gadgets::merge::MergeProof,
         tree::user_asset::UserAssetTree,
     },
     zkdsa::{
         account::{private_key_to_account, Address},
-        circuits::{make_simple_signature_circuit, SimpleSignaturePublicInputs},
+        circuits::make_simple_signature_circuit,
     },
 };
 
@@ -153,8 +153,6 @@ fn main() {
     let sender1_input_witness = vec![proof1, proof2];
     let sender1_output_witness = vec![proof3, proof4];
 
-    // let sender2_private_key: HashOut<F> = HashOut::rand();
-    // dbg!(sender2_private_key);
     let sender2_private_key = HashOut {
         elements: [
             F::from_canonical_u64(15657143458229430356),
@@ -243,7 +241,6 @@ fn main() {
     let merge_process_proof = sender2_user_asset_tree
         .set(deposit_merge_key, asset_root)
         .unwrap();
-    dbg!(&merge_process_proof);
 
     let merge_proof = MergeProof {
         is_deposit: true,
@@ -279,8 +276,6 @@ fn main() {
     //     serde_json::to_string(&sender2_output_witness).unwrap()
     // );
 
-    // let sender1_nonce: WrappedHashOut<F> = WrappedHashOut::rand();
-    // dbg!(sender1_nonce);
     let sender1_nonce = WrappedHashOut::from(HashOut {
         elements: [
             F::from_canonical_u64(7823975322825286183),
@@ -290,56 +285,29 @@ fn main() {
         ],
     });
 
-    // let mut pw = PartialWitness::new();
-    // merge_and_purge_circuit
-    //     .targets
-    //     .merge_proof_target
-    //     .set_witness(
-    //         &mut pw,
-    //         &[],
-    //         *sender1_input_witness.first().unwrap().0.old_root,
-    //     );
-    // merge_and_purge_circuit
-    //     .targets
-    //     .purge_proof_target
-    //     .set_witness(
-    //         &mut pw,
-    //         sender1_account.address,
-    //         &sender1_input_witness,
-    //         &sender1_output_witness,
-    //         sender1_input_witness.first().unwrap().0.old_root,
-    //         sender1_nonce,
-    //     );
+    let mut pw = PartialWitness::new();
+    merge_and_purge_circuit.targets.set_witness(
+        &mut pw,
+        sender1_account.address,
+        &[],
+        &sender1_input_witness,
+        &sender1_output_witness,
+        sender1_nonce,
+        sender1_input_witness.first().unwrap().0.old_root,
+    );
 
-    // println!("start proving: sender1_tx_proof");
-    // let start = Instant::now();
-    // let sender1_tx_proof = merge_and_purge_circuit.prove(pw).unwrap();
-    // let end = start.elapsed();
-    // println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+    println!("start proving: sender1_tx_proof");
+    let start = Instant::now();
+    let sender1_tx_proof = merge_and_purge_circuit.prove(pw).unwrap();
+    let end = start.elapsed();
+    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
     // dbg!(&sender1_tx_proof.public_inputs);
 
-    // match merge_and_purge_circuit.verify(sender1_tx_proof.clone()) {
-    //     Ok(()) => println!("Ok!"),
-    //     Err(x) => println!("{}", x),
-    // }
-
-    let sender1_transaction = {
-        let old_user_asset_root = sender1_input_witness.first().unwrap().0.old_root;
-        let middle_user_asset_root = old_user_asset_root;
-        let new_user_asset_root = sender1_input_witness.last().unwrap().0.new_root;
-        let diff_root = sender1_output_witness.last().unwrap().0.new_root;
-        let tx_hash = PoseidonHash::two_to_one(*diff_root, *sender1_nonce);
-
-        MergeAndPurgeTransitionPublicInputs {
-            sender_address: Address(sender1_address),
-            old_user_asset_root,
-            middle_user_asset_root,
-            new_user_asset_root,
-            diff_root,
-            tx_hash: tx_hash.into(),
-        }
-    };
+    match merge_and_purge_circuit.verify(sender1_tx_proof.clone()) {
+        Ok(()) => println!("Ok!"),
+        Err(x) => println!("{}", x),
+    }
 
     let sender2_nonce = WrappedHashOut::from(HashOut {
         elements: [
@@ -350,73 +318,49 @@ fn main() {
         ],
     });
 
-    // let mut pw = PartialWitness::new();
-    // merge_and_purge_circuit
-    //     .targets
-    //     .merge_proof_target
-    //     .set_witness(&mut pw, &[merge_proof], HashOut::ZERO);
-    // merge_and_purge_circuit
-    //     .targets
-    //     .purge_proof_target
-    //     .set_witness(
-    //         &mut pw,
-    //         sender2_account.address,
-    //         &sender2_input_witness,
-    //         &sender2_output_witness,
-    //         sender2_input_witness.first().unwrap().0.old_root,
-    //         sender2_nonce,
-    //     );
+    let mut pw = PartialWitness::new();
+    merge_and_purge_circuit.targets.set_witness(
+        &mut pw,
+        sender2_account.address,
+        &[merge_proof],
+        &sender2_input_witness,
+        &sender2_output_witness,
+        sender2_nonce,
+        WrappedHashOut::ZERO,
+    );
 
-    // println!("start proving: sender2_tx_proof");
-    // let start = Instant::now();
-    // let sender2_tx_proof = merge_and_purge_circuit.prove(pw).unwrap();
-    // let end = start.elapsed();
-    // println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+    println!("start proving: sender2_tx_proof");
+    let start = Instant::now();
+    let sender2_tx_proof = merge_and_purge_circuit.prove(pw).unwrap();
+    let end = start.elapsed();
+    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-    // // dbg!(&sender2_tx_proof.public_inputs);
+    // dbg!(&sender2_tx_proof.public_inputs);
 
-    // match merge_and_purge_circuit.verify(sender2_tx_proof.clone()) {
-    //     Ok(()) => println!("Ok!"),
-    //     Err(x) => println!("{}", x),
-    // }
+    match merge_and_purge_circuit.verify(sender2_tx_proof.clone()) {
+        Ok(()) => println!("Ok!"),
+        Err(x) => println!("{}", x),
+    }
 
-    let sender2_transaction = {
-        let old_user_asset_root = merge_proof.merge_process_proof.old_root;
-        let middle_user_asset_root = sender2_input_witness.first().unwrap().0.old_root;
-        let new_user_asset_root = sender2_input_witness.last().unwrap().0.new_root;
-        let diff_root = sender2_output_witness.last().unwrap().0.new_root;
-        let tx_hash = PoseidonHash::two_to_one(*diff_root, *sender2_nonce);
+    let mut pw = PartialWitness::new();
+    merge_and_purge_circuit.targets.set_witness(
+        &mut pw,
+        Default::default(),
+        &[],
+        &[],
+        &[],
+        Default::default(),
+        Default::default(),
+    );
 
-        MergeAndPurgeTransitionPublicInputs {
-            sender_address: Address(sender2_address),
-            old_user_asset_root,
-            middle_user_asset_root,
-            new_user_asset_root,
-            diff_root,
-            tx_hash: tx_hash.into(),
-        }
-    };
-
-    // let mut pw = PartialWitness::new();
-    // merge_and_purge_circuit.targets.set_witness(
-    //     &mut pw,
-    //     Default::default(),
-    //     &[],
-    //     &[],
-    //     &[],
-    //     Default::default(),
-    //     Default::default(),
-    // );
-
-    // println!("start proving: default_user_tx_proof");
-    // let start = Instant::now();
-    // let default_user_tx_proofs = merge_and_purge_circuit.prove(pw).unwrap();
-    // let end = start.elapsed();
-    // println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+    println!("start proving: default_user_tx_proof");
+    let start = Instant::now();
+    let default_user_tx_proof = merge_and_purge_circuit.prove(pw).unwrap();
+    let end = start.elapsed();
+    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
     let mut world_state_process_proofs = vec![];
-    let mut user_transactions = vec![];
-    // let mut user_tx_proofs = vec![];
+    let mut user_tx_proofs = vec![];
 
     let sender1_world_state_process_proof = world_state_tree
         .set(
@@ -435,11 +379,9 @@ fn main() {
         .unwrap();
 
     world_state_process_proofs.push(sender1_world_state_process_proof);
-    user_transactions.push(sender1_transaction);
-    // user_tx_proofs.push(sender1_tx_proof.clone());
+    user_tx_proofs.push(sender1_tx_proof);
     world_state_process_proofs.push(sender2_world_state_process_proof);
-    user_transactions.push(sender2_transaction);
-    // user_tx_proofs.push(sender2_tx_proof.clone());
+    user_tx_proofs.push(sender2_tx_proof);
 
     let proposal_world_state_root = world_state_tree.get_root().unwrap();
 
@@ -460,44 +402,31 @@ fn main() {
 
     // // dbg!(&sender1_received_signature.public_inputs);
 
-    // let mut pw = PartialWitness::new();
-    // zkdsa_circuit.targets.set_witness(
-    //     &mut pw,
-    //     sender2_account.private_key,
-    //     *proposal_world_state_root,
-    // );
+    let mut pw = PartialWitness::new();
+    zkdsa_circuit.targets.set_witness(
+        &mut pw,
+        sender2_account.private_key,
+        *proposal_world_state_root,
+    );
 
-    // println!("start proving: sender2_received_signature");
-    // let start = Instant::now();
-    // let sender2_received_signature_proof = zkdsa_circuit.prove(pw).unwrap();
-    // let end = start.elapsed();
-    // println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+    println!("start proving: sender2_received_signature");
+    let start = Instant::now();
+    let sender2_received_signature_proof = zkdsa_circuit.prove(pw).unwrap();
+    let end = start.elapsed();
+    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-    // // dbg!(&sender2_received_signature.public_inputs);
+    // dbg!(&sender2_received_signature.public_inputs);
 
-    let sender2_received_signature = {
-        let message = *proposal_world_state_root;
-        let private_key = sender2_account.private_key;
-        let public_key = PoseidonHash::two_to_one(private_key, private_key);
-        let signature = PoseidonHash::two_to_one(private_key, message);
+    let mut pw = PartialWitness::new();
+    zkdsa_circuit
+        .targets
+        .set_witness(&mut pw, Default::default(), Default::default());
 
-        SimpleSignaturePublicInputs {
-            message,
-            public_key,
-            signature,
-        }
-    };
-
-    // let mut pw = PartialWitness::new();
-    // zkdsa_circuit
-    //     .targets
-    //     .set_witness(&mut pw, Default::default(), Default::default());
-
-    // println!("start proving: default_simple_signature");
-    // let start = Instant::now();
-    // let default_simple_signature = zkdsa_circuit.prove(pw).unwrap();
-    // let end = start.elapsed();
-    // println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+    println!("start proving: default_simple_signature");
+    let start = Instant::now();
+    let default_simple_signature_proof = zkdsa_circuit.prove(pw).unwrap();
+    let end = start.elapsed();
+    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
     let block_circuit = make_block_proof_circuit::<
         F,
@@ -519,9 +448,12 @@ fn main() {
 
     let block_number = prev_block_header.block_number + 1;
 
-    // let received_signature_proofs: Vec<Option<_>> =
-    //     vec![None, Some(sender2_received_signature_proof)];
-    let received_signatures = vec![None, Some(sender2_received_signature)];
+    let received_signature_proofs = vec![None, Some(sender2_received_signature_proof)];
+    let received_signatures = received_signature_proofs
+        .iter()
+        .cloned()
+        .map(|v| v.map(|proof| proof.public_inputs))
+        .collect::<Vec<_>>();
 
     let mut latest_account_tree = PoseidonSparseMerkleTree::new(
         NodeDataMemory::default(),
@@ -533,6 +465,11 @@ fn main() {
     // u.enabled かつ w.fnc == NoOp だが revert ではない.
     let mut world_state_revert_proofs = vec![];
     let mut latest_account_tree_process_proofs = vec![];
+    let user_transactions = user_tx_proofs
+        .iter()
+        .cloned()
+        .map(|v| v.public_inputs)
+        .collect::<Vec<_>>();
     for (opt_received_signature, user_transaction) in
         received_signatures.iter().zip(user_transactions.iter())
     {
@@ -595,15 +532,13 @@ fn main() {
     block_circuit.targets.set_witness::<F, C>(
         &mut pw,
         block_number,
-        &user_transactions,
-        // &user_tx_proofs,
-        // &default_user_tx_proofs,
+        &user_tx_proofs,
+        &default_user_tx_proof,
         &deposit_process_proofs,
         &world_state_process_proofs,
         &world_state_revert_proofs,
-        &received_signatures,
-        // &received_signature_proofs,
-        // &default_simple_signature,
+        &received_signature_proofs,
+        &default_simple_signature_proof,
         &latest_account_tree_process_proofs,
         &block_headers_proof_siblings,
         prev_block_header,

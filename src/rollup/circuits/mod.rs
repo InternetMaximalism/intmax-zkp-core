@@ -29,7 +29,7 @@ use crate::{
         block_header::{get_block_hash, BlockHeader},
         circuits::{
             MergeAndPurgeTransitionCircuit, MergeAndPurgeTransitionProofWithPublicInputs,
-            MergeAndPurgeTransitionPublicInputs, MergeAndPurgeTransitionPublicInputsTarget,
+            MergeAndPurgeTransitionPublicInputsTarget,
         },
         gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
     },
@@ -37,7 +37,7 @@ use crate::{
         account::Address,
         circuits::{
             SimpleSignatureCircuit, SimpleSignatureProofWithPublicInputs,
-            SimpleSignaturePublicInputs, SimpleSignaturePublicInputsTarget,
+            SimpleSignaturePublicInputsTarget,
         },
         gadgets::account::AddressTarget,
     },
@@ -68,8 +68,8 @@ pub struct OneBlockProofTarget<
         DepositBlockProofTarget<D, N_LOG_RECIPIENTS, N_LOG_CONTRACTS, N_LOG_VARIABLES, N_DEPOSITS>,
     pub proposal_block_target: ProposalBlockProofTarget<D, N_LOG_USERS, N_TXS>,
     pub approval_block_target: ApprovalBlockProofTarget<D, N_LOG_USERS, N_TXS>,
-    // pub user_tx_proofs: [RecursiveProofTarget<D>; N_TXS],
-    // pub received_signature_proofs: [RecursiveProofTarget<D>; N_TXS],
+    pub user_tx_proofs: [RecursiveProofTarget<D>; N_TXS],
+    pub received_signature_proofs: [RecursiveProofTarget<D>; N_TXS],
     pub block_headers_proof: MerkleProofTarget<N_LOG_MAX_BLOCKS>,
     pub prev_block_header: BlockHeaderTarget,
     pub block_header: BlockHeaderTarget,
@@ -102,14 +102,14 @@ impl<
         &self,
         pw: &mut impl Witness<F>,
         block_number: u32,
-        user_transactions: &[MergeAndPurgeTransitionPublicInputs<F>],
-        // default_user_tx_proofs: &MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>,
+        user_tx_proofs: &[MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>],
+        default_user_tx_proof: &MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>,
         deposit_process_proofs: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
         world_state_process_proofs: &[SmtProcessProof<F>],
         world_state_revert_proofs: &[SmtProcessProof<F>],
-        received_signatures: &[Option<SimpleSignaturePublicInputs<F>>],
-        // default_simple_signature: &SimpleSignatureProofWithPublicInputs<F, C, D>,
-        latest_account_tree_process_proofs: &[SmtProcessProof<F>],
+        received_signature_proofs: &[Option<SimpleSignatureProofWithPublicInputs<F, C, D>>],
+        default_simple_signature_proof: &SimpleSignatureProofWithPublicInputs<F, C, D>,
+        latest_account_process_proofs: &[SmtProcessProof<F>],
         block_headers_proof_siblings: &[WrappedHashOut<F>],
         prev_block_header: BlockHeader<F>,
     ) -> BlockHeader<F>
@@ -120,11 +120,11 @@ impl<
             .deposit_block_target
             .set_witness(pw, deposit_process_proofs);
         let old_world_state_root = prev_block_header.approved_world_state_digest.into();
-        // let user_transactions = user_tx_proofs
-        //     .iter()
-        //     .cloned()
-        //     .map(|p| p.public_inputs)
-        //     .collect::<Vec<_>>();
+        let user_transactions = user_tx_proofs
+            .iter()
+            .cloned()
+            .map(|p| p.public_inputs)
+            .collect::<Vec<_>>();
         let (transactions_digest, proposed_world_state_digest) =
             self.proposal_block_target.set_witness(
                 pw,
@@ -133,11 +133,11 @@ impl<
                 old_world_state_root,
             );
         let old_latest_account_root = prev_block_header.latest_account_digest.into();
-        // let received_signatures = received_signature_proofs
-        //     .iter()
-        //     .cloned()
-        //     .map(|p| p.map(|p| p.public_inputs))
-        //     .collect::<Vec<_>>();
+        let received_signatures = received_signature_proofs
+            .iter()
+            .cloned()
+            .map(|p| p.map(|p| p.public_inputs))
+            .collect::<Vec<_>>();
         let (approved_world_state_digest, latest_account_digest) =
             self.approval_block_target.set_witness(
                 pw,
@@ -145,49 +145,49 @@ impl<
                 world_state_revert_proofs,
                 &user_transactions,
                 &received_signatures,
-                latest_account_tree_process_proofs,
+                latest_account_process_proofs,
                 proposed_world_state_digest,
                 old_latest_account_root,
             );
 
-        // assert!(user_tx_proofs.len() <= self.user_tx_proofs.len());
-        // for (r_t, r) in self.user_tx_proofs.iter().zip(user_tx_proofs.iter()) {
-        //     r_t.set_witness(pw, &ProofWithPublicInputs::from(r.clone()), true);
-        // }
+        assert!(user_tx_proofs.len() <= self.user_tx_proofs.len());
+        for (r_t, r) in self.user_tx_proofs.iter().zip(user_tx_proofs.iter()) {
+            r_t.set_witness(pw, &ProofWithPublicInputs::from(r.clone()), true);
+        }
 
-        // for r_t in self.user_tx_proofs.iter().skip(user_tx_proofs.len()) {
-        //     r_t.set_witness(
-        //         pw,
-        //         &ProofWithPublicInputs::from(default_user_tx_proofs.clone()),
-        //         false,
-        //     );
-        // }
+        for r_t in self.user_tx_proofs.iter().skip(user_tx_proofs.len()) {
+            r_t.set_witness(
+                pw,
+                &ProofWithPublicInputs::from(default_user_tx_proof.clone()),
+                false,
+            );
+        }
 
-        // assert!(received_signature_proofs.len() <= self.received_signature_proofs.len());
-        // for (r_t, r) in self
-        //     .received_signature_proofs
-        //     .iter()
-        //     .zip(received_signature_proofs.iter())
-        // {
-        //     let r: Option<&_> = r.into();
-        //     r_t.set_witness(
-        //         pw,
-        //         &ProofWithPublicInputs::from(r.unwrap_or(default_simple_signature).clone()),
-        //         r.is_some(),
-        //     );
-        // }
+        assert!(received_signature_proofs.len() <= self.received_signature_proofs.len());
+        for (r_t, r) in self
+            .received_signature_proofs
+            .iter()
+            .zip(received_signature_proofs.iter())
+        {
+            let r: Option<&_> = r.into();
+            r_t.set_witness(
+                pw,
+                &ProofWithPublicInputs::from(r.unwrap_or(default_simple_signature_proof).clone()),
+                r.is_some(),
+            );
+        }
 
-        // for r_t in self
-        //     .received_signature_proofs
-        //     .iter()
-        //     .skip(received_signature_proofs.len())
-        // {
-        //     r_t.set_witness(
-        //         pw,
-        //         &ProofWithPublicInputs::from(default_simple_signature.clone()),
-        //         false,
-        //     );
-        // }
+        for r_t in self
+            .received_signature_proofs
+            .iter()
+            .skip(received_signature_proofs.len())
+        {
+            r_t.set_witness(
+                pw,
+                &ProofWithPublicInputs::from(default_simple_signature_proof.clone()),
+                false,
+            );
+        }
 
         self.prev_block_header.set_witness(pw, &prev_block_header);
         for (sibling_t, sibling) in self
@@ -285,9 +285,6 @@ where
 {
     let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
-    // builder.debug_target_index = Some(39784);
-    builder.debug_gate_row = Some(608);
-    builder.debug_slot_index = Some(5);
 
     // deposit block
     let deposit_block_target: DepositBlockProofTarget<
@@ -310,80 +307,54 @@ where
             &mut builder,
         );
 
-    // let mut user_tx_proofs = vec![];
-    // for _ in 0..N_TXS {
-    //     let b = RecursiveProofTarget::add_virtual_to(&mut builder, &merge_and_purge_circuit.data);
-    //     user_tx_proofs.push(b);
-    // }
+    let user_tx_proofs = [0; N_TXS]
+        .map(|_| RecursiveProofTarget::add_virtual_to(&mut builder, &merge_and_purge_circuit.data));
 
-    // for ((u, p), a) in user_tx_proofs
-    //     .iter()
-    //     .zip(proposal_block_target.user_transactions.iter())
-    //     .zip(approval_block_target.user_transactions.iter())
-    // {
-    //     let user_tx_public_inputs =
-    //         MergeAndPurgeTransitionPublicInputsTarget::decode(&u.inner.0.public_inputs);
-    //     MergeAndPurgeTransitionPublicInputsTarget::connect(&mut builder, p, &user_tx_public_inputs);
-    //     MergeAndPurgeTransitionPublicInputsTarget::connect(&mut builder, a, &user_tx_public_inputs);
-    // }
+    for ((u, p), a) in user_tx_proofs
+        .iter()
+        .zip(proposal_block_target.user_transactions.iter())
+        .zip(approval_block_target.user_transactions.iter())
+    {
+        let user_tx_public_inputs =
+            MergeAndPurgeTransitionPublicInputsTarget::decode(&u.inner.0.public_inputs);
+        MergeAndPurgeTransitionPublicInputsTarget::connect(&mut builder, p, &user_tx_public_inputs);
+        MergeAndPurgeTransitionPublicInputsTarget::connect(&mut builder, a, &user_tx_public_inputs);
+    }
 
-    // let mut received_signature_proofs = vec![];
-    // for _ in 0..N_TXS {
-    //     let b = RecursiveProofTarget::add_virtual_to(&mut builder, &simple_signature_circuit.data); // XXX: block_circuit
-    //     received_signature_proofs.push(b);
-    // }
+    let received_signature_proofs = [0; N_TXS].map(|_| {
+        RecursiveProofTarget::add_virtual_to(&mut builder, &simple_signature_circuit.data)
+    });
 
-    // for (r, a) in received_signature_proofs
-    //     .iter()
-    //     .zip(approval_block_target.received_signatures.iter())
-    // {
-    //     let signature = SimpleSignaturePublicInputsTarget::decode(&r.inner.0.public_inputs);
-    //     SimpleSignaturePublicInputsTarget::connect(&mut builder, &a.0, &signature);
-    // }
-
-    assert_eq!(
-        proposal_block_target.user_transactions.len(),
-        approval_block_target.received_signatures.len()
-    );
-    let mut address_list = vec![];
-    for (user_tx_proof, received_signature) in proposal_block_target
-        .user_transactions
+    for (r, a) in received_signature_proofs
         .iter()
         .zip(approval_block_target.received_signatures.iter())
     {
-        // publish ID list
-        // public_inputs[(5*i)..(5*i+5)]
-        address_list.push(TransactionSenderWithValidityTarget {
-            sender_address: user_tx_proof.sender_address,
-            is_valid: received_signature.1,
-        });
-        // builder.register_public_inputs(&user_tx_proof.sender_address.elements); // sender_address
-        // builder.register_public_input(received_signature.1.target); // not_cancel_flag
+        let signature = SimpleSignaturePublicInputsTarget::decode(&r.inner.0.public_inputs);
+        SimpleSignaturePublicInputsTarget::connect(&mut builder, &a.0, &signature);
     }
 
-    let mut deposit_list = vec![];
-    for proof_t in deposit_block_target.deposit_process_proofs.iter() {
-        let receiver_address_t = proof_t.0.new_key;
-        let contract_address_t = proof_t.1.new_key;
-        let variable_index_t = proof_t.2.new_key;
-        let amount_t = proof_t.2.new_value;
-        // builder.register_public_inputs(&receiver_address_t.elements);
-        // builder.register_public_inputs(&contract_address_t.elements);
-        // builder.register_public_inputs(&variable_index_t.elements);
-        // builder.register_public_input(amount_t.elements[0]);
-        deposit_list.push(DepositInfoTarget {
-            receiver_address: AddressTarget(receiver_address_t),
-            contract_address: AddressTarget(contract_address_t),
-            variable_index: variable_index_t,
-            amount: amount_t.elements[0],
-        });
-    }
+    let address_list = proposal_block_target
+        .user_transactions
+        .iter()
+        .zip(approval_block_target.received_signatures.iter())
+        .map(
+            |(user_tx_proof, received_signature)| TransactionSenderWithValidityTarget {
+                sender_address: user_tx_proof.sender_address,
+                is_valid: received_signature.1,
+            },
+        )
+        .collect::<Vec<_>>();
 
-    // builder.register_public_inputs(&approval_block_target.old_latest_account_root.elements);
-    // builder.register_public_inputs(&approval_block_target.new_latest_account_root.elements);
-
-    // builder.register_public_inputs(&proposal_block_target.old_world_state_root.elements);
-    // builder.register_public_inputs(&proposal_block_target.new_world_state_root.elements);
+    let deposit_list = deposit_block_target
+        .deposit_process_proofs
+        .iter()
+        .map(|proof_t| DepositInfoTarget {
+            receiver_address: AddressTarget(proof_t.0.new_key),
+            contract_address: AddressTarget(proof_t.1.new_key),
+            variable_index: proof_t.2.new_key,
+            amount: proof_t.2.new_value.elements[0],
+        })
+        .collect::<Vec<_>>();
 
     // block header
     let block_number = approval_block_target.current_block_number;
@@ -430,9 +401,6 @@ where
     };
     let block_hash = get_block_hash_target::<F, C::Hasher, D>(&mut builder, &block_header);
 
-    // builder.register_public_inputs(&prev_block_headers_digest.elements); // old_root
-    // builder.register_public_inputs(&block_headers_digest.elements); // new_root
-    // builder.register_public_inputs(&block_hash.elements);
     let public_inputs: ProposalAndApprovalBlockPublicInputsTarget<N_TXS, N_DEPOSITS> =
         ProposalAndApprovalBlockPublicInputsTarget {
             address_list: address_list.try_into().unwrap(),
@@ -452,14 +420,8 @@ where
         proposal_block_target,
         approval_block_target,
         deposit_block_target,
-        // user_tx_proofs: user_tx_proofs
-        //     .try_into()
-        //     .map_err(|_| "user_tx_proofs is too long")
-        //     .unwrap(),
-        // received_signature_proofs: received_signature_proofs
-        //     .try_into()
-        //     .map_err(|_| "received_signatures is too long")
-        //     .unwrap(),
+        user_tx_proofs,
+        received_signature_proofs,
         block_headers_proof,
         prev_block_header,
         block_header,

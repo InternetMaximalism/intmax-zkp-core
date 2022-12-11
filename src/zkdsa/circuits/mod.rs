@@ -1,6 +1,9 @@
 use plonky2::{
     field::{extension::Extendable, types::Field},
-    hash::hash_types::{HashOut, HashOutTarget, RichField},
+    hash::{
+        hash_types::{HashOut, HashOutTarget, RichField},
+        poseidon::PoseidonHash,
+    },
     iop::{
         target::Target,
         witness::{PartialWitness, Witness},
@@ -8,7 +11,7 @@ use plonky2::{
     plonk::{
         circuit_builder::CircuitBuilder,
         circuit_data::{CircuitConfig, CircuitData},
-        config::{GenericConfig, PoseidonGoldilocksConfig},
+        config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
         proof::{Proof, ProofWithPublicInputs},
     },
 };
@@ -49,12 +52,58 @@ pub struct SimpleSignatureCircuit<
     pub targets: SimpleSignatureTarget,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound = "")]
 pub struct SimpleSignaturePublicInputs<F: Field> {
     pub message: HashOut<F>,
     pub public_key: HashOut<F>,
     pub signature: HashOut<F>,
+}
+
+impl<F: RichField> Default for SimpleSignaturePublicInputs<F> {
+    fn default() -> Self {
+        let message = Default::default();
+        let private_key = Default::default();
+        let public_key = PoseidonHash::two_to_one(private_key, private_key);
+        let signature = PoseidonHash::two_to_one(private_key, message);
+
+        Self {
+            message,
+            public_key,
+            signature,
+        }
+    }
+}
+
+#[test]
+fn test_default_simple_signature() {
+    use plonky2::field::goldilocks_field::GoldilocksField;
+
+    type F = GoldilocksField;
+
+    let default_user_transaction = SimpleSignaturePublicInputs::<F>::default();
+
+    let public_key = HashOut {
+        elements: [
+            F::from_canonical_u64(4330397376401421145),
+            F::from_canonical_u64(14124799381142128323),
+            F::from_canonical_u64(8742572140681234676),
+            F::from_canonical_u64(14345658006221440202),
+        ],
+    };
+
+    let signature = HashOut {
+        elements: [
+            F::from_canonical_u64(4330397376401421145),
+            F::from_canonical_u64(14124799381142128323),
+            F::from_canonical_u64(8742572140681234676),
+            F::from_canonical_u64(14345658006221440202),
+        ],
+    };
+
+    assert_eq!(default_user_transaction.message, Default::default());
+    assert_eq!(default_user_transaction.public_key, public_key);
+    assert_eq!(default_user_transaction.signature, signature);
 }
 
 impl<F: Field> SimpleSignaturePublicInputs<F> {

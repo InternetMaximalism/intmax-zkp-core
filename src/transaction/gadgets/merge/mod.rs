@@ -208,7 +208,7 @@ impl<
             assert_eq!(
                 witness.merge_process_proof.new_value,
                 asset_root_with_merge_key
-            ); // XXX: test_merge_proof_by_plonky2
+            ); // XXX: test_merge_proof_by_plonky2, CLI
             assert_eq!(
                 witness.diff_tree_inclusion_proof.0.latest_account_digest,
                 *witness.latest_account_tree_inclusion_proof.root,

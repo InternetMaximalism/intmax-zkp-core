@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut;
 
-use super::gadgets::signature::SimpleSignatureTarget;
+use super::{account::PublicKey, gadgets::signature::SimpleSignatureTarget};
 
 type C = PoseidonGoldilocksConfig;
 type H = <C as GenericConfig<D>>::InnerHasher;
@@ -54,7 +54,7 @@ pub struct SimpleSignatureCircuit<
 #[serde(bound = "")]
 pub struct SimpleSignaturePublicInputs<F: Field> {
     pub message: HashOut<F>,
-    pub public_key: HashOut<F>,
+    pub public_key: PublicKey<F>,
     pub signature: HashOut<F>,
 }
 

@@ -5,7 +5,7 @@ use plonky2::{
     plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
 };
 
-use crate::poseidon::gadgets::poseidon_two_to_one;
+use crate::{poseidon::gadgets::poseidon_hash_pad, zkdsa::signature::sign_message};
 
 use super::{super::account::SecretKey, account::private_key_to_public_key_target};
 
@@ -34,14 +34,17 @@ impl SimpleSignatureTarget {
         }
     }
 
+    /// Returns `(signature, public_key)`
     pub fn set_witness<F: RichField>(
         &self,
         pw: &mut impl Witness<F>,
         private_key: SecretKey<F>,
         message: HashOut<F>,
-    ) {
+    ) -> (HashOut<F>, HashOut<F>) {
         pw.set_hash_target(self.private_key, private_key);
         pw.set_hash_target(self.message, message);
+
+        sign_message(private_key, message)
     }
 }
 
@@ -52,7 +55,8 @@ pub fn sign_message_target<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, 
     message: HashOutTarget,
 ) -> (HashOutTarget, HashOutTarget) {
     let public_key = private_key_to_public_key_target::<F, H, D>(builder, private_key);
-    let signature = poseidon_two_to_one::<F, H, D>(builder, private_key, message);
+    let signature =
+        poseidon_hash_pad::<F, H, D>(builder, &[private_key.elements, message.elements].concat());
 
     (signature, public_key)
 }
@@ -86,13 +90,11 @@ fn test_verify_simple_signature_by_plonky2() {
     builder.register_public_inputs(&target.signature.elements);
     let data = builder.build::<C>();
 
-    dbg!(&data.common);
-
     let private_key = HashOut::<F>::rand();
     let message = HashOut::<F>::rand();
 
     let mut pw = PartialWitness::new();
-    target.set_witness(&mut pw, private_key, message);
+    let (signature, public_key) = target.set_witness(&mut pw, private_key, message);
 
     println!("start proving");
     let start = Instant::now();
@@ -100,7 +102,8 @@ fn test_verify_simple_signature_by_plonky2() {
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-    dbg!(&proof.public_inputs);
+    assert_eq!(&proof.public_inputs[4..8], public_key.elements);
+    assert_eq!(&proof.public_inputs[8..12], signature.elements);
 
     match data.verify(proof) {
         Ok(()) => println!("Ok!"),

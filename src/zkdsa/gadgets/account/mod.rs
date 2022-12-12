@@ -5,7 +5,7 @@ use plonky2::{
     plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
 };
 
-use crate::poseidon::gadgets::poseidon_two_to_one;
+use crate::poseidon::gadgets::poseidon_hash_pad;
 
 use super::super::account::Address;
 
@@ -46,5 +46,5 @@ pub fn private_key_to_public_key_target<
     builder: &mut CircuitBuilder<F, D>,
     private_key: HashOutTarget,
 ) -> HashOutTarget {
-    poseidon_two_to_one::<F, H, D>(builder, private_key, private_key)
+    poseidon_hash_pad::<F, H, D>(builder, &private_key.elements)
 }

@@ -148,7 +148,7 @@ impl<F: Field> Address<F> {
 }
 
 pub fn private_key_to_public_key<F: RichField>(private_key: SecretKey<F>) -> PublicKey<F> {
-    PoseidonHash::two_to_one(private_key, private_key)
+    PoseidonHash::hash_pad(&private_key.elements)
 }
 
 pub fn public_key_to_address<F: RichField>(public_key: PublicKey<F>) -> Address<F> {

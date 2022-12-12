@@ -14,7 +14,7 @@ pub fn sign_message<F: RichField>(
     message: HashOut<F>,
 ) -> (HashOut<F>, PublicKey<F>) {
     let public_key = private_key_to_public_key(private_key);
-    let signature = PoseidonHash::two_to_one(private_key, message);
+    let signature = PoseidonHash::hash_pad(&[private_key.elements, message.elements].concat());
 
     (signature, public_key)
 }

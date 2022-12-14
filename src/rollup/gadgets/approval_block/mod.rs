@@ -809,7 +809,7 @@ fn test_approval_block() {
             let old_block_number = latest_account_tree.get(&user_address.0.into()).unwrap();
             (
                 old_block_number.to_u32(),
-                user_tx_proof.public_inputs.old_user_asset_root,
+                user_tx_proof.public_inputs.middle_user_asset_root,
             )
         } else {
             (

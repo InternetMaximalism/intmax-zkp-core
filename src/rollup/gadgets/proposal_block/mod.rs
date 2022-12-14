@@ -153,7 +153,7 @@ impl<const D: usize, const N_LOG_MAX_USERS: usize, const N_TXS: usize>
             p_t.set_witness(pw, &default_proof);
         }
 
-        assert!(!user_transactions.is_empty());
+        // assert!(!user_transactions.is_empty());
         assert_eq!(user_transactions.len(), world_state_process_proofs.len());
         for ((r_t, enabled_t), r) in self
             .user_transactions

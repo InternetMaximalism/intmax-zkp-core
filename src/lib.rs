@@ -1,3 +1,4 @@
+#[cfg(ecdsa)]
 pub mod ecdsa;
 pub mod merkle_tree;
 pub mod poseidon;

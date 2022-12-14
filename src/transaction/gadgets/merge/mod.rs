@@ -261,7 +261,7 @@ impl<
             new_user_asset_root = witness.merge_process_proof.new_root
         }
 
-        let default_header = BlockHeader::with_tree_depth(N_DEPOSITS, N_LOG_TXS);
+        let default_header = BlockHeader::new(N_LOG_TXS);
         let default_merkle_proof = MerkleProof::new(N_LOG_TXS);
         let default_inclusion_proof = SmtInclusionProof::with_root(Default::default());
         let default_process_proof = SmtProcessProof::with_root(new_user_asset_root);

@@ -89,17 +89,18 @@ impl<F: RichField> Serialize for BlockHeader<F> {
 }
 
 impl<F: RichField> BlockHeader<F> {
-    pub fn with_tree_depth(deposit_tree_depth: usize, transaction_tree_depth: usize) -> Self {
+    pub fn new(log_num_txs_in_block: usize) -> Self {
         let default_hash = HashOut::ZERO;
-        let deposit_digest = get_merkle_proof(&[], 0, deposit_tree_depth).root;
-        let transactions_digest = get_merkle_proof(&[], 0, transaction_tree_depth).root;
+
+        // transaction tree と deposit tree の深さは同じ.
+        let default_merkle_digest = get_merkle_proof(&[], 0, log_num_txs_in_block).root;
 
         Self {
             block_number: 0,
             prev_block_hash: default_hash,
             block_headers_digest: default_hash,
-            transactions_digest: *transactions_digest,
-            deposit_digest: *deposit_digest,
+            transactions_digest: *default_merkle_digest,
+            deposit_digest: *default_merkle_digest,
             proposed_world_state_digest: default_hash,
             approved_world_state_digest: default_hash,
             latest_account_digest: default_hash,

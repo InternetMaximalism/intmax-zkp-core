@@ -206,15 +206,13 @@ impl<
             pw.set_hash_target(*sibling_t, *sibling);
         }
 
-        let default_block_hash = HashOut::from_partial(&[]);
-
         let prev_block_number = prev_block_header.block_number;
 
         // `block_number - 2` までの block header で作られた block headers tree の `block_number - 1` 番目の proof
         // この時点では, leaf の値は 0 である.
         let prev_block_headers_digest = get_merkle_root(
             prev_block_number as usize,
-            default_block_hash.into(),
+            WrappedHashOut::ZERO,
             block_headers_proof_siblings,
         );
         assert_eq!(

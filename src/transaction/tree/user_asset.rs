@@ -33,7 +33,7 @@ pub type UserAssetProcessProof = (
 /// merge key layer, contract address layer, variable index layer の 3 層からなる Layered SMT.
 /// ただし, `LayeredLayeredSparseMerkleTree` と異なり,
 /// contract address layer の root と merge key とを hash したものが merge key layer の leaf hash になる.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct UserAssetTree<D: NodeData<K, I, I>, R: RootData<I>> {
     pub nodes_db: D,
     pub roots_db: R,
@@ -162,7 +162,7 @@ impl<D: NodeData<K, I, I>, R: RootData<I>> UserAssetTree<D, R> {
 
     pub fn find(
         &self,
-        merge_key: K,
+        merge_key: &K,
         contract_address: &K,
         variable_index: &K,
     ) -> anyhow::Result<UserAssetInclusionProof> {
@@ -173,19 +173,19 @@ impl<D: NodeData<K, I, I>, R: RootData<I>> UserAssetTree<D, R> {
             calc_inclusion_proof::<K, I, I, H, D>(&self.nodes_db, &layer0_root, &merge_key)?;
 
         let layer1_root = if result0.found {
-            let asset_root = result0.value;
-            // asset_root の子ノードは中間ノードとして記録されている.
+            let asset_root_with_merge = result0.value;
+            // asset_root_with_merge の子ノードは中間ノードとして記録されている.
             let layer0_children = self
                 .nodes_db
-                .get(&asset_root)
+                .get(&asset_root_with_merge)
                 .map_err(|err| anyhow::anyhow!("{:?}", err))?;
             match layer0_children {
-                Some(Node::Internal(layer1_root, found_merge_key)) => {
-                    if found_merge_key != merge_key {
+                Some(Node::Internal(asset_root, found_merge_key)) => {
+                    if found_merge_key.ne(merge_key) {
                         anyhow::bail!("fatal error: merge key is invalid");
                     }
 
-                    layer1_root
+                    asset_root
                 }
                 _ => {
                     anyhow::bail!("searching node is not found");
@@ -207,5 +207,38 @@ impl<D: NodeData<K, I, I>, R: RootData<I>> UserAssetTree<D, R> {
             calc_inclusion_proof::<K, I, I, H, D>(&self.nodes_db, &layer2_root, variable_index)?;
 
         Ok((result0, result1, result2))
+    }
+
+    pub fn get_asset_root(&self, merge_key: &K) -> anyhow::Result<I> {
+        let layer0_root = self
+            .get_root()
+            .map_err(|err| anyhow::anyhow!("{:?}", err))?;
+        let result0 =
+            calc_inclusion_proof::<K, I, I, H, D>(&self.nodes_db, &layer0_root, &merge_key)?;
+
+        let asset_root = if result0.found {
+            let asset_root_with_merge = result0.value;
+            // asset_root_with_merge の子ノードは中間ノードとして記録されている.
+            let layer0_children = self
+                .nodes_db
+                .get(&asset_root_with_merge)
+                .map_err(|err| anyhow::anyhow!("{:?}", err))?;
+            match layer0_children {
+                Some(Node::Internal(asset_root, found_merge_key)) => {
+                    if found_merge_key.ne(merge_key) {
+                        anyhow::bail!("fatal error: merge key is invalid");
+                    }
+
+                    asset_root
+                }
+                _ => {
+                    anyhow::bail!("searching node is not found");
+                }
+            }
+        } else {
+            I::default()
+        };
+
+        Ok(asset_root)
     }
 }

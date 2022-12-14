@@ -170,7 +170,7 @@ impl<D: NodeData<K, I, I>, R: RootData<I>> UserAssetTree<D, R> {
             .get_root()
             .map_err(|err| anyhow::anyhow!("{:?}", err))?;
         let result0 =
-            calc_inclusion_proof::<K, I, I, H, D>(&self.nodes_db, &layer0_root, &merge_key)?;
+            calc_inclusion_proof::<K, I, I, H, D>(&self.nodes_db, &layer0_root, merge_key)?;
 
         let layer1_root = if result0.found {
             let asset_root_with_merge = result0.value;
@@ -214,7 +214,7 @@ impl<D: NodeData<K, I, I>, R: RootData<I>> UserAssetTree<D, R> {
             .get_root()
             .map_err(|err| anyhow::anyhow!("{:?}", err))?;
         let result0 =
-            calc_inclusion_proof::<K, I, I, H, D>(&self.nodes_db, &layer0_root, &merge_key)?;
+            calc_inclusion_proof::<K, I, I, H, D>(&self.nodes_db, &layer0_root, merge_key)?;
 
         let asset_root = if result0.found {
             let asset_root_with_merge = result0.value;

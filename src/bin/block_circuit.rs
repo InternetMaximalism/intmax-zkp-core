@@ -310,7 +310,7 @@ fn main() {
 
     match merge_and_purge_circuit.verify(sender1_tx_proof.clone()) {
         Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
+        Err(err) => println!("{err}"),
     }
 
     let sender2_nonce = WrappedHashOut::from(HashOut {
@@ -343,7 +343,7 @@ fn main() {
 
     match merge_and_purge_circuit.verify(sender2_tx_proof.clone()) {
         Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
+        Err(err) => println!("{err}"),
     }
 
     let mut pw = PartialWitness::new();
@@ -559,7 +559,7 @@ fn main() {
 
     match block_circuit.verify(block_proof.clone()) {
         Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
+        Err(err) => println!("{err}"),
     }
 
     let config = CircuitConfig::standard_recursion_config();
@@ -579,6 +579,6 @@ fn main() {
 
     match batch_block_circuit_data.verify(batch_block_proof) {
         Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
+        Err(err) => println!("{err}"),
     }
 }

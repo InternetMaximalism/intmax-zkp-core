@@ -91,7 +91,7 @@ fn test_verify_simple_signature_by_plonky2() {
     builder.register_public_inputs(&target.signature.elements);
     let data = builder.build::<C>();
 
-    dbg!(&data.common);
+    // dbg!(&data.common);
 
     let private_key = HashOut::<F>::rand();
     let message = HashOut::<F>::rand();
@@ -105,7 +105,7 @@ fn test_verify_simple_signature_by_plonky2() {
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-    dbg!(&proof.public_inputs);
+    // dbg!(&proof.public_inputs);
 
     match data.verify(proof) {
         Ok(()) => println!("Ok!"),

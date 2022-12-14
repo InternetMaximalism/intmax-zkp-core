@@ -62,7 +62,7 @@ fn test_calc_node_hash() {
     builder.register_public_inputs(&out3_t.elements);
     let data = builder.build::<C>();
 
-    dbg!(&data.common);
+    // dbg!(&data.common);
 
     let key = GoldilocksHashOut::from_u128(1);
     let value = GoldilocksHashOut::from_u128(2);
@@ -286,7 +286,7 @@ fn test_logical_nor() {
     builder.connect(result4.target, constant_true.target);
     let data = builder.build::<C>();
 
-    dbg!(&data.common);
+    // dbg!(&data.common);
 
     let pw = PartialWitness::new();
     let proof = data.prove(pw).unwrap();

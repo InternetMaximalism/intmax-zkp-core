@@ -559,17 +559,20 @@ fn test_approval_block() {
 
     let default_hash = HashOut::ZERO;
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
-    let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
-    let prev_block_header = BlockHeader {
-        block_number: 1,
-        prev_block_hash: default_hash,
-        block_headers_digest: default_hash,
-        transactions_digest: *default_merkle_root,
-        deposit_digest: *merge_inclusion_proof1.root,
-        proposed_world_state_digest: default_hash,
-        approved_world_state_digest: default_hash,
-        latest_account_digest: default_hash,
-    };
+    // let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
+    let mut prev_block_header = BlockHeader::new(N_LOG_TXS);
+    prev_block_header.block_number = 1;
+    prev_block_header.deposit_digest = *merge_inclusion_proof1.root;
+    // let prev_block_header = BlockHeader {
+    //     block_number: 1,
+    //     prev_block_hash: default_hash,
+    //     block_headers_digest: default_hash,
+    //     transactions_digest: *default_merkle_root,
+    //     deposit_digest: *merge_inclusion_proof1.root,
+    //     proposed_world_state_digest: default_hash,
+    //     approved_world_state_digest: default_hash,
+    //     latest_account_digest: default_hash,
+    // };
 
     let block_hash = get_block_hash(&prev_block_header);
 
@@ -635,8 +638,6 @@ fn test_approval_block() {
     //     serde_json::to_string(&sender2_output_witness).unwrap()
     // );
 
-    let sender1_nonce: WrappedHashOut<F> = WrappedHashOut::rand();
-    dbg!(sender1_nonce);
     let sender1_nonce = WrappedHashOut::from(HashOut {
         elements: [
             F::from_canonical_u64(7823975322825286183),
@@ -806,7 +807,7 @@ fn test_approval_block() {
             let old_block_number = latest_account_tree.get(&user_address.0.into()).unwrap();
             (
                 old_block_number.to_u32(),
-                user_tx_proof.public_inputs.old_user_asset_root,
+                user_tx_proof.public_inputs.middle_user_asset_root,
             )
         } else {
             (

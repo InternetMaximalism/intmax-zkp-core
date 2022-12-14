@@ -485,7 +485,7 @@ fn main() {
             let old_block_number = latest_account_tree.get(&user_address.0.into()).unwrap();
             (
                 old_block_number.to_u32(),
-                user_transaction.old_user_asset_root,
+                user_transaction.middle_user_asset_root,
             )
         } else {
             (block_number, user_transaction.new_user_asset_root)

@@ -210,7 +210,6 @@ fn test_verify_process_proof2_by_plonky2() {
     dbg!(&witness);
     witness.check();
 
-    dbg!(&witness);
     let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
     // builder.debug_gate_row = Some(83);

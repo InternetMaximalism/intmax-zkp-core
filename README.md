@@ -6,12 +6,11 @@ https://ethresear.ch/t/intmax-trustless-and-near-zero-gas-cost-token-transfer-pa
 ## Setup
 
 ```sh
-rustup override set nightly
+cargo --version # 1.68.0-nightly
 ```
 
 ## Testing
 
 ```sh
-cd rollup
 cargo test --release
 ```

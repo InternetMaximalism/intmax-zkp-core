@@ -328,8 +328,6 @@ fn test_verify_simple_signature_by_plonky2() {
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-    dbg!(&proof.public_inputs, account);
-
     assert_eq!(account.public_key, proof.public_inputs.public_key);
 
     match simple_signature_circuit.verify(proof) {

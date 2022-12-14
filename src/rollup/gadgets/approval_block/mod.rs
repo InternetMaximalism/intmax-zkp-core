@@ -638,8 +638,6 @@ fn test_approval_block() {
     //     serde_json::to_string(&sender2_output_witness).unwrap()
     // );
 
-    let sender1_nonce: WrappedHashOut<F> = WrappedHashOut::rand();
-    dbg!(sender1_nonce);
     let sender1_nonce = WrappedHashOut::from(HashOut {
         elements: [
             F::from_canonical_u64(7823975322825286183),

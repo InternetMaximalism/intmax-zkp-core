@@ -74,6 +74,8 @@ fn test_serialize_merkle_proof() {
         siblings: vec![GoldilocksHashOut::from_u32(4)],
         is_old0: false,
     };
-    let result = serde_json::to_string(&merkle_proof).unwrap();
-    dbg!(result);
+    let encoded_merkle_proof = serde_json::to_string(&merkle_proof).unwrap();
+    let decoded_merkle_proof: SparseMerkleInclusionProof<_, _, _> =
+        serde_json::from_str(&encoded_merkle_proof).unwrap();
+    assert_eq!(decoded_merkle_proof, merkle_proof);
 }

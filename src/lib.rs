@@ -1,5 +1,3 @@
-#![allow(clippy::uninlined_format_args)]
-
 #[cfg(ecdsa)]
 pub mod ecdsa;
 pub mod merkle_tree;

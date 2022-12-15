@@ -1,4 +1,4 @@
-use num::bigint::BigUint;
+use num::BigUint;
 use plonky2::{
     field::{
         goldilocks_field::GoldilocksField,

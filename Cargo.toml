@@ -9,16 +9,14 @@ edition = "2021"
 anyhow = "1.0"
 hex = { version = "0.4", features = ["serde"] }
 num = "0.4"
-num-bigint = "0.4.3"
-num-traits = "0.2"
 plonky2 = { git = "https://github.com/mir-protocol/plonky2", rev = "d527073416dd8cbc04457b8cb856b2fec3fa0e6c" }
-plonky2_ecdsa = { git = "https://github.com/mir-protocol/plonky2", rev = "d527073416dd8cbc04457b8cb856b2fec3fa0e6c" }
+plonky2_ecdsa = { git = "https://github.com/mir-protocol/plonky2", rev = "d527073416dd8cbc04457b8cb856b2fec3fa0e6c", optional = true }
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
-serde-hex = "0.1.0"
+serde-hex = "0.1"
 serde_json = "1.0"
 
 [features]
-ecdsa = []
+ecdsa = ["dep:plonky2_ecdsa"]
 
 [lib]

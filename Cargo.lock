@@ -180,8 +180,6 @@ dependencies = [
  "anyhow",
  "hex",
  "num",
- "num-bigint",
- "num-traits",
  "plonky2",
  "plonky2_ecdsa",
  "rand",

@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, RwLock},
 };
 
 use anyhow::Ok;
@@ -58,14 +58,14 @@ type I = GoldilocksHashOut;
 #[allow(clippy::type_complexity)]
 #[derive(Clone, Debug, Default)]
 pub struct NodeDataMemory {
-    pub nodes: Arc<Mutex<HashMap<K, Node<K, V, I>>>>,
+    pub nodes: Arc<RwLock<HashMap<K, Node<K, V, I>>>>,
 }
 
 impl NodeData<K, V, I> for NodeDataMemory {
     type Error = anyhow::Error;
 
     fn get(&self, key: &I) -> Result<Option<Node<K, V, I>>, Self::Error> {
-        if let Some(some_data) = self.nodes.lock().expect("mutex poison error").get(key) {
+        if let Some(some_data) = self.nodes.read().expect("mutex poison error").get(key) {
             Ok(Some(some_data.clone()))
         } else {
             Ok(None)
@@ -75,7 +75,7 @@ impl NodeData<K, V, I> for NodeDataMemory {
     fn multi_insert(&mut self, insert_entries: Vec<(I, Node<K, V, I>)>) -> Result<(), Self::Error> {
         for (key, value) in insert_entries {
             self.nodes
-                .lock()
+                .write()
                 .expect("mutex poison error")
                 .insert(key, value);
         }
@@ -95,14 +95,14 @@ impl NodeData<K, V, I> for NodeDataMemory {
 
 #[derive(Clone, Debug)]
 pub struct RootDataMemory {
-    pub roots: Arc<Mutex<Vec<I>>>,
+    pub roots: Arc<RwLock<Vec<I>>>,
 }
 
 impl Default for RootDataMemory {
     fn default() -> Self {
         let data = vec![Wrapper(HashOut::ZERO)];
         Self {
-            roots: Arc::new(Mutex::new(data)),
+            roots: Arc::new(RwLock::new(data)),
         }
     }
 }
@@ -111,7 +111,7 @@ impl From<I> for RootDataMemory {
     fn from(value: I) -> Self {
         let data = vec![value];
         Self {
-            roots: Arc::new(Mutex::new(data)),
+            roots: Arc::new(RwLock::new(data)),
         }
     }
 }
@@ -120,13 +120,13 @@ impl RootData<I> for RootDataMemory {
     type Error = anyhow::Error;
 
     fn get(&self) -> Result<I, Self::Error> {
-        let result = *self.roots.lock().unwrap().last().unwrap();
+        let result = *self.roots.read().unwrap().last().unwrap();
 
         Ok(result)
     }
 
     fn set(&mut self, root: I) -> Result<(), Self::Error> {
-        self.roots.lock().unwrap().push(root);
+        self.roots.write().unwrap().push(root);
 
         Ok(())
     }

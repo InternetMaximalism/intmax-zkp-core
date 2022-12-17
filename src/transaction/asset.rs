@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     merkle_tree::tree::MerkleProof,
-    rollup::gadgets::deposit_block::VariableIndex,
+    rollup::gadgets::deposit_block::{DepositInfo, VariableIndex},
     sparse_merkle_tree::{
         gadgets::verify::verify_smt::SmtInclusionProof, goldilocks_poseidon::WrappedHashOut,
     },
@@ -11,7 +11,7 @@ use crate::{
     zkdsa::account::Address,
 };
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TokenKind<F: RichField> {
     #[serde(bound(
         serialize = "Address<F>: Serialize",
@@ -41,7 +41,7 @@ fn test_serde_token_kind() {
     assert_eq!(decoded_kind, kind);
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Asset<F: RichField> {
     #[serde(bound(
         serialize = "TokenKind<F>: Serialize",
@@ -49,6 +49,71 @@ pub struct Asset<F: RichField> {
     ))]
     pub kind: TokenKind<F>,
     pub amount: u64,
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContributedAsset<F: RichField> {
+    #[serde(bound(
+        serialize = "Address<F>: Serialize",
+        deserialize = "Address<F>: Deserialize<'de>"
+    ))]
+    pub receiver_address: Address<F>,
+    #[serde(flatten)]
+    #[serde(bound(
+        serialize = "TokenKind<F>: Serialize",
+        deserialize = "TokenKind<F>: Deserialize<'de>"
+    ))]
+    pub kind: TokenKind<F>,
+    pub amount: u64,
+}
+
+impl<F: RichField> From<ContributedAsset<F>> for DepositInfo<F> {
+    fn from(value: ContributedAsset<F>) -> Self {
+        Self {
+            receiver_address: value.receiver_address,
+            contract_address: value.kind.contract_address,
+            variable_index: value.kind.variable_index,
+            amount: F::from_canonical_u64(value.amount),
+        }
+    }
+}
+
+impl<F: RichField> From<DepositInfo<F>> for ContributedAsset<F> {
+    fn from(value: DepositInfo<F>) -> Self {
+        Self {
+            receiver_address: value.receiver_address,
+            kind: TokenKind {
+                contract_address: value.contract_address,
+                variable_index: value.variable_index,
+            },
+            amount: value.amount.to_canonical_u64(),
+        }
+    }
+}
+
+#[test]
+fn test_serde_owned_asset() {
+    use plonky2::field::goldilocks_field::GoldilocksField;
+
+    let owned_asset: ContributedAsset<GoldilocksField> = ContributedAsset {
+        receiver_address: Address::rand(),
+        kind: TokenKind {
+            contract_address: Address::rand(),
+            variable_index: 1u8.into(),
+        },
+        amount: 10,
+    };
+
+    let encoded_owned_asset = serde_json::to_string(&owned_asset).unwrap();
+    dbg!(&encoded_owned_asset);
+    let decoded_owned_asset: ContributedAsset<GoldilocksField> =
+        serde_json::from_str(&encoded_owned_asset).unwrap();
+    assert_eq!(decoded_owned_asset, owned_asset);
+
+    // ContributedAsset は DepositInfo と互換性がある.
+    let decoded_deposit_info: DepositInfo<GoldilocksField> =
+        serde_json::from_str(&encoded_owned_asset).unwrap();
+    assert_eq!(decoded_deposit_info, owned_asset.into());
 }
 
 #[allow(clippy::type_complexity)]

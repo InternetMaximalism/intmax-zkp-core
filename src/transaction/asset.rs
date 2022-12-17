@@ -1,3 +1,4 @@
+use core::str::FromStr;
 use plonky2::hash::hash_types::RichField;
 use serde::{Deserialize, Serialize};
 
@@ -67,6 +68,22 @@ pub struct ContributedAsset<F: RichField> {
     pub amount: u64,
 }
 
+impl<F: RichField> FromStr for ContributedAsset<F> {
+    type Err = serde_json::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        serde_json::from_str(s)
+    }
+}
+
+impl<F: RichField> core::fmt::Display for ContributedAsset<F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = serde_json::to_string(self).unwrap();
+
+        write!(f, "{}", s)
+    }
+}
+
 impl<F: RichField> From<ContributedAsset<F>> for DepositInfo<F> {
     fn from(value: ContributedAsset<F>) -> Self {
         Self {
@@ -105,7 +122,6 @@ fn test_serde_owned_asset() {
     };
 
     let encoded_owned_asset = serde_json::to_string(&owned_asset).unwrap();
-    dbg!(&encoded_owned_asset);
     let decoded_owned_asset: ContributedAsset<GoldilocksField> =
         serde_json::from_str(&encoded_owned_asset).unwrap();
     assert_eq!(decoded_owned_asset, owned_asset);
@@ -114,6 +130,12 @@ fn test_serde_owned_asset() {
     let decoded_deposit_info: DepositInfo<GoldilocksField> =
         serde_json::from_str(&encoded_owned_asset).unwrap();
     assert_eq!(decoded_deposit_info, owned_asset.into());
+
+    let encoded_owned_asset = owned_asset.to_string();
+    dbg!(&encoded_owned_asset);
+    let decoded_owned_asset: ContributedAsset<GoldilocksField> =
+        ContributedAsset::from_str(&encoded_owned_asset).unwrap();
+    assert_eq!(decoded_owned_asset, owned_asset);
 }
 
 #[allow(clippy::type_complexity)]

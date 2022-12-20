@@ -102,6 +102,9 @@ impl<'de, F: RichField> Deserialize<'de> for WrappedHashOut<F> {
     {
         let raw = SerializableHashOut::deserialize(deserializer)?;
         let mut bytes = raw.0;
+        if bytes.len() > 32 {
+            return Err(serde::de::Error::custom("too long hexadecimal sequence"));
+        }
         bytes.reverse(); // little endian
         bytes.resize(32, 0);
 
@@ -117,7 +120,8 @@ fn test_serde_goldilocks_hashout() {
         encoded_value,
         "\"0x0000000000000000000000000000000000000000000000000000000000000001\""
     );
-    let decoded_value: GoldilocksHashOut = serde_json::from_str("\"0x01\"").unwrap();
+    let encoded_value = "\"0x01\"";
+    let decoded_value: GoldilocksHashOut = serde_json::from_str(encoded_value).unwrap();
     assert_eq!(decoded_value, value);
 
     let value = GoldilocksHashOut::rand();

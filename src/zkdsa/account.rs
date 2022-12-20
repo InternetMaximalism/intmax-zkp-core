@@ -86,6 +86,9 @@ impl<'de, F: RichField> Deserialize<'de> for Address<F> {
     {
         let raw = SerializableAddress::deserialize(deserializer)?;
         let mut bytes = raw.0;
+        if bytes.len() > 32 {
+            return Err(serde::de::Error::custom("too long hexadecimal sequence"));
+        }
         bytes.reverse(); // little endian
         bytes.resize(32, 0);
 
@@ -104,7 +107,8 @@ fn test_serialize_address() {
         encoded_value,
         "\"0x0000000000000000000000000000000000000000000000000000000000000001\""
     );
-    let decoded_value: Address<GoldilocksField> = serde_json::from_str("\"0x01\"").unwrap();
+    let encoded_value = "\"0x01\"";
+    let decoded_value: Address<GoldilocksField> = serde_json::from_str(encoded_value).unwrap();
     assert_eq!(decoded_value, value);
 
     let value: Address<GoldilocksField> = Address::rand();

@@ -49,6 +49,10 @@ impl<F: RichField> VariableIndex<F> {
 
         value.into()
     }
+
+    pub fn write(&self, inputs: &mut Vec<F>) {
+        inputs.append(&mut self.to_hash_out().elements.to_vec());
+    }
 }
 
 impl<F: RichField> std::fmt::Display for VariableIndex<F> {
@@ -120,7 +124,7 @@ fn test_serde_variable_index() {
     assert_eq!(decoded, value);
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DepositInfo<F: Field> {
     pub receiver_address: Address<F>,
     pub contract_address: Address<F>,

@@ -152,7 +152,7 @@ fn test_recursion_simple_signature() {
     let message = HashOut::rand();
 
     let config = CircuitConfig::standard_recursion_config();
-    let zkdsa_circuit = make_simple_signature_circuit(config);
+    let zkdsa_circuit = make_simple_signature_circuit::<F, C, D>(config);
 
     let mut pw = PartialWitness::new();
     zkdsa_circuit
@@ -211,7 +211,7 @@ fn test_recursion_default_simple_signature() {
     type F = <C as GenericConfig<D>>::F;
 
     let config = CircuitConfig::standard_recursion_config();
-    let zkdsa_circuit = make_simple_signature_circuit(config);
+    let zkdsa_circuit = make_simple_signature_circuit::<F, C, D>(config);
 
     let mut pw = PartialWitness::new();
     zkdsa_circuit

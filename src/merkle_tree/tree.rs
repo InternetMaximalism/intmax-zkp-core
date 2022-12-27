@@ -42,15 +42,16 @@ impl<F: RichField> MerkleProof<F> {
 }
 
 /// `2^depth` 個の leaf からなる Merkle tree に `leaves` で与えられた leaf を左から詰め,
-/// 残りは 0 で埋める. Merkle root と与えられた `index` に関する siblings を返す.
+/// 残りは `zero` で埋める. Merkle root と与えられた `index` に関する siblings を返す.
 /// ただし, siblings は root から遠い順に並べる.
 /// leaves に 1 つも leaf を与えなかったり, leaves の個数が 2 のべきでなかった場合,
-/// もとの個数より小さくない最小の 2 のべきになるように 0 を埋める.
+/// もとの個数より小さくない最小の 2 のべきになるように `zero` を埋める.
 /// Returns `(siblings, root)`
-pub fn get_merkle_proof<F: RichField>(
+pub fn get_merkle_proof_with_zero<F: RichField>(
     leaves: &[WrappedHashOut<F>],
     index: usize,
     depth: usize,
+    zero: WrappedHashOut<F>,
 ) -> MerkleProof<F> {
     let mut nodes = if leaves.is_empty() {
         vec![Default::default()]
@@ -62,9 +63,9 @@ pub fn get_merkle_proof<F: RichField>(
     let num_leaves = nodes.len().next_power_of_two();
     let log_num_leaves = log2_ceil(num_leaves) as usize;
     let value = nodes[index];
-    nodes.resize(num_leaves, WrappedHashOut::ZERO);
+    nodes.resize(num_leaves, zero);
 
-    let mut siblings = vec![WrappedHashOut::ZERO]; // initialize by zero hashes
+    let mut siblings = vec![zero]; // initialize by zero hashes
     for _ in 1..depth {
         let last_zero: WrappedHashOut<F> = *siblings.last().unwrap();
         siblings.push(PoseidonHash::two_to_one(*last_zero, *last_zero).into());
@@ -96,6 +97,14 @@ pub fn get_merkle_proof<F: RichField>(
         siblings,
         root,
     }
+}
+
+pub fn get_merkle_proof<F: RichField>(
+    leaves: &[WrappedHashOut<F>],
+    index: usize,
+    depth: usize,
+) -> MerkleProof<F> {
+    get_merkle_proof_with_zero(leaves, index, depth, WrappedHashOut::ZERO)
 }
 
 /// 与えられた leaf `(index, value)` と `siblings` から Merkle root を計算する.

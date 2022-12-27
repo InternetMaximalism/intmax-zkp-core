@@ -8,7 +8,7 @@ use plonky2::{
 use crate::{
     merkle_tree::{
         gadgets::get_merkle_root_target_from_leaves,
-        tree::{get_merkle_proof, log2_ceil},
+        tree::{get_merkle_proof_with_zero, log2_ceil},
     },
     sparse_merkle_tree::{
         gadgets::{
@@ -180,9 +180,13 @@ impl<const D: usize, const N_LOG_MAX_USERS: usize, const N_TXS: usize>
             transaction_hashes.push(u.tx_hash);
         }
 
+        let default_tx_hash = MergeAndPurgeTransitionPublicInputs::default().tx_hash;
+
         let n_log_txs = log2_ceil(N_TXS);
         assert_eq!(2usize.pow(n_log_txs), N_TXS);
-        let transactions_digest = get_merkle_proof(&transaction_hashes, 0, n_log_txs as usize).root;
+        let transactions_digest =
+            get_merkle_proof_with_zero(&transaction_hashes, 0, n_log_txs as usize, default_tx_hash)
+                .root;
 
         (transactions_digest, new_world_state_root)
     }
@@ -448,7 +452,9 @@ fn test_proposal_block() {
     let merge_inclusion_proof1 = get_merkle_proof(&[deposit_tx_hash], 0, N_LOG_TXS);
 
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
-    let default_transactions_digest = get_merkle_proof(&[], 0, N_LOG_TXS).root;
+    let default_tx_hash = MergeAndPurgeTransitionPublicInputs::default().tx_hash;
+    let default_transactions_digest =
+        get_merkle_proof_with_zero(&[], 0, N_LOG_TXS, default_tx_hash).root;
     let prev_block_number = 1u32;
     let mut block_headers: Vec<WrappedHashOut<F>> =
         vec![WrappedHashOut::ZERO; prev_block_number as usize];

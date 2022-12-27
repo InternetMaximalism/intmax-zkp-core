@@ -144,6 +144,12 @@ fn test_serde_simple_signature_public_inputs() {
     let decoded_public_inputs: SimpleSignaturePublicInputs<F> =
         serde_json::from_str(encoded_public_inputs).unwrap();
     assert_eq!(decoded_public_inputs, public_inputs);
+
+    let public_inputs: SerializableSimpleSignaturePublicInputs<F> = public_inputs.into();
+    let encoded_public_inputs = "{\"message\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"public_key\":\"0xc71603f33a1144ca7953db0ab48808f4c4055e3364a246c33c18a9786cb0b359\",\"signature\":\"0xc71603f33a1144ca7953db0ab48808f4c4055e3364a246c33c18a9786cb0b359\"}";
+    let decoded_public_inputs: SerializableSimpleSignaturePublicInputs<F> =
+        serde_json::from_str(encoded_public_inputs).unwrap();
+    assert_eq!(decoded_public_inputs, public_inputs);
 }
 
 impl<F: Field> SimpleSignaturePublicInputs<F> {

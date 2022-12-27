@@ -972,20 +972,11 @@ where
     //     unimplemented!("use set_witness_and_prove instead");
     // }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn set_witness_and_prove(
         &self,
         input: &BlockDetail<F, C, D>,
-        // user_tx_proofs: &[MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>],
         default_user_tx_proof: &MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>,
-        // deposit_process_proofs: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
-        // world_state_process_proofs: &[SmtProcessProof<F>],
-        // world_state_revert_proofs: &[SmtProcessProof<F>],
-        // received_signature_proofs: &[Option<SimpleSignatureProofWithPublicInputs<F, C, D>>],
         default_simple_signature_proof: &SimpleSignatureProofWithPublicInputs<F, C, D>,
-        // latest_account_process_proofs: &[SmtProcessProof<F>],
-        // block_headers_proof_siblings: &[WrappedHashOut<F>],
-        // prev_block_header: BlockHeader<F>,
     ) -> anyhow::Result<BlockProductionProofWithPublicInputs<F, C, D, N_TXS, N_DEPOSITS>> {
         let mut pw = PartialWitness::new();
         let public_inputs = self.targets.set_witness::<F, C>(

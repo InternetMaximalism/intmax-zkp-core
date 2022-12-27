@@ -14,7 +14,7 @@ use plonky2::{
 use intmax_zkp_core::{
     merkle_tree::tree::{get_merkle_proof, MerkleProof},
     rollup::{
-        circuits::make_block_proof_circuit,
+        circuits::{make_block_proof_circuit, BlockDetail},
         gadgets::{batch::BlockBatchTarget, deposit_block::DepositInfo},
     },
     sparse_merkle_tree::{
@@ -49,10 +49,10 @@ fn main() {
     const N_LOG_RECIPIENTS: usize = 3;
     const N_LOG_CONTRACTS: usize = 3;
     const N_LOG_VARIABLES: usize = 3;
-    const N_DEPOSITS: usize = 2;
     const N_DIFFS: usize = 2;
     const N_MERGES: usize = 2;
     const N_TXS: usize = 2usize.pow(N_LOG_TXS as u32);
+    const N_DEPOSITS: usize = N_TXS;
     const N_BLOCKS: usize = 2;
 
     let aggregator_nodes_db = NodeDataMemory::default();
@@ -308,10 +308,9 @@ fn main() {
 
     // dbg!(&sender1_tx_proof.public_inputs);
 
-    match merge_and_purge_circuit.verify(sender1_tx_proof.clone()) {
-        Ok(()) => println!("Ok!"),
-        Err(err) => println!("{err}"),
-    }
+    merge_and_purge_circuit
+        .verify(sender1_tx_proof.clone())
+        .unwrap();
 
     let sender2_nonce = WrappedHashOut::from(HashOut {
         elements: [
@@ -341,10 +340,9 @@ fn main() {
 
     // dbg!(&sender2_tx_proof.public_inputs);
 
-    match merge_and_purge_circuit.verify(sender2_tx_proof.clone()) {
-        Ok(()) => println!("Ok!"),
-        Err(err) => println!("{err}"),
-    }
+    merge_and_purge_circuit
+        .verify(sender2_tx_proof.clone())
+        .unwrap();
 
     let mut pw = PartialWitness::new();
     merge_and_purge_circuit.targets.set_witness(
@@ -471,7 +469,7 @@ fn main() {
     // deposit してそれを消費して old: 0 -> middle: non-zero -> new: 0 となった場合は,
     // u.enabled かつ w.fnc == NoOp だが revert ではない.
     let mut world_state_revert_proofs = vec![];
-    let mut latest_account_tree_process_proofs = vec![];
+    let mut latest_account_process_proofs = vec![];
     let user_transactions = user_tx_proofs
         .iter()
         .cloned()
@@ -490,7 +488,7 @@ fn main() {
         } else {
             (block_number, user_transaction.new_user_asset_root)
         };
-        latest_account_tree_process_proofs.push(
+        latest_account_process_proofs.push(
             latest_account_tree
                 .set(
                     user_address.0.into(),
@@ -535,32 +533,30 @@ fn main() {
         })
         .collect::<Vec<_>>();
 
-    let mut pw = PartialWitness::new();
-    block_circuit.targets.set_witness::<F, C>(
-        &mut pw,
+    let input = BlockDetail {
         block_number,
-        &user_tx_proofs,
-        &default_user_tx_proof,
-        &deposit_process_proofs,
-        &world_state_process_proofs,
-        &world_state_revert_proofs,
-        &received_signature_proofs,
-        &default_simple_signature_proof,
-        &latest_account_tree_process_proofs,
-        &block_headers_proof_siblings,
+        user_tx_proofs,
+        deposit_process_proofs,
+        world_state_process_proofs,
+        world_state_revert_proofs,
+        received_signature_proofs,
+        latest_account_process_proofs,
+        block_headers_proof_siblings,
         prev_block_header,
-    );
-
+    };
     println!("start proving: block_proof");
     let start = Instant::now();
-    let block_proof = block_circuit.prove(pw).unwrap();
+    let block_proof = block_circuit
+        .set_witness_and_prove(
+            &input,
+            &default_user_tx_proof,
+            &default_simple_signature_proof,
+        )
+        .expect("fail to set witness or generate proof");
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-    match block_circuit.verify(block_proof.clone()) {
-        Ok(()) => println!("Ok!"),
-        Err(err) => println!("{err}"),
-    }
+    block_circuit.verify(block_proof.clone()).unwrap();
 
     let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
@@ -577,8 +573,5 @@ fn main() {
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-    match batch_block_circuit_data.verify(batch_block_proof) {
-        Ok(()) => println!("Ok!"),
-        Err(err) => println!("{err}"),
-    }
+    batch_block_circuit_data.verify(batch_block_proof).unwrap();
 }

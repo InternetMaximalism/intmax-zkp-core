@@ -10,7 +10,7 @@ use crate::{
     zkdsa::{account::Address, circuits::SimpleSignatureProofWithPublicInputs},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound(
     serialize = "Address<F>: Serialize",
     deserialize = "Address<F>: Deserialize<'de>"

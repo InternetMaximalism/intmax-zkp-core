@@ -1,6 +1,9 @@
 use plonky2::{
     field::extension::Extendable,
-    hash::hash_types::{HashOut, HashOutTarget, RichField},
+    hash::{
+        hash_types::{HashOut, HashOutTarget, RichField},
+        poseidon::PoseidonHash,
+    },
     iop::{
         target::{BoolTarget, Target},
         witness::{PartialWitness, Witness},
@@ -8,13 +11,16 @@ use plonky2::{
     plonk::{
         circuit_builder::CircuitBuilder,
         circuit_data::{CircuitConfig, CircuitData},
-        config::{AlgebraicHasher, GenericConfig},
+        config::{AlgebraicHasher, GenericConfig, Hasher},
         proof::{Proof, ProofWithPublicInputs},
     },
 };
 
 use crate::{
-    merkle_tree::{gadgets::MerkleProofTarget, tree::get_merkle_root},
+    merkle_tree::{
+        gadgets::MerkleProofTarget,
+        tree::{get_merkle_proof, get_merkle_root},
+    },
     recursion::gadgets::RecursiveProofTarget,
     rollup::gadgets::{
         approval_block::ApprovalBlockProductionTarget,
@@ -30,7 +36,8 @@ use crate::{
     transaction::{
         block_header::{get_block_hash, BlockHeader},
         circuits::{
-            MergeAndPurgeTransitionCircuit, MergeAndPurgeTransitionProofWithPublicInputs,
+            make_user_proof_circuit, MergeAndPurgeTransition, MergeAndPurgeTransitionCircuit,
+            MergeAndPurgeTransitionProofWithPublicInputs,
             MergeAndPurgeTransitionPublicInputsTarget,
         },
         gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
@@ -38,8 +45,8 @@ use crate::{
     zkdsa::{
         account::Address,
         circuits::{
-            SimpleSignatureCircuit, SimpleSignatureProofWithPublicInputs,
-            SimpleSignaturePublicInputsTarget,
+            make_simple_signature_circuit, SimpleSignatureCircuit,
+            SimpleSignatureProofWithPublicInputs, SimpleSignaturePublicInputsTarget,
         },
         gadgets::account::AddressTarget,
     },
@@ -56,6 +63,58 @@ use super::{
 // const D: usize = 2;
 const N_LOG_MAX_BLOCKS: usize = 32;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BlockDetail<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize> {
+    pub block_number: u32,
+    pub user_tx_proofs: Vec<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>>,
+    pub deposit_process_proofs: Vec<(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)>,
+    pub world_state_process_proofs: Vec<SmtProcessProof<F>>,
+    pub world_state_revert_proofs: Vec<SmtProcessProof<F>>,
+    pub received_signature_proofs: Vec<Option<SimpleSignatureProofWithPublicInputs<F, C, D>>>,
+    pub latest_account_process_proofs: Vec<SmtProcessProof<F>>,
+    pub block_headers_proof_siblings: Vec<WrappedHashOut<F>>,
+    pub prev_block_header: BlockHeader<F>,
+}
+
+impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize> Default
+    for BlockDetail<F, C, D>
+{
+    fn default() -> Self {
+        let prev_block_header = BlockHeader::default();
+        let prev_block_number = prev_block_header.block_number;
+        let block_headers: Vec<WrappedHashOut<F>> =
+            vec![WrappedHashOut::ZERO; prev_block_number as usize];
+        let block_number = prev_block_number + 1;
+        let user_tx_proofs = vec![];
+
+        let received_signature_proofs = vec![];
+
+        // NOTICE: merge proof の中に deposit が混ざっていると, revert proof がうまく出せない場合がある.
+        // deposit してそれを消費して old: 0 -> middle: non-zero -> new: 0 となった場合は,
+        // u.enabled かつ w.fnc == NoOp だが revert ではない.
+        let world_state_process_proofs = vec![];
+        let world_state_revert_proofs = vec![];
+        let latest_account_process_proofs = vec![];
+        let block_headers_proof_siblings =
+            get_merkle_proof(&block_headers, prev_block_number as usize, N_LOG_MAX_BLOCKS).siblings;
+
+        let deposit_process_proofs = vec![];
+
+        Self {
+            block_number,
+            user_tx_proofs,
+            deposit_process_proofs,
+            world_state_process_proofs,
+            world_state_revert_proofs,
+            received_signature_proofs,
+            latest_account_process_proofs,
+            block_headers_proof_siblings,
+            prev_block_header,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct BlockProductionTarget<
     const D: usize,
     const N_LOG_USERS: usize, // N_LOG_MAX_USERS
@@ -119,7 +178,7 @@ impl<
         latest_account_process_proofs: &[SmtProcessProof<F>],
         block_headers_proof_siblings: &[WrappedHashOut<F>],
         prev_block_header: BlockHeader<F>,
-    ) -> BlockHeader<F>
+    ) -> BlockProductionPublicInputs<F, N_TXS, N_DEPOSITS>
     where
         C::Hasher: AlgebraicHasher<F>,
     {
@@ -228,7 +287,7 @@ impl<
             block_headers_proof_siblings,
         );
 
-        BlockHeader {
+        let block_header = BlockHeader {
             block_number,
             prev_block_hash,
             transactions_digest: *transactions_digest,
@@ -237,6 +296,43 @@ impl<
             approved_world_state_digest: *approved_world_state_digest,
             latest_account_digest: *latest_account_digest,
             block_headers_digest: *block_headers_digest,
+        };
+
+        let block_hash = get_block_hash(&block_header);
+
+        let mut address_list = user_transactions
+            .iter()
+            .zip(received_signatures.iter())
+            .map(
+                |(user_tx_proof, received_signature_proof)| TransactionSenderWithValidity {
+                    sender_address: user_tx_proof.sender_address,
+                    is_valid: received_signature_proof.is_some(),
+                },
+            )
+            .collect::<Vec<_>>();
+        address_list.resize(N_TXS, TransactionSenderWithValidity::default());
+
+        let mut deposit_list = deposit_process_proofs
+            .iter()
+            .map(|proof_t| DepositInfo {
+                receiver_address: Address(*proof_t.0.new_key),
+                contract_address: Address(*proof_t.1.new_key),
+                variable_index: VariableIndex::from_hash_out(*proof_t.2.new_key),
+                amount: proof_t.2.new_value.elements[0],
+            })
+            .collect::<Vec<_>>();
+        deposit_list.resize(N_DEPOSITS, DepositInfo::default());
+
+        BlockProductionPublicInputs {
+            address_list: address_list.try_into().unwrap(),
+            deposit_list: deposit_list.try_into().unwrap(),
+            old_account_tree_root: prev_block_header.latest_account_digest,
+            new_account_tree_root: block_header.latest_account_digest,
+            old_world_state_root: prev_block_header.approved_world_state_digest,
+            new_world_state_root: block_header.approved_world_state_digest,
+            old_prev_block_header_digest: prev_block_header.block_headers_digest,
+            new_prev_block_header_digest: block_header.block_headers_digest,
+            block_hash,
         }
     }
 }
@@ -319,6 +415,7 @@ where
     let user_tx_proofs = [0; N_TXS]
         .map(|_| RecursiveProofTarget::add_virtual_to(&mut builder, &merge_and_purge_circuit.data));
 
+    let mut transaction_hashes_t = vec![];
     for ((u, p), a) in user_tx_proofs
         .iter()
         .zip(proposal_block_target.user_transactions.iter())
@@ -328,6 +425,7 @@ where
             MergeAndPurgeTransitionPublicInputsTarget::decode(&u.inner.0.public_inputs);
         MergeAndPurgeTransitionPublicInputsTarget::connect(&mut builder, p, &user_tx_public_inputs);
         MergeAndPurgeTransitionPublicInputsTarget::connect(&mut builder, a, &user_tx_public_inputs);
+        transaction_hashes_t.push(user_tx_public_inputs.tx_hash);
     }
 
     let received_signature_proofs = [0; N_TXS].map(|_| {
@@ -417,12 +515,13 @@ where
             old_account_tree_root: approval_block_target.old_latest_account_root,
             new_account_tree_root: approval_block_target.new_latest_account_root,
             old_world_state_root: proposal_block_target.old_world_state_root,
-            new_world_state_root: proposal_block_target.new_world_state_root,
+            new_world_state_root: approval_block_target.new_world_state_root,
             old_block_headers_root: prev_block_headers_digest,
             new_block_headers_root: block_headers_proof.root,
             block_hash,
         };
-    builder.register_public_inputs(&public_inputs.encode());
+    let entry_hash = public_inputs.get_entry_hash::<F, C::Hasher, D>(&mut builder);
+    builder.register_public_inputs(&entry_hash.elements);
     let block_circuit_data = builder.build::<C>();
 
     let targets = BlockProductionTarget {
@@ -468,9 +567,9 @@ pub struct BlockProductionCircuit<
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BlockProductionPublicInputs<F: RichField> {
-    pub address_list: Vec<TransactionSenderWithValidity<F>>,
-    pub deposit_list: Vec<DepositInfo<F>>,
+pub struct BlockProductionPublicInputs<F: RichField, const N_TXS: usize, const N_DEPOSITS: usize> {
+    pub address_list: [TransactionSenderWithValidity<F>; N_TXS],
+    pub deposit_list: [DepositInfo<F>; N_DEPOSITS],
     pub old_account_tree_root: HashOut<F>,
     pub new_account_tree_root: HashOut<F>,
     pub old_world_state_root: HashOut<F>,
@@ -480,17 +579,25 @@ pub struct BlockProductionPublicInputs<F: RichField> {
     pub block_hash: HashOut<F>,
 }
 
-impl<F: RichField> BlockProductionPublicInputs<F> {
+impl<F: RichField, const N_TXS: usize, const N_DEPOSITS: usize>
+    BlockProductionPublicInputs<F, N_TXS, N_DEPOSITS>
+{
     pub fn encode(&self) -> Vec<F> {
         let mut public_inputs = vec![];
         for TransactionSenderWithValidity {
             sender_address,
             is_valid,
-        } in self.address_list.clone()
+        } in self.address_list
         {
-            public_inputs.append(&mut sender_address.0.elements.into());
+            sender_address.write(&mut public_inputs);
             // public_inputs.push(last_block_number);
             public_inputs.push(F::from_bool(is_valid));
+        }
+
+        for _ in (0..N_TXS).skip(self.address_list.len()) {
+            Address::default().write(&mut public_inputs);
+            // public_inputs.push(last_block_number);
+            public_inputs.push(F::from_bool(false));
         }
 
         for DepositInfo {
@@ -498,45 +605,48 @@ impl<F: RichField> BlockProductionPublicInputs<F> {
             contract_address,
             variable_index,
             amount,
-        } in self.deposit_list.clone()
+        } in self.deposit_list
         {
             receiver_address.write(&mut public_inputs);
             contract_address.write(&mut public_inputs);
-            public_inputs.append(&mut variable_index.to_hash_out().elements.into());
+            variable_index.write(&mut public_inputs);
             public_inputs.push(amount);
         }
 
-        public_inputs.append(&mut self.old_account_tree_root.elements.into());
-        public_inputs.append(&mut self.new_account_tree_root.elements.into());
-        public_inputs.append(&mut self.old_world_state_root.elements.into());
-        public_inputs.append(&mut self.new_world_state_root.elements.into());
+        for _ in (0..N_DEPOSITS).skip(self.deposit_list.len()) {
+            Address::default().write(&mut public_inputs);
+            Address::default().write(&mut public_inputs);
+            VariableIndex::from(0u8).write(&mut public_inputs);
+            public_inputs.push(F::ZERO);
+        }
 
-        public_inputs.append(&mut self.old_prev_block_header_digest.elements.into());
-        public_inputs.append(&mut self.new_prev_block_header_digest.elements.into());
-        public_inputs.append(&mut self.block_hash.elements.into());
+        WrappedHashOut::from(self.old_account_tree_root).write(&mut public_inputs);
+        WrappedHashOut::from(self.new_account_tree_root).write(&mut public_inputs);
+        WrappedHashOut::from(self.old_world_state_root).write(&mut public_inputs);
+        WrappedHashOut::from(self.new_world_state_root).write(&mut public_inputs);
+
+        WrappedHashOut::from(self.old_prev_block_header_digest).write(&mut public_inputs);
+        WrappedHashOut::from(self.new_prev_block_header_digest).write(&mut public_inputs);
+        WrappedHashOut::from(self.block_hash).write(&mut public_inputs);
 
         public_inputs
     }
 
-    pub fn decode<const N_TXS: usize, const N_DEPOSITS: usize>(public_inputs: &[F]) -> Self {
+    pub fn decode(public_inputs: &[F]) -> Self {
         assert_eq!(public_inputs.len(), 5 * N_TXS + 13 * N_DEPOSITS + 28);
 
         let mut public_inputs = public_inputs.iter();
 
-        let address_list = (0..N_TXS)
-            .map(|_| TransactionSenderWithValidity {
-                sender_address: Address::read(&mut public_inputs),
-                is_valid: public_inputs.next().unwrap().is_nonzero(),
-            })
-            .collect::<Vec<_>>();
-        let deposit_list = (0..N_DEPOSITS)
-            .map(|_| DepositInfo {
-                receiver_address: Address::read(&mut public_inputs),
-                contract_address: Address::read(&mut public_inputs),
-                variable_index: VariableIndex::read(&mut public_inputs),
-                amount: *public_inputs.next().unwrap(),
-            })
-            .collect::<Vec<_>>();
+        let address_list = [(); N_TXS].map(|_| TransactionSenderWithValidity {
+            sender_address: Address::read(&mut public_inputs),
+            is_valid: public_inputs.next().unwrap().is_nonzero(),
+        });
+        let deposit_list = [(); N_DEPOSITS].map(|_| DepositInfo {
+            receiver_address: Address::read(&mut public_inputs),
+            contract_address: Address::read(&mut public_inputs),
+            variable_index: VariableIndex::read(&mut public_inputs),
+            amount: *public_inputs.next().unwrap(),
+        });
         let old_account_tree_root = *WrappedHashOut::read(&mut public_inputs);
         let new_account_tree_root = *WrappedHashOut::read(&mut public_inputs);
 
@@ -560,6 +670,10 @@ impl<F: RichField> BlockProductionPublicInputs<F> {
             block_hash,
         }
     }
+
+    pub fn get_entry_hash(&self) -> HashOut<F> {
+        PoseidonHash::hash_no_pad(&self.encode())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -580,20 +694,30 @@ pub struct BlockProductionProofWithPublicInputs<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F = F>,
     const D: usize,
+    const N_TXS: usize,
+    const N_DEPOSITS: usize,
 > {
     pub proof: Proof<F, C, D>,
-    pub public_inputs: BlockProductionPublicInputs<F>,
+    pub public_inputs: BlockProductionPublicInputs<F, N_TXS, N_DEPOSITS>,
 }
 
-impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
-    From<BlockProductionProofWithPublicInputs<F, C, D>> for ProofWithPublicInputs<F, C, D>
+impl<
+        F: RichField + Extendable<D>,
+        C: GenericConfig<D, F = F>,
+        const D: usize,
+        const N_TXS: usize,
+        const N_DEPOSITS: usize,
+    > From<BlockProductionProofWithPublicInputs<F, C, D, N_TXS, N_DEPOSITS>>
+    for ProofWithPublicInputs<F, C, D>
 {
     fn from(
-        value: BlockProductionProofWithPublicInputs<F, C, D>,
+        value: BlockProductionProofWithPublicInputs<F, C, D, N_TXS, N_DEPOSITS>,
     ) -> ProofWithPublicInputs<F, C, D> {
+        let entry_hash = value.public_inputs.get_entry_hash();
+
         ProofWithPublicInputs {
             proof: value.proof,
-            public_inputs: value.public_inputs.encode(),
+            public_inputs: entry_hash.elements.to_vec(),
         }
     }
 }
@@ -747,6 +871,48 @@ impl<const N_TXS: usize, const N_DEPOSITS: usize>
             block_hash,
         }
     }
+
+    pub fn get_entry_hash<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+        &self,
+        builder: &mut CircuitBuilder<F, D>,
+    ) -> HashOutTarget {
+        builder.hash_n_to_hash_no_pad::<H>(self.encode())
+    }
+}
+
+#[test]
+fn test_encode_block_production_public_inputs() {
+    use plonky2::{field::types::Sample, plonk::config::PoseidonGoldilocksConfig};
+    use rand::random;
+
+    const D: usize = 2;
+    type C = PoseidonGoldilocksConfig;
+    type F = <C as GenericConfig<D>>::F;
+    const N_TXS: usize = 4;
+    const N_DEPOSITS: usize = 2;
+
+    let public_inputs = BlockProductionPublicInputs {
+        address_list: [(); N_TXS].map(|_| TransactionSenderWithValidity {
+            sender_address: Address::rand(),
+            is_valid: random(),
+        }),
+        deposit_list: [(); N_DEPOSITS].map(|_| DepositInfo {
+            receiver_address: Address::rand(),
+            contract_address: Address::rand(),
+            variable_index: VariableIndex::from(random::<u8>()),
+            amount: F::rand(),
+        }),
+        old_account_tree_root: *WrappedHashOut::rand(),
+        new_account_tree_root: *WrappedHashOut::rand(),
+        old_world_state_root: *WrappedHashOut::rand(),
+        new_world_state_root: *WrappedHashOut::rand(),
+        old_prev_block_header_digest: *WrappedHashOut::rand(),
+        new_prev_block_header_digest: *WrappedHashOut::rand(),
+        block_hash: *WrappedHashOut::rand(),
+    };
+    let encoded_public_inputs = public_inputs.encode();
+    let decoded_public_inputs = BlockProductionPublicInputs::decode(&encoded_public_inputs);
+    assert_eq!(decoded_public_inputs, public_inputs, "invalid entry hash");
 }
 
 impl<
@@ -773,6 +939,8 @@ impl<
         N_TXS,
         N_DEPOSITS,
     >
+where
+    C::Hasher: AlgebraicHasher<F>,
 {
     pub fn parse_public_inputs(&self) -> BlockProductionPublicInputsTarget<N_TXS, N_DEPOSITS> {
         let public_inputs_t = self.data.prover_only.public_inputs.clone();
@@ -780,13 +948,52 @@ impl<
         BlockProductionPublicInputsTarget::decode(&public_inputs_t)
     }
 
-    pub fn prove(
+    // pub fn prove(
+    //     &self,
+    //     _inputs: PartialWitness<F>,
+    // ) -> anyhow::Result<BlockProductionProofWithPublicInputs<F, C, D>> {
+    //     unimplemented!("use set_witness_and_prove instead");
+    // }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_witness_and_prove(
         &self,
-        inputs: PartialWitness<F>,
-    ) -> anyhow::Result<BlockProductionProofWithPublicInputs<F, C, D>> {
-        let proof_with_pis = self.data.prove(inputs)?;
-        let public_inputs =
-            BlockProductionPublicInputs::decode::<N_TXS, N_DEPOSITS>(&proof_with_pis.public_inputs);
+        input: &BlockDetail<F, C, D>,
+        // user_tx_proofs: &[MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>],
+        default_user_tx_proof: &MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>,
+        // deposit_process_proofs: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
+        // world_state_process_proofs: &[SmtProcessProof<F>],
+        // world_state_revert_proofs: &[SmtProcessProof<F>],
+        // received_signature_proofs: &[Option<SimpleSignatureProofWithPublicInputs<F, C, D>>],
+        default_simple_signature_proof: &SimpleSignatureProofWithPublicInputs<F, C, D>,
+        // latest_account_process_proofs: &[SmtProcessProof<F>],
+        // block_headers_proof_siblings: &[WrappedHashOut<F>],
+        // prev_block_header: BlockHeader<F>,
+    ) -> anyhow::Result<BlockProductionProofWithPublicInputs<F, C, D, N_TXS, N_DEPOSITS>> {
+        let mut pw = PartialWitness::new();
+        let public_inputs = self.targets.set_witness::<F, C>(
+            &mut pw,
+            input.block_number,
+            &input.user_tx_proofs,
+            default_user_tx_proof,
+            &input.deposit_process_proofs,
+            &input.world_state_process_proofs,
+            &input.world_state_revert_proofs,
+            &input.received_signature_proofs,
+            default_simple_signature_proof,
+            &input.latest_account_process_proofs,
+            &input.block_headers_proof_siblings,
+            input.prev_block_header.clone(),
+        );
+
+        let proof_with_pis = self.data.prove(pw)?;
+        if proof_with_pis.public_inputs.len() != 4 {
+            anyhow::bail!("invalid length of public inputs");
+        }
+        let entry_hash = HashOut::from_partial(&proof_with_pis.public_inputs);
+        if entry_hash != public_inputs.get_entry_hash() {
+            anyhow::bail!("invalid entry hash");
+        }
 
         Ok(BlockProductionProofWithPublicInputs {
             proof: proof_with_pis.proof,
@@ -796,14 +1003,101 @@ impl<
 
     pub fn verify(
         &self,
-        proof_with_pis: BlockProductionProofWithPublicInputs<F, C, D>,
+        proof_with_pis: BlockProductionProofWithPublicInputs<F, C, D, N_TXS, N_DEPOSITS>,
     ) -> anyhow::Result<()> {
-        let public_inputs = proof_with_pis.public_inputs.encode();
-        assert_eq!(public_inputs.len(), 5 * N_TXS + 13 * N_DEPOSITS + 28);
-
-        self.data.verify(ProofWithPublicInputs {
-            proof: proof_with_pis.proof,
-            public_inputs,
-        })
+        self.data
+            .verify(ProofWithPublicInputs::from(proof_with_pis))
     }
+}
+
+/// witness を入力にとり、 block_production_proof を返す関数
+#[allow(clippy::too_many_arguments)]
+pub fn prove_block_production<
+    F: RichField + Extendable<D>,
+    C: GenericConfig<D, F = F>,
+    const D: usize,
+    const N_LOG_MAX_USERS: usize,
+    const N_LOG_MAX_TXS: usize,
+    const N_LOG_MAX_CONTRACTS: usize,
+    const N_LOG_MAX_VARIABLES: usize,
+    const N_LOG_TXS: usize,
+    const N_LOG_RECIPIENTS: usize,
+    const N_LOG_CONTRACTS: usize,
+    const N_LOG_VARIABLES: usize,
+    const N_DIFFS: usize,
+    const N_MERGES: usize,
+    const N_TXS: usize,
+    const N_DEPOSITS: usize,
+>(
+    input: &BlockDetail<F, C, D>,
+) -> anyhow::Result<BlockProductionProofWithPublicInputs<F, C, D, N_TXS, N_DEPOSITS>>
+where
+    C::Hasher: AlgebraicHasher<F>,
+{
+    // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
+    let config = CircuitConfig::standard_recursion_config();
+    let merge_and_purge_circuit = make_user_proof_circuit::<
+        F,
+        C,
+        D,
+        N_LOG_MAX_USERS,
+        N_LOG_MAX_TXS,
+        N_LOG_MAX_CONTRACTS,
+        N_LOG_MAX_VARIABLES,
+        N_LOG_TXS,
+        N_LOG_RECIPIENTS,
+        N_LOG_CONTRACTS,
+        N_LOG_VARIABLES,
+        N_DIFFS,
+        N_MERGES,
+        N_DEPOSITS,
+    >(config);
+    let default_user_transaction = MergeAndPurgeTransition::default();
+    let default_user_tx_proof = merge_and_purge_circuit
+        .set_witness_and_prove(
+            default_user_transaction.sender_address,
+            &default_user_transaction.merge_witnesses,
+            &default_user_transaction.purge_input_witnesses,
+            &default_user_transaction.purge_output_witnesses,
+            default_user_transaction.nonce,
+            default_user_transaction.old_user_asset_root,
+        )
+        .unwrap();
+
+    // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
+    let config = CircuitConfig::standard_recursion_config();
+    let simple_signature_circuit = make_simple_signature_circuit::<F, C, D>(config);
+    let default_simple_signature_proof = simple_signature_circuit
+        .set_witness_and_prove(Default::default(), Default::default())
+        .unwrap();
+
+    let config = CircuitConfig::standard_recursion_config();
+    let block_production_circuit =
+        make_block_proof_circuit::<
+            F,
+            C,
+            D,
+            N_LOG_MAX_USERS,
+            N_LOG_MAX_TXS,
+            N_LOG_MAX_CONTRACTS,
+            N_LOG_MAX_VARIABLES,
+            N_LOG_TXS,
+            N_LOG_RECIPIENTS,
+            N_LOG_CONTRACTS,
+            N_LOG_VARIABLES,
+            N_DIFFS,
+            N_MERGES,
+            N_TXS,
+            N_DEPOSITS,
+        >(config, &merge_and_purge_circuit, &simple_signature_circuit);
+
+    let block_production_proof = block_production_circuit
+        .set_witness_and_prove(
+            input,
+            &default_user_tx_proof,
+            &default_simple_signature_proof,
+        )
+        .map_err(|err| anyhow::anyhow!("fail to prove block production: {}", err))?;
+
+    Ok(block_production_proof)
 }

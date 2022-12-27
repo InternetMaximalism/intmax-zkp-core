@@ -745,7 +745,7 @@ fn test_approval_block() {
     user_tx_proofs.push(sender2_tx_proof.clone());
 
     let config = CircuitConfig::standard_recursion_config();
-    let zkdsa_circuit = make_simple_signature_circuit(config);
+    let zkdsa_circuit = make_simple_signature_circuit::<F, C, D>(config);
 
     // let mut pw = PartialWitness::new();
     // zkdsa_circuit.targets.set_witness(

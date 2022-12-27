@@ -16,7 +16,7 @@ use crate::{
     sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub struct BlockHeader<F: Field> {
     pub block_number: u32,
     pub prev_block_hash: HashOut<F>,

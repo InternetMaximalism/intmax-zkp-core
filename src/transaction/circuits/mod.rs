@@ -34,6 +34,16 @@ use crate::{
 // type F = <C as GenericConfig<D>>::F;
 // const D: usize = 2;
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MergeAndPurgeTransition<F: RichField> {
+    pub sender_address: Address<F>,
+    pub merge_witnesses: Vec<MergeProof<F>>,
+    pub purge_input_witnesses: Vec<(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)>,
+    pub purge_output_witnesses: Vec<(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)>,
+    pub nonce: WrappedHashOut<F>,
+    pub old_user_asset_root: WrappedHashOut<F>,
+}
+
 pub struct MergeAndPurgeTransitionTarget<
     const N_LOG_MAX_USERS: usize,
     const N_LOG_MAX_TXS: usize,
@@ -466,7 +476,7 @@ impl MergeAndPurgeTransitionPublicInputsTarget {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(bound = "")]
+#[serde(bound = "F: RichField")]
 pub struct MergeAndPurgeTransitionProofWithPublicInputs<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F = F>,
@@ -574,16 +584,35 @@ impl<
         })
     }
 
+    pub fn set_witness_and_prove(
+        &self,
+        sender_address: Address<F>,
+        merge_witnesses: &[MergeProof<F>],
+        purge_input_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
+        purge_output_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
+        nonce: WrappedHashOut<F>,
+        old_user_asset_root: WrappedHashOut<F>,
+    ) -> anyhow::Result<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>> {
+        let mut pw = PartialWitness::new();
+        self.targets.set_witness(
+            &mut pw,
+            sender_address,
+            merge_witnesses,
+            purge_input_witnesses,
+            purge_output_witnesses,
+            nonce,
+            old_user_asset_root,
+        );
+
+        self.prove(pw)
+    }
+
     pub fn verify(
         &self,
         proof_with_pis: MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>,
     ) -> anyhow::Result<()> {
-        let public_inputs = proof_with_pis.public_inputs.encode();
-
-        self.data.verify(ProofWithPublicInputs {
-            proof: proof_with_pis.proof,
-            public_inputs,
-        })
+        self.data
+            .verify(ProofWithPublicInputs::from(proof_with_pis))
     }
 }
 

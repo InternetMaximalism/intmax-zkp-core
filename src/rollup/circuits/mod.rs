@@ -15,6 +15,7 @@ use plonky2::{
         proof::{Proof, ProofWithPublicInputs},
     },
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     merkle_tree::{
@@ -63,7 +64,8 @@ use super::{
 // const D: usize = 2;
 const N_LOG_MAX_BLOCKS: usize = 32;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(bound = "F: RichField + Extendable<D>, C: GenericConfig<D, F = F>")]
 pub struct BlockDetail<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize> {
     pub block_number: u32,
     pub user_tx_proofs: Vec<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>>,
@@ -74,6 +76,21 @@ pub struct BlockDetail<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>,
     pub latest_account_process_proofs: Vec<SmtProcessProof<F>>,
     pub block_headers_proof_siblings: Vec<WrappedHashOut<F>>,
     pub prev_block_header: BlockHeader<F>,
+}
+
+#[test]
+fn test_serde_block_detail() {
+    use plonky2::plonk::config::PoseidonGoldilocksConfig;
+
+    const D: usize = 2;
+    type C = PoseidonGoldilocksConfig;
+    type F = <C as GenericConfig<D>>::F;
+
+    let block_detail: BlockDetail<F, C, D> = BlockDetail::default();
+    let encoded_block_detail = serde_json::to_string(&block_detail).unwrap();
+    let decoded_block_detail: BlockDetail<F, C, D> =
+        serde_json::from_str(&encoded_block_detail).unwrap();
+    assert_eq!(decoded_block_detail, block_detail);
 }
 
 impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize> Default

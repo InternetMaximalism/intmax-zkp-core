@@ -476,7 +476,7 @@ impl MergeAndPurgeTransitionPublicInputsTarget {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(bound = "F: RichField")]
+#[serde(bound = "")]
 pub struct MergeAndPurgeTransitionProofWithPublicInputs<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F = F>,

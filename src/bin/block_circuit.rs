@@ -52,7 +52,7 @@ fn main() {
     const N_DIFFS: usize = 2;
     const N_MERGES: usize = 2;
     const N_TXS: usize = 2usize.pow(N_LOG_TXS as u32);
-    const N_DEPOSITS: usize = N_TXS;
+    const N_DEPOSITS: usize = 2;
     const N_BLOCKS: usize = 2;
 
     let aggregator_nodes_db = NodeDataMemory::default();

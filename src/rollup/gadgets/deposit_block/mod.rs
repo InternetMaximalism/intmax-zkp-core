@@ -231,7 +231,7 @@ pub struct DepositBlockProductionTarget<
         SparseMerkleProcessProofTarget<N_LOG_VARIABLES>,
     ); N_DEPOSITS], // input
 
-    pub deposit_digest: HashOutTarget, // output
+    pub interior_deposit_digest: HashOutTarget, // output
 }
 
 impl<
@@ -257,7 +257,7 @@ impl<
             deposit_process_proofs.push(targets);
         }
 
-        let deposit_digest =
+        let interior_deposit_digest =
             calc_deposit_digest::<F, H, D, N_LOG_RECIPIENTS, N_LOG_CONTRACTS, N_LOG_VARIABLES>(
                 builder,
                 &deposit_process_proofs,
@@ -265,23 +265,24 @@ impl<
 
         Self {
             deposit_process_proofs: deposit_process_proofs.try_into().unwrap(),
-            deposit_digest,
+            interior_deposit_digest,
         }
     }
 
+    /// Returns `interior_deposit_digest`
     pub fn set_witness<F: RichField + Extendable<D>>(
         &self,
         pw: &mut impl Witness<F>,
         deposit_process_proofs: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
     ) -> WrappedHashOut<F> {
-        let mut prev_deposit_digest = WrappedHashOut::default();
+        let mut prev_interior_deposit_digest = WrappedHashOut::default();
         assert!(deposit_process_proofs.len() <= self.deposit_process_proofs.len());
         for (proof_t, proof) in self
             .deposit_process_proofs
             .iter()
             .zip(deposit_process_proofs.iter())
         {
-            assert_eq!(proof.0.old_root, prev_deposit_digest);
+            assert_eq!(proof.0.old_root, prev_interior_deposit_digest);
             verify_layered_smt_connection(
                 proof.0.fnc,
                 proof.0.old_value,
@@ -304,12 +305,12 @@ impl<
             proof_t.1.set_witness(pw, &proof.1);
             proof_t.2.set_witness(pw, &proof.2);
 
-            prev_deposit_digest = proof.0.new_root;
+            prev_interior_deposit_digest = proof.0.new_root;
         }
-        let deposit_digest = prev_deposit_digest;
+        let interior_deposit_digest = prev_interior_deposit_digest;
 
         let default_proof = SmtProcessProof::with_root(Default::default());
-        let default_proof0 = SmtProcessProof::with_root(deposit_digest);
+        let default_proof0 = SmtProcessProof::with_root(interior_deposit_digest);
         for proof_t in self
             .deposit_process_proofs
             .iter()
@@ -320,7 +321,7 @@ impl<
             proof_t.2.set_witness(pw, &default_proof);
         }
 
-        deposit_digest
+        interior_deposit_digest
     }
 }
 
@@ -341,7 +342,7 @@ pub fn calc_deposit_digest<
     )],
 ) -> HashOutTarget {
     let zero = builder.zero();
-    let mut deposit_digest = HashOutTarget {
+    let mut interior_deposit_digest = HashOutTarget {
         elements: [zero; 4],
     };
     for proof_t in deposit_process_proofs {
@@ -367,11 +368,11 @@ pub fn calc_deposit_digest<
             proof_t.2.new_root,
         );
 
-        builder.connect_hashes(proof_t.0.old_root, deposit_digest);
-        deposit_digest = proof_t.0.new_root;
+        builder.connect_hashes(proof_t.0.old_root, interior_deposit_digest);
+        interior_deposit_digest = proof_t.0.new_root;
     }
 
-    deposit_digest
+    interior_deposit_digest
 }
 
 #[test]
@@ -433,7 +434,7 @@ fn test_deposit_block() {
     > = DepositBlockProductionTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(
         &mut builder,
     );
-    builder.register_public_inputs(&deposit_block_target.deposit_digest.elements);
+    builder.register_public_inputs(&deposit_block_target.interior_deposit_digest.elements);
     let circuit_data = builder.build::<C>();
 
     let deposit_list: Vec<DepositInfo<F>> = vec![DepositInfo {
@@ -462,21 +463,24 @@ fn test_deposit_block() {
         .collect::<Vec<_>>();
 
     let mut pw = PartialWitness::new();
-    deposit_block_target.set_witness(&mut pw, &deposit_process_proofs);
+    let interior_deposit_digest =
+        deposit_block_target.set_witness(&mut pw, &deposit_process_proofs);
 
     println!("start proving: block_proof");
     let start = Instant::now();
-    let proof = circuit_data.prove(pw).unwrap();
+    let deposit_block_proof = circuit_data.prove(pw).unwrap();
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-    match circuit_data.verify(proof) {
-        Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
-    }
+    assert_eq!(
+        [interior_deposit_digest.elements].concat(),
+        deposit_block_proof.public_inputs
+    );
+
+    circuit_data.verify(deposit_block_proof).unwrap();
 
     let mut pw = PartialWitness::new();
-    deposit_block_target.set_witness(&mut pw, &[]);
+    let default_interior_deposit_digest = deposit_block_target.set_witness(&mut pw, &[]);
 
     println!("start proving: block_proof");
     let start = Instant::now();
@@ -484,8 +488,10 @@ fn test_deposit_block() {
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-    match circuit_data.verify(default_deposit_block_proof) {
-        Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
-    }
+    assert_eq!(
+        [default_interior_deposit_digest.elements].concat(),
+        default_deposit_block_proof.public_inputs
+    );
+
+    circuit_data.verify(default_deposit_block_proof).unwrap();
 }

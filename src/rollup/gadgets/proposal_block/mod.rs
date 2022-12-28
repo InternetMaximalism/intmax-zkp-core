@@ -291,7 +291,6 @@ fn test_proposal_block() {
         },
         transaction::{
             block_header::{get_block_hash, BlockHeader},
-            // circuits::make_user_proof_circuit,
             gadgets::merge::MergeProof,
             tree::user_asset::UserAssetTree,
         },
@@ -303,38 +302,12 @@ fn test_proposal_block() {
     type F = <C as GenericConfig<D>>::F;
     const N_LOG_MAX_BLOCKS: usize = 32;
     const N_LOG_MAX_USERS: usize = 3;
-    // const N_LOG_MAX_TXS: usize = 3;
-    // const N_LOG_MAX_CONTRACTS: usize = 3;
-    // const N_LOG_MAX_VARIABLES: usize = 3;
     const N_LOG_TXS: usize = 2;
-    // const N_LOG_RECIPIENTS: usize = 3;
-    // const N_LOG_CONTRACTS: usize = 3;
-    // const N_LOG_VARIABLES: usize = 3;
-    // const N_DIFFS: usize = 2;
-    // const N_MERGES: usize = 2;
     const N_TXS: usize = 2usize.pow(N_LOG_TXS as u32);
 
     let aggregator_nodes_db = NodeDataMemory::default();
     let mut world_state_tree =
         PoseidonSparseMerkleTree::new(aggregator_nodes_db.clone(), RootDataTmp::default());
-
-    // let merge_and_purge_circuit = make_user_proof_circuit::<
-    //     F,
-    //     C,
-    //     D,
-    //     N_LOG_MAX_USERS,
-    //     N_LOG_MAX_TXS,
-    //     N_LOG_MAX_CONTRACTS,
-    //     N_LOG_MAX_VARIABLES,
-    //     N_LOG_TXS,
-    //     N_LOG_RECIPIENTS,
-    //     N_LOG_CONTRACTS,
-    //     N_LOG_VARIABLES,
-    //     N_DIFFS,
-    //     N_MERGES,
-    // >();
-
-    // dbg!(&purge_proof_circuit_data.common);
 
     let sender1_private_key = HashOut {
         elements: [
@@ -608,7 +581,7 @@ fn test_proposal_block() {
             sender2_user_asset_tree.get_root().unwrap(),
         )
         .unwrap();
-    dbg!(&sender2_world_state_process_proof);
+    // dbg!(&sender2_world_state_process_proof);
 
     world_state_process_proofs.push(sender1_world_state_process_proof);
     user_transactions.push(sender1_transaction);
@@ -627,7 +600,7 @@ fn test_proposal_block() {
     let circuit_data = builder.build::<C>();
 
     let mut pw = PartialWitness::new();
-    proposal_block_target.set_witness(
+    let (transactions_digest, new_world_state_root) = proposal_block_target.set_witness(
         &mut pw,
         &world_state_process_proofs,
         &user_transactions,
@@ -641,8 +614,10 @@ fn test_proposal_block() {
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-    match circuit_data.verify(proof) {
-        Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
-    }
+    assert_eq!(
+        proof.public_inputs,
+        [transactions_digest.elements, new_world_state_root.elements].concat()
+    );
+
+    circuit_data.verify(proof).unwrap();
 }

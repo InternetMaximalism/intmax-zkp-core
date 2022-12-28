@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     merkle_tree::{
-        gadgets::MerkleProofTarget,
+        gadgets::{get_merkle_root_target_from_leaves, MerkleProofTarget},
         tree::{get_merkle_proof, get_merkle_root},
     },
     recursion::gadgets::RecursiveProofTarget,
@@ -78,6 +78,14 @@ pub struct BlockDetail<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>,
     pub prev_block_header: BlockHeader<F>,
 }
 
+// impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize> Default
+//     for BlockDetail<F, C, D>
+// {
+//     fn default() -> Self {
+//         unimplemented!("please use `new` function instead")
+//     }
+// }
+
 #[test]
 fn test_serde_block_detail() {
     use plonky2::plonk::config::PoseidonGoldilocksConfig;
@@ -85,22 +93,25 @@ fn test_serde_block_detail() {
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = <C as GenericConfig<D>>::F;
+    const N_TXS: usize = 4;
 
-    let block_detail: BlockDetail<F, C, D> = BlockDetail::default();
-    let encoded_block_detail = "{\"block_number\":1,\"user_tx_proofs\":[],\"deposit_process_proofs\":[],\"world_state_process_proofs\":[],\"world_state_revert_proofs\":[],\"received_signature_proofs\":[],\"latest_account_process_proofs\":[],\"block_headers_proof_siblings\":[\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"0xc71603f33a1144ca7953db0ab48808f4c4055e3364a246c33c18a9786cb0b359\",\"0x2196fc41328ae503de8f9ad762a30af28d85581b9901b2cfb61a4ad1aaf14fcc\",\"0x67703a0cc73ca54246fb94bfe956c05f9a247cc59da2de6461e00af7295ce05a\",\"0xf522eaa0af88a040167d7cf3bf854d278cc1b30d2e2c09475154921a06462644\",\"0xd0053597686f6672b77e23f0fc59019786ac9b34bd97d439e9e6b5c8d15b61ae\",\"0x49561260080d30c3dda8f741c47dfb105a1d2a648eee8f0325225f1a5d49614a\",\"0xb768e4fc8b0b79f516c9da6ea83aa4b13c9a42c646c4c1f9e979ed3ee20855e3\",\"0x2bd367124a2989b3d31bd45195f9a9278d72cff3db0a7a5afe6fd7720cfd2916\",\"0xfcf1da35791ff4452cf0c633ee9d9197954ec02c35af849e3ca2442157c9f14e\",\"0xc27e8f4600af2a41707c71f51d338df791e919b1e4a3ea53ccf7b63f7b1140c3\",\"0x218bc75b3bc83675e1c5ac76b0d9d44c0d1baab6f05098e38d6ebaad0ab5d3c3\",\"0x61618c69e9d26f4c8ee39e4c215804e2fb01846fee718016ed2589168e839d21\",\"0xec76a20799cf5dc50841b1fa4588f4f8c975d7aec7a1c669296ff821d8378f7f\",\"0xf55d5d12107b371efb4650fb6b8880811f7867621b8c1c1a0168a392cc7b542c\",\"0x6c9890682b94dee9cd45643c378df78c64e3f7a7160f8f0de73c5360c4b3ecd8\",\"0x9e1c5239e937026b57b8f931187d6dc4b555892ea200cfe4ab95f0ae94f7cde6\",\"0x0aa45be01f9e161002f8e22c79467775279949e14530c2505587ad00b6ddf0cb\",\"0xd2e3dd2bdd2907959ef35a5aeb905682388540a0f77810a8d108cd9026164f3b\",\"0x33a8e0b809ce2532ae94d561f2e16def904fa2e7b99bd3f1707d95a1148000a1\",\"0x7c9f51793bca6ffb713d0a918edaa60557184cbbc85f535743926baabe5db81f\",\"0xfa58391e7c0d394d317903270df6e518b34770c62a38e6697621f88cdcdfb5fd\",\"0x60e99b7ea5b1187d4293a24d51cc07ac39f874beb115877f8bd1878dd7f1026d\",\"0xc043477d124292017879345b4f881eb71d31cd8564acce2a617f3c6d0b4b8b44\",\"0x5793fc6d609c47c365b9470bc3e00cd4f19dece13278be693612ac9d812a8f8c\",\"0xe0c55886db8e5a00bfa58f8faf71ab1e1f12ae8ff82875c95b3c0f2c8ee070cc\",\"0x8f3c07c1b1e0b6c9c69aade405671398bf062e3f77dc0b13671c5e28b2f9dc9a\",\"0x06ff527899c10074411162bf4a7f70b84e6acab68322cba1e9e10aca93469e78\",\"0x08b8d7b96221d9f59ed49f4906c24becbe646c8d1b68665bf42d09eff74e4b90\",\"0xe0fd1bfa878b3cd2cc7e2bf5f351da7a2a1963d1913370406b4ae756e5e20763\",\"0x80faf1e491cd910ae2566bc52d26d7ea099b512bfeff20768a0dd4cf966a4a93\",\"0x20ca8d0d3b8c55d18b0f02df1c469ca317afad6c010c855f7765a145976afdbc\"],\"prev_block_header\":{\"block_number\":\"0x00000000\",\"prev_block_hash\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"block_headers_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"transactions_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"deposit_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"proposed_world_state_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"approved_world_state_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"latest_account_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000000\"}}";
+    let block_detail: BlockDetail<F, C, D> = BlockDetail::new(N_TXS);
+    let encoded_block_detail = "{\"block_number\":1,\"user_tx_proofs\":[],\"deposit_process_proofs\":[],\"world_state_process_proofs\":[],\"world_state_revert_proofs\":[],\"received_signature_proofs\":[],\"latest_account_process_proofs\":[],\"block_headers_proof_siblings\":[\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"0xc71603f33a1144ca7953db0ab48808f4c4055e3364a246c33c18a9786cb0b359\",\"0x2196fc41328ae503de8f9ad762a30af28d85581b9901b2cfb61a4ad1aaf14fcc\",\"0x67703a0cc73ca54246fb94bfe956c05f9a247cc59da2de6461e00af7295ce05a\",\"0xf522eaa0af88a040167d7cf3bf854d278cc1b30d2e2c09475154921a06462644\",\"0xd0053597686f6672b77e23f0fc59019786ac9b34bd97d439e9e6b5c8d15b61ae\",\"0x49561260080d30c3dda8f741c47dfb105a1d2a648eee8f0325225f1a5d49614a\",\"0xb768e4fc8b0b79f516c9da6ea83aa4b13c9a42c646c4c1f9e979ed3ee20855e3\",\"0x2bd367124a2989b3d31bd45195f9a9278d72cff3db0a7a5afe6fd7720cfd2916\",\"0xfcf1da35791ff4452cf0c633ee9d9197954ec02c35af849e3ca2442157c9f14e\",\"0xc27e8f4600af2a41707c71f51d338df791e919b1e4a3ea53ccf7b63f7b1140c3\",\"0x218bc75b3bc83675e1c5ac76b0d9d44c0d1baab6f05098e38d6ebaad0ab5d3c3\",\"0x61618c69e9d26f4c8ee39e4c215804e2fb01846fee718016ed2589168e839d21\",\"0xec76a20799cf5dc50841b1fa4588f4f8c975d7aec7a1c669296ff821d8378f7f\",\"0xf55d5d12107b371efb4650fb6b8880811f7867621b8c1c1a0168a392cc7b542c\",\"0x6c9890682b94dee9cd45643c378df78c64e3f7a7160f8f0de73c5360c4b3ecd8\",\"0x9e1c5239e937026b57b8f931187d6dc4b555892ea200cfe4ab95f0ae94f7cde6\",\"0x0aa45be01f9e161002f8e22c79467775279949e14530c2505587ad00b6ddf0cb\",\"0xd2e3dd2bdd2907959ef35a5aeb905682388540a0f77810a8d108cd9026164f3b\",\"0x33a8e0b809ce2532ae94d561f2e16def904fa2e7b99bd3f1707d95a1148000a1\",\"0x7c9f51793bca6ffb713d0a918edaa60557184cbbc85f535743926baabe5db81f\",\"0xfa58391e7c0d394d317903270df6e518b34770c62a38e6697621f88cdcdfb5fd\",\"0x60e99b7ea5b1187d4293a24d51cc07ac39f874beb115877f8bd1878dd7f1026d\",\"0xc043477d124292017879345b4f881eb71d31cd8564acce2a617f3c6d0b4b8b44\",\"0x5793fc6d609c47c365b9470bc3e00cd4f19dece13278be693612ac9d812a8f8c\",\"0xe0c55886db8e5a00bfa58f8faf71ab1e1f12ae8ff82875c95b3c0f2c8ee070cc\",\"0x8f3c07c1b1e0b6c9c69aade405671398bf062e3f77dc0b13671c5e28b2f9dc9a\",\"0x06ff527899c10074411162bf4a7f70b84e6acab68322cba1e9e10aca93469e78\",\"0x08b8d7b96221d9f59ed49f4906c24becbe646c8d1b68665bf42d09eff74e4b90\",\"0xe0fd1bfa878b3cd2cc7e2bf5f351da7a2a1963d1913370406b4ae756e5e20763\",\"0x80faf1e491cd910ae2566bc52d26d7ea099b512bfeff20768a0dd4cf966a4a93\",\"0x20ca8d0d3b8c55d18b0f02df1c469ca317afad6c010c855f7765a145976afdbc\"],\"prev_block_header\":{\"block_number\":\"0x00000000\",\"prev_block_hash\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"block_headers_digest\":\"0xd65af5933a094e8329332a714327ba72b1e4dac93c0cde8ee479b9bb36c3fc43\",\"transactions_digest\":\"0xd0053597686f6672b77e23f0fc59019786ac9b34bd97d439e9e6b5c8d15b61ae\",\"deposit_digest\":\"0xf522eaa0af88a040167d7cf3bf854d278cc1b30d2e2c09475154921a06462644\",\"proposed_world_state_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"approved_world_state_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"latest_account_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000000\"}}";
     let decoded_block_detail: BlockDetail<F, C, D> =
         serde_json::from_str(encoded_block_detail).unwrap();
     assert_eq!(decoded_block_detail, block_detail);
 }
 
-impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize> Default
-    for BlockDetail<F, C, D>
+impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
+    BlockDetail<F, C, D>
 {
-    fn default() -> Self {
-        let prev_block_header = BlockHeader::default();
+    pub fn new(log_num_txs_in_block: usize) -> Self {
+        let prev_block_header = BlockHeader::new(log_num_txs_in_block);
+        let prev_block_hash = get_block_hash(&prev_block_header);
         let prev_block_number = prev_block_header.block_number;
-        let block_headers: Vec<WrappedHashOut<F>> =
+        let mut block_headers: Vec<WrappedHashOut<F>> =
             vec![WrappedHashOut::ZERO; prev_block_number as usize];
+        block_headers.push(prev_block_hash.into());
         let block_number = prev_block_number + 1;
         let user_tx_proofs = vec![];
         let received_signature_proofs = vec![];
@@ -194,7 +205,7 @@ impl<
     where
         C::Hasher: AlgebraicHasher<F>,
     {
-        let deposit_digest = self
+        let interior_deposit_digest = self
             .deposit_block_target
             .set_witness(pw, deposit_process_proofs);
         let old_world_state_root = prev_block_header.approved_world_state_digest.into();
@@ -298,6 +309,8 @@ impl<
             prev_block_hash.into(),
             block_headers_proof_siblings,
         );
+
+        let deposit_digest = get_merkle_proof(&[interior_deposit_digest], 0, N_LOG_TXS).root;
 
         let block_header = BlockHeader {
             block_number,
@@ -483,7 +496,7 @@ where
     builder.range_check(prev_block_number, N_LOG_MAX_BLOCKS);
 
     let transactions_digest = proposal_block_target.transactions_digest;
-    let deposit_digest = deposit_block_target.deposit_digest;
+    let interior_deposit_digest = deposit_block_target.interior_deposit_digest;
     let prev_world_state_digest = proposal_block_target.old_world_state_root;
     let proposed_world_state_digest = proposal_block_target.new_world_state_root;
     let approved_world_state_digest = approval_block_target.new_world_state_root;
@@ -508,6 +521,15 @@ where
         prev_block_headers_proof_siblings,
         &prev_block_header,
     );
+
+    let zero = builder.zero();
+    let default_hash = HashOutTarget::from_partial(&[], zero);
+    let deposit_digest = {
+        let mut deposit_tree_leaves = vec![interior_deposit_digest];
+        deposit_tree_leaves.resize(N_TXS, default_hash);
+
+        get_merkle_root_target_from_leaves::<F, C::Hasher, D>(&mut builder, deposit_tree_leaves)
+    };
 
     let block_header = BlockHeaderTarget {
         block_number,
@@ -993,7 +1015,7 @@ where
         if proof_with_pis.public_inputs.len() != 4 {
             anyhow::bail!("invalid length of public inputs");
         }
-        let entry_hash = HashOut::from_partial(&proof_with_pis.public_inputs);
+        let entry_hash = HashOut::from_partial(&proof_with_pis.public_inputs[..4]);
         if entry_hash != public_inputs.get_entry_hash() {
             anyhow::bail!("invalid entry hash");
         }
@@ -1064,14 +1086,14 @@ where
             default_user_transaction.nonce,
             default_user_transaction.old_user_asset_root,
         )
-        .unwrap();
+        .map_err(|err| anyhow::anyhow!("fail to prove user transaction: {}", err))?;
 
     // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
     let config = CircuitConfig::standard_recursion_config();
     let simple_signature_circuit = make_simple_signature_circuit::<F, C, D>(config);
     let default_simple_signature_proof = simple_signature_circuit
         .set_witness_and_prove(Default::default(), Default::default())
-        .unwrap();
+        .map_err(|err| anyhow::anyhow!("fail to prove simple signature: {}", err))?;
 
     let config = CircuitConfig::standard_recursion_config();
     let block_production_circuit =
@@ -1101,5 +1123,50 @@ where
         )
         .map_err(|err| anyhow::anyhow!("fail to prove block production: {}", err))?;
 
+    block_production_circuit
+        .verify(block_production_proof.clone())
+        .map_err(|err| anyhow::anyhow!("fail to verify block production proof: {}", err))?;
+
     Ok(block_production_proof)
+}
+
+#[test]
+fn test_prove_block_production() {
+    use plonky2::plonk::config::PoseidonGoldilocksConfig;
+
+    const D: usize = 2;
+    type C = PoseidonGoldilocksConfig;
+    type F = <C as GenericConfig<D>>::F;
+    const N_LOG_MAX_USERS: usize = 3;
+    const N_LOG_MAX_TXS: usize = 3;
+    const N_LOG_MAX_CONTRACTS: usize = 3;
+    const N_LOG_MAX_VARIABLES: usize = 3;
+    const N_LOG_TXS: usize = 2;
+    const N_LOG_RECIPIENTS: usize = 3;
+    const N_LOG_CONTRACTS: usize = 3;
+    const N_LOG_VARIABLES: usize = 3;
+    const N_DIFFS: usize = 2;
+    const N_MERGES: usize = 2;
+    const N_TXS: usize = 2usize.pow(N_LOG_TXS as u32);
+    const N_DEPOSITS: usize = 2;
+
+    let default_block_details: BlockDetail<F, C, D> = BlockDetail::new(N_TXS);
+    let _default_block_production_proof = prove_block_production::<
+        F,
+        C,
+        D,
+        N_LOG_MAX_USERS,
+        N_LOG_MAX_TXS,
+        N_LOG_MAX_CONTRACTS,
+        N_LOG_MAX_VARIABLES,
+        N_LOG_TXS,
+        N_LOG_RECIPIENTS,
+        N_LOG_CONTRACTS,
+        N_LOG_VARIABLES,
+        N_DIFFS,
+        N_MERGES,
+        N_TXS,
+        N_DEPOSITS,
+    >(&default_block_details)
+    .unwrap();
 }

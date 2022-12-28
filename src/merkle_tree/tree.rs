@@ -54,7 +54,7 @@ pub fn get_merkle_proof_with_zero<F: RichField>(
     zero: WrappedHashOut<F>,
 ) -> MerkleProof<F> {
     let mut nodes = if leaves.is_empty() {
-        vec![Default::default()]
+        vec![zero]
     } else {
         leaves.to_vec()
     };

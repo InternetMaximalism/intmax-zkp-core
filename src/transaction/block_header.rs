@@ -12,11 +12,15 @@ use serde::{Deserialize, Serialize};
 use serde_hex::{SerHex, StrictPfx};
 
 use crate::{
-    merkle_tree::tree::{get_merkle_proof, get_merkle_root},
+    merkle_tree::tree::{get_merkle_proof, get_merkle_proof_with_zero, get_merkle_root},
     sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
 };
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
+use super::circuits::MergeAndPurgeTransitionPublicInputs;
+
+const N_LOG_MAX_BLOCKS: usize = 32;
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BlockHeader<F: Field> {
     pub block_number: u32,
     pub prev_block_hash: HashOut<F>,
@@ -41,6 +45,12 @@ pub struct SerializableBlockHeader<F: RichField> {
     pub approved_world_state_digest: WrappedHashOut<F>,
     pub latest_account_digest: WrappedHashOut<F>,
 }
+
+// impl<F: RichField> Default for BlockHeader<F> {
+//     fn default() -> Self {
+//         unimplemented!("please use `new` function instead")
+//     }
+// }
 
 impl<F: RichField> From<SerializableBlockHeader<F>> for BlockHeader<F> {
     fn from(value: SerializableBlockHeader<F>) -> Self {
@@ -93,14 +103,25 @@ impl<F: RichField> BlockHeader<F> {
         let default_hash = HashOut::ZERO;
 
         // transaction tree と deposit tree の深さは同じ.
-        let default_merkle_digest = get_merkle_proof(&[], 0, log_num_txs_in_block).root;
+        let default_interior_deposit_digest = default_hash.into();
+        let default_deposit_digest = get_merkle_proof_with_zero(
+            &[],
+            0,
+            log_num_txs_in_block,
+            default_interior_deposit_digest,
+        )
+        .root;
+        let default_tx_hash = MergeAndPurgeTransitionPublicInputs::default().tx_hash;
+        let default_transactions_digest =
+            get_merkle_proof_with_zero(&[], 0, log_num_txs_in_block, default_tx_hash).root;
+        let default_block_headers_digest = get_merkle_proof(&[], 0, N_LOG_MAX_BLOCKS).root;
 
         Self {
             block_number: 0,
             prev_block_hash: default_hash,
-            block_headers_digest: default_hash,
-            transactions_digest: *default_merkle_digest,
-            deposit_digest: *default_merkle_digest,
+            block_headers_digest: *default_block_headers_digest,
+            transactions_digest: *default_transactions_digest,
+            deposit_digest: *default_deposit_digest,
             proposed_world_state_digest: default_hash,
             approved_world_state_digest: default_hash,
             latest_account_digest: default_hash,

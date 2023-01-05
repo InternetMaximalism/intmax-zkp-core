@@ -9,8 +9,8 @@ edition = "2021"
 anyhow = "1.0"
 hex = { version = "0.4", features = ["serde"] }
 num = "0.4"
-plonky2 = { git = "https://github.com/mir-protocol/plonky2", rev = "d527073416dd8cbc04457b8cb856b2fec3fa0e6c" }
-plonky2_ecdsa = { git = "https://github.com/mir-protocol/plonky2", rev = "d527073416dd8cbc04457b8cb856b2fec3fa0e6c", optional = true }
+plonky2 = { git = "https://github.com/InternetMaximalism/plonky2", rev = "4cb0b48df1d227d5461a4c28ed025aaea64e2e62" }
+plonky2_ecdsa = { git = "https://github.com/InternetMaximalism/plonky2", rev = "4cb0b48df1d227d5461a4c28ed025aaea64e2e62", optional = true }
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde-hex = "0.1"
@@ -18,5 +18,6 @@ serde_json = "1.0"
 
 [features]
 ecdsa = ["dep:plonky2_ecdsa"]
+parallel = ["plonky2/parallel"]
 
 [lib]

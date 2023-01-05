@@ -5,7 +5,7 @@ use plonky2::{
         ext_target::ExtensionTarget,
         generator::{GeneratedValues, SimpleGenerator},
         target::Target,
-        witness::{PartitionWitness, Witness},
+        witness::{PartitionWitness, Witness, WitnessWrite},
     },
     plonk::circuit_builder::CircuitBuilder,
 };

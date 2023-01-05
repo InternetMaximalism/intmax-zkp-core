@@ -28,7 +28,7 @@ pub fn poseidon_two_to_one<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, 
 #[test]
 fn test_calc_node_hash() {
     use plonky2::{
-        iop::witness::{PartialWitness, Witness},
+        iop::witness::{PartialWitness, WitnessWrite},
         plonk::{
             circuit_builder::CircuitBuilder,
             circuit_data::CircuitConfig,

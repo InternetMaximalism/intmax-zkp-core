@@ -100,7 +100,7 @@ impl<const D: usize> RecursiveProofTarget<D> {
         };
 
         let wrapped_proof_t = Wrapper(proof_t);
-        builder.verify_proof::<C>(wrapped_proof_t.clone().0, &vd_target, &circuit_data.common);
+        builder.verify_proof::<C>(&wrapped_proof_t.0, &vd_target, &circuit_data.common);
 
         let enabled = builder.add_virtual_bool_target_safe();
 

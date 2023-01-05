@@ -173,7 +173,7 @@ impl<
             )
             .unwrap_or_else(|_| {
                 panic!(
-                    "invalid connection between first and second SMT proof of index {} in output witnesses",
+                    "invalid connection between first and second SMT proof of index {} in input witnesses",
                     i
                 )
             }); // XXX
@@ -190,7 +190,7 @@ impl<
             )
             .unwrap_or_else(|_| {
                 panic!(
-                    "invalid connection between second and third SMT proof of index {} in output witnesses",
+                    "invalid connection between second and third SMT proof of index {} in input witnesses",
                     i
                 )
             });

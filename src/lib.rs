@@ -7,3 +7,5 @@ pub mod rollup;
 pub mod sparse_merkle_tree;
 pub mod transaction;
 pub mod zkdsa;
+
+pub extern crate plonky2;

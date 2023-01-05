@@ -367,7 +367,6 @@ dependencies = [
  "plonky2_field",
  "plonky2_util",
  "rand",
- "rand_chacha",
  "serde",
  "static_assertions",
  "unroll",

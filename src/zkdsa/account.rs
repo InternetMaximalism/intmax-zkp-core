@@ -12,7 +12,6 @@ use plonky2::{
     plonk::config::{GenericHashOut, Hasher},
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_hex::{SerHexSeq, StrictPfx};
 
 use crate::sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut;
 
@@ -63,8 +62,8 @@ fn test_fmt_address() {
     assert_eq!(decoded_value, value);
 }
 
-#[derive(Serialize, Deserialize)]
-struct SerializableAddress(#[serde(with = "SerHexSeq::<StrictPfx>")] pub Vec<u8>);
+// #[derive(Serialize, Deserialize)]
+// struct SerializableAddress(#[serde(with = "SerHexSeq::<StrictPfx>")] pub Vec<u8>);
 
 impl<F: RichField> Serialize for Address<F> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -73,7 +72,7 @@ impl<F: RichField> Serialize for Address<F> {
     {
         let mut bytes = self.0.to_bytes(); // little endian
         bytes.reverse(); // big endian
-        let raw = SerializableAddress(bytes);
+        let raw = format!("0x{}", hex::encode(&bytes));
 
         raw.serialize(serializer)
     }
@@ -84,8 +83,15 @@ impl<'de, F: RichField> Deserialize<'de> for Address<F> {
     where
         D: Deserializer<'de>,
     {
-        let raw = SerializableAddress::deserialize(deserializer)?;
-        let mut bytes = raw.0;
+        let raw = String::deserialize(deserializer)?;
+        let raw_without_prefix = raw.strip_prefix("0x").ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "fail to strip 0x-prefix: given value {raw} does not start with 0x"
+            ))
+        })?;
+        let mut bytes = hex::decode(raw_without_prefix).map_err(|err| {
+            serde::de::Error::custom(format!("fail to parse a hex string: {err}"))
+        })?;
         if bytes.len() > 32 {
             return Err(serde::de::Error::custom("too long hexadecimal sequence"));
         }

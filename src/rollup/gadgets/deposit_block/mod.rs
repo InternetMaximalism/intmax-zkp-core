@@ -7,7 +7,6 @@ use plonky2::{
     plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
 };
 use serde::{Deserialize, Serialize};
-use serde_hex::{SerHex, StrictPfx};
 
 use crate::{
     sparse_merkle_tree::{
@@ -86,33 +85,45 @@ fn test_fmt_variable_index() {
     assert_eq!(decoded_value, value);
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[repr(transparent)]
-pub struct SerializableVariableIndex(#[serde(with = "SerHex::<StrictPfx>")] pub u8);
+// #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+// #[repr(transparent)]
+// pub struct SerializableVariableIndex(#[serde(with = "SerHex::<StrictPfx>")] pub u8);
 
-impl<F: RichField> From<SerializableVariableIndex> for VariableIndex<F> {
-    fn from(value: SerializableVariableIndex) -> Self {
-        value.0.into()
-    }
-}
+// impl<F: RichField> From<SerializableVariableIndex> for VariableIndex<F> {
+//     fn from(value: SerializableVariableIndex) -> Self {
+//         value.0.into()
+//     }
+// }
 
 impl<'de, F: RichField> Deserialize<'de> for VariableIndex<F> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = SerializableVariableIndex::deserialize(deserializer)?;
+        let raw = String::deserialize(deserializer)?;
+        let raw_without_prefix = raw.strip_prefix("0x").ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "fail to strip 0x-prefix: given value {raw} does not start with 0x"
+            ))
+        })?;
+        let bytes = hex::decode(raw_without_prefix).map_err(|err| {
+            serde::de::Error::custom(format!("fail to parse a hex string: {err}"))
+        })?;
+        let raw = *bytes.first().ok_or_else(|| {
+            serde::de::Error::custom(format!("out of index: given value {raw} is too short"))
+        })?;
 
         Ok(raw.into())
     }
 }
 
-impl<F: RichField> From<VariableIndex<F>> for SerializableVariableIndex {
-    fn from(value: VariableIndex<F>) -> Self {
-        SerializableVariableIndex(value.0)
-    }
-}
+// impl<F: RichField> From<VariableIndex<F>> for SerializableVariableIndex {
+//     fn from(value: VariableIndex<F>) -> Self {
+//         SerializableVariableIndex(value.0)
+//     }
+// }
 
 impl<F: RichField> Serialize for VariableIndex<F> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let raw = SerializableVariableIndex::from(*self);
+        let bytes = [self.0];
+        let raw = format!("0x{}", hex::encode(bytes));
 
         raw.serialize(serializer)
     }
@@ -145,6 +156,10 @@ fn test_serde_deposit_info() {
     let _json = serde_json::to_string(&deposit_info).unwrap();
     let json = "{\"receiver_address\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"contract_address\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"variable_index\":\"0x00\",\"amount\":0}";
     let decoded_deposit_info: DepositInfo<_> = serde_json::from_str(json).unwrap();
+    assert_eq!(decoded_deposit_info, deposit_info);
+
+    let json_value = serde_json::to_value(deposit_info).unwrap();
+    let decoded_deposit_info: DepositInfo<_> = serde_json::from_value(json_value).unwrap();
     assert_eq!(decoded_deposit_info, deposit_info);
 }
 

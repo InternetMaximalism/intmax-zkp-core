@@ -9,7 +9,6 @@ use plonky2::{
     plonk::config::Hasher,
 };
 use serde::{Deserialize, Serialize};
-use serde_hex::{SerHex, StrictPfx};
 
 use crate::{
     merkle_tree::tree::{get_merkle_proof, get_merkle_proof_with_zero, get_merkle_root},
@@ -35,8 +34,7 @@ pub struct BlockHeader<F: Field> {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(bound(deserialize = "WrappedHashOut<F>: Deserialize<'de>"))]
 pub struct SerializableBlockHeader<F: RichField> {
-    #[serde(with = "SerHex::<StrictPfx>")]
-    pub block_number: u32,
+    pub block_number: String,
     pub prev_block_hash: WrappedHashOut<F>,
     pub block_headers_digest: WrappedHashOut<F>,
     pub transactions_digest: WrappedHashOut<F>,
@@ -52,10 +50,27 @@ pub struct SerializableBlockHeader<F: RichField> {
 //     }
 // }
 
-impl<F: RichField> From<SerializableBlockHeader<F>> for BlockHeader<F> {
-    fn from(value: SerializableBlockHeader<F>) -> Self {
-        Self {
-            block_number: value.block_number,
+impl<'de, F: RichField> Deserialize<'de> for BlockHeader<F> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = SerializableBlockHeader::deserialize(deserializer)?;
+        let block_number = {
+            let raw = value.block_number;
+            let raw_without_prefix = raw.strip_prefix("0x").ok_or_else(|| {
+                serde::de::Error::custom(format!(
+                    "fail to strip 0x-prefix: given value {raw} does not start with 0x",
+                ))
+            })?;
+            let bytes = hex::decode(raw_without_prefix).map_err(|err| {
+                serde::de::Error::custom(format!("fail to parse a hex string: {err}"))
+            })?;
+
+            u32::from_be_bytes(bytes.try_into().map_err(|err| {
+                serde::de::Error::custom(format!("fail to parse to u32: {:?}", err))
+            })?)
+        };
+
+        Ok(Self {
+            block_number,
             prev_block_hash: *value.prev_block_hash,
             block_headers_digest: *value.block_headers_digest,
             transactions_digest: *value.transactions_digest,
@@ -63,39 +78,49 @@ impl<F: RichField> From<SerializableBlockHeader<F>> for BlockHeader<F> {
             proposed_world_state_digest: *value.proposed_world_state_digest,
             approved_world_state_digest: *value.approved_world_state_digest,
             latest_account_digest: *value.latest_account_digest,
-        }
-    }
-}
-
-impl<'de, F: RichField> Deserialize<'de> for BlockHeader<F> {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = SerializableBlockHeader::deserialize(deserializer)?;
-
-        Ok(raw.into())
-    }
-}
-
-impl<F: RichField> From<BlockHeader<F>> for SerializableBlockHeader<F> {
-    fn from(value: BlockHeader<F>) -> Self {
-        Self {
-            block_number: value.block_number,
-            prev_block_hash: value.prev_block_hash.into(),
-            block_headers_digest: value.block_headers_digest.into(),
-            transactions_digest: value.transactions_digest.into(),
-            deposit_digest: value.deposit_digest.into(),
-            proposed_world_state_digest: value.proposed_world_state_digest.into(),
-            approved_world_state_digest: value.approved_world_state_digest.into(),
-            latest_account_digest: value.latest_account_digest.into(),
-        }
+        })
     }
 }
 
 impl<F: RichField> Serialize for BlockHeader<F> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let raw = SerializableBlockHeader::from(self.clone());
+        let block_number = format!("0x{}", hex::encode(self.block_number.to_be_bytes()));
+
+        let raw = SerializableBlockHeader {
+            block_number,
+            prev_block_hash: self.prev_block_hash.into(),
+            block_headers_digest: self.block_headers_digest.into(),
+            transactions_digest: self.transactions_digest.into(),
+            deposit_digest: self.deposit_digest.into(),
+            proposed_world_state_digest: self.proposed_world_state_digest.into(),
+            approved_world_state_digest: self.approved_world_state_digest.into(),
+            latest_account_digest: self.latest_account_digest.into(),
+        };
 
         raw.serialize(serializer)
     }
+}
+
+#[test]
+fn test_serde_block_header() {
+    use plonky2::field::goldilocks_field::GoldilocksField;
+
+    type F = GoldilocksField;
+
+    let block_header = BlockHeader {
+        block_number: 0,
+        prev_block_hash: *WrappedHashOut::from_u32(1),
+        block_headers_digest: *WrappedHashOut::from_u32(2),
+        transactions_digest: *WrappedHashOut::from_u32(3),
+        deposit_digest: *WrappedHashOut::from_u32(4),
+        proposed_world_state_digest: *WrappedHashOut::from_u32(5),
+        approved_world_state_digest: *WrappedHashOut::from_u32(6),
+        latest_account_digest: *WrappedHashOut::from_u32(7),
+    };
+    let _encoded_block_header = serde_json::to_string(&block_header).unwrap();
+    let encoded_block_header = "{\"block_number\":\"0x00000000\",\"prev_block_hash\":\"0x0000000000000000000000000000000000000000000000000000000000000001\",\"block_headers_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000002\",\"transactions_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000003\",\"deposit_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000004\",\"proposed_world_state_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000005\",\"approved_world_state_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000006\",\"latest_account_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000007\"}";
+    let decoded_block_header: BlockHeader<F> = serde_json::from_str(encoded_block_header).unwrap();
+    assert_eq!(decoded_block_header, block_header);
 }
 
 impl<F: RichField> BlockHeader<F> {

@@ -7,7 +7,7 @@ use crate::{
     transaction::block_header::BlockHeader,
 };
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockInfo<F: RichField> {
     #[serde(bound(
         serialize = "BlockHeader<F>: Serialize",

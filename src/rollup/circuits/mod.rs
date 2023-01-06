@@ -600,7 +600,12 @@ pub struct BlockProductionCircuit<
     >,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    bound = "F: RichField",
+    from = "SerializableBlockProductionPublicInputs<F>",
+    into = "SerializableBlockProductionPublicInputs<F>"
+)]
 pub struct BlockProductionPublicInputs<F: RichField, const N_TXS: usize, const N_DEPOSITS: usize> {
     pub address_list: [TransactionSenderWithValidity<F>; N_TXS],
     pub deposit_list: [DepositInfo<F>; N_DEPOSITS],
@@ -611,6 +616,58 @@ pub struct BlockProductionPublicInputs<F: RichField, const N_TXS: usize, const N
     pub old_prev_block_header_digest: HashOut<F>,
     pub new_prev_block_header_digest: HashOut<F>,
     pub block_hash: HashOut<F>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(bound = "F: RichField")]
+pub struct SerializableBlockProductionPublicInputs<F: RichField> {
+    pub address_list: Vec<TransactionSenderWithValidity<F>>,
+    pub deposit_list: Vec<DepositInfo<F>>,
+    pub old_account_tree_root: WrappedHashOut<F>,
+    pub new_account_tree_root: WrappedHashOut<F>,
+    pub old_world_state_root: WrappedHashOut<F>,
+    pub new_world_state_root: WrappedHashOut<F>,
+    pub old_prev_block_header_digest: WrappedHashOut<F>,
+    pub new_prev_block_header_digest: WrappedHashOut<F>,
+    pub block_hash: WrappedHashOut<F>,
+}
+
+impl<F: RichField, const N_TXS: usize, const N_DEPOSITS: usize>
+    From<SerializableBlockProductionPublicInputs<F>>
+    for BlockProductionPublicInputs<F, N_TXS, N_DEPOSITS>
+{
+    fn from(value: SerializableBlockProductionPublicInputs<F>) -> Self {
+        Self {
+            address_list: value.address_list.try_into().unwrap(),
+            deposit_list: value.deposit_list.try_into().unwrap(),
+            old_account_tree_root: value.old_account_tree_root.0,
+            new_account_tree_root: value.new_account_tree_root.0,
+            old_world_state_root: value.old_world_state_root.0,
+            new_world_state_root: value.new_world_state_root.0,
+            old_prev_block_header_digest: value.old_prev_block_header_digest.0,
+            new_prev_block_header_digest: value.new_prev_block_header_digest.0,
+            block_hash: value.block_hash.0,
+        }
+    }
+}
+
+impl<F: RichField, const N_TXS: usize, const N_DEPOSITS: usize>
+    From<BlockProductionPublicInputs<F, N_TXS, N_DEPOSITS>>
+    for SerializableBlockProductionPublicInputs<F>
+{
+    fn from(value: BlockProductionPublicInputs<F, N_TXS, N_DEPOSITS>) -> Self {
+        Self {
+            address_list: value.address_list.to_vec(),
+            deposit_list: value.deposit_list.to_vec(),
+            old_account_tree_root: value.old_account_tree_root.into(),
+            new_account_tree_root: value.new_account_tree_root.into(),
+            old_world_state_root: value.old_world_state_root.into(),
+            new_world_state_root: value.new_world_state_root.into(),
+            old_prev_block_header_digest: value.old_prev_block_header_digest.into(),
+            new_prev_block_header_digest: value.new_prev_block_header_digest.into(),
+            block_hash: value.block_hash.into(),
+        }
+    }
 }
 
 impl<F: RichField, const N_TXS: usize, const N_DEPOSITS: usize>
@@ -723,7 +780,8 @@ pub struct BlockProductionPublicInputsTarget<const N_TXS: usize, const N_DEPOSIT
     pub block_hash: HashOutTarget,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(bound = "F: RichField")]
 pub struct BlockProductionProofWithPublicInputs<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F = F>,

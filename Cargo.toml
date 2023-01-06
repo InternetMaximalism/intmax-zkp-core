@@ -13,7 +13,6 @@ plonky2 = { git = "https://github.com/InternetMaximalism/plonky2", rev = "f99ed9
 plonky2_ecdsa = { git = "https://github.com/InternetMaximalism/plonky2", rev = "f99ed9c", default-features = false , optional = true }
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
-serde-hex = "0.1"
 serde_json = "1.0"
 
 [features]

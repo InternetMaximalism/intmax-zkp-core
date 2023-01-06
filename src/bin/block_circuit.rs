@@ -12,10 +12,15 @@ use plonky2::{
 };
 
 use intmax_zkp_core::{
-    merkle_tree::tree::{get_merkle_proof, MerkleProof},
+    merkle_tree::tree::{get_merkle_proof, get_merkle_proof_with_zero, MerkleProof},
     rollup::{
+        address_list::TransactionSenderWithValidity,
+        block::BlockInfo,
         circuits::{make_block_proof_circuit, BlockDetail},
-        gadgets::{batch::BlockBatchTarget, deposit_block::DepositInfo},
+        gadgets::{
+            batch::BlockBatchTarget,
+            deposit_block::{DepositInfo, VariableIndex},
+        },
     },
     sparse_merkle_tree::{
         goldilocks_poseidon::{
@@ -26,7 +31,7 @@ use intmax_zkp_core::{
     },
     transaction::{
         block_header::{get_block_hash, BlockHeader},
-        circuits::make_user_proof_circuit,
+        circuits::{make_user_proof_circuit, MergeAndPurgeTransitionPublicInputs},
         gadgets::merge::MergeProof,
         tree::user_asset::UserAssetTree,
     },
@@ -505,7 +510,7 @@ fn main() {
 
     let prev_block_number = prev_block_header.block_number;
     let MerkleProof {
-        root: _block_headers_digest,
+        root: block_headers_digest,
         siblings: block_headers_proof_siblings,
         ..
     } = get_merkle_proof(&block_headers, prev_block_number as usize, N_LOG_MAX_BLOCKS);
@@ -532,6 +537,71 @@ fn main() {
                 .unwrap()
         })
         .collect::<Vec<_>>();
+
+    {
+        let deposit_list = deposit_process_proofs
+            .iter()
+            .map(|proof_t| DepositInfo {
+                receiver_address: Address(*proof_t.0.new_key),
+                contract_address: Address(*proof_t.1.new_key),
+                variable_index: VariableIndex::from_hash_out(*proof_t.2.new_key),
+                amount: proof_t.2.new_value.elements[0],
+            })
+            .collect::<Vec<_>>();
+        let interior_deposit_digest = deposit_process_proofs.last().unwrap().0.new_root;
+        let deposit_digest = get_merkle_proof(&[interior_deposit_digest], 0, N_LOG_TXS).root;
+
+        let transaction_hashes = user_transactions
+            .iter()
+            .map(|v| v.tx_hash)
+            .collect::<Vec<_>>();
+        let default_tx_hash = MergeAndPurgeTransitionPublicInputs::default().tx_hash;
+        let transactions_digest =
+            get_merkle_proof_with_zero(&transaction_hashes, 0, N_LOG_TXS as usize, default_tx_hash)
+                .root;
+
+        let address_list = user_transactions
+            .iter()
+            .zip(received_signatures.iter())
+            .map(
+                |(user_tx_proof, received_signature_proof)| TransactionSenderWithValidity {
+                    sender_address: user_tx_proof.sender_address,
+                    is_valid: received_signature_proof.is_some(),
+                },
+            )
+            .collect::<Vec<_>>();
+
+        let block_header = BlockHeader {
+            block_number,
+            prev_block_hash,
+            block_headers_digest: *block_headers_digest,
+            transactions_digest: *transactions_digest,
+            deposit_digest: *deposit_digest,
+            proposed_world_state_digest: *world_state_process_proofs.last().unwrap().new_root,
+            approved_world_state_digest: *world_state_revert_proofs.last().unwrap().new_root,
+            latest_account_digest: *latest_account_process_proofs.last().unwrap().new_root,
+        };
+
+        let block_info = BlockInfo {
+            header: block_header,
+            transactions: transaction_hashes,
+            deposit_list,
+            address_list,
+        };
+
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open("./test_cases/block1_info.json")
+            .unwrap();
+        write!(&mut f, "{}", serde_json::to_string(&block_info).unwrap()).unwrap();
+
+        let json = std::fs::read_to_string("test_cases/block1_info.json").unwrap();
+        let decoded_block_info: BlockInfo<F> = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(decoded_block_info, block_info);
+    }
 
     let input = BlockDetail {
         block_number,

@@ -45,18 +45,18 @@ fn main() {
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = <C as GenericConfig<D>>::F;
-    const N_LOG_MAX_BLOCKS: usize = 32;
-    const N_LOG_MAX_USERS: usize = 3;
-    const N_LOG_MAX_TXS: usize = 3;
-    const N_LOG_MAX_CONTRACTS: usize = 3;
-    const N_LOG_MAX_VARIABLES: usize = 3;
-    const N_LOG_TXS: usize = 2;
-    const N_LOG_RECIPIENTS: usize = 3;
-    const N_LOG_CONTRACTS: usize = 3;
-    const N_LOG_VARIABLES: usize = 3;
+    const LOG_MAX_N_BLOCKS: usize = 32;
+    const LOG_MAX_N_USERS: usize = 3;
+    const LOG_MAX_N_TXS: usize = 3;
+    const LOG_MAX_N_CONTRACTS: usize = 3;
+    const LOG_MAX_N_VARIABLES: usize = 3;
+    const LOG_N_TXS: usize = 2;
+    const LOG_N_RECIPIENTS: usize = 3;
+    const LOG_N_CONTRACTS: usize = 3;
+    const LOG_N_VARIABLES: usize = 3;
     const N_DIFFS: usize = 2;
     const N_MERGES: usize = 2;
-    const N_TXS: usize = 2usize.pow(N_LOG_TXS as u32);
+    const N_TXS: usize = 2usize.pow(LOG_N_TXS as u32);
     const N_DEPOSITS: usize = 2;
     const N_BLOCKS: usize = 2;
 
@@ -66,22 +66,20 @@ fn main() {
 
     // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
     let config = CircuitConfig::standard_recursion_config();
-    let merge_and_purge_circuit = make_user_proof_circuit::<
-        F,
-        C,
-        D,
-        N_LOG_MAX_USERS,
-        N_LOG_MAX_TXS,
-        N_LOG_MAX_CONTRACTS,
-        N_LOG_MAX_VARIABLES,
-        N_LOG_TXS,
-        N_LOG_RECIPIENTS,
-        N_LOG_CONTRACTS,
-        N_LOG_VARIABLES,
-        N_DIFFS,
-        N_MERGES,
+    let merge_and_purge_circuit = make_user_proof_circuit::<F, C, D>(
+        config,
+        LOG_MAX_N_USERS,
+        LOG_MAX_N_TXS,
+        LOG_MAX_N_CONTRACTS,
+        LOG_MAX_N_VARIABLES,
+        LOG_N_TXS,
+        LOG_N_RECIPIENTS,
+        LOG_N_CONTRACTS,
+        LOG_N_VARIABLES,
         N_DEPOSITS,
-    >(config);
+        N_MERGES,
+        N_DIFFS,
+    );
 
     // dbg!(&purge_proof_circuit_data.common);
 
@@ -200,17 +198,17 @@ fn main() {
     let deposit_diff_root = merge_inclusion_proof2.root;
     let deposit_tx_hash = PoseidonHash::two_to_one(*deposit_diff_root, deposit_nonce).into();
 
-    let merge_inclusion_proof1 = get_merkle_proof(&[deposit_tx_hash], 0, N_LOG_TXS);
+    let merge_inclusion_proof1 = get_merkle_proof(&[deposit_tx_hash], 0, LOG_N_TXS);
 
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
-    let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
+    let default_merkle_root = get_merkle_proof(&[], 0, LOG_N_TXS).root;
     let prev_block_number = 1u32;
     let mut block_headers: Vec<WrappedHashOut<F>> =
         vec![WrappedHashOut::ZERO; prev_block_number as usize];
     let prev_block_headers_digest = get_merkle_proof(
         &block_headers,
         prev_block_number as usize - 1,
-        N_LOG_MAX_BLOCKS,
+        LOG_MAX_N_BLOCKS,
     )
     .root;
 
@@ -438,23 +436,23 @@ fn main() {
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
     let config = CircuitConfig::standard_recursion_config();
-    let block_circuit = make_block_proof_circuit::<
-        F,
-        C,
-        D,
-        N_LOG_MAX_USERS,
-        N_LOG_MAX_TXS,
-        N_LOG_MAX_CONTRACTS,
-        N_LOG_MAX_VARIABLES,
-        N_LOG_TXS,
-        N_LOG_RECIPIENTS,
-        N_LOG_CONTRACTS,
-        N_LOG_VARIABLES,
+    let block_circuit = make_block_proof_circuit::<F, C, D>(
+        config,
+        &merge_and_purge_circuit,
+        &zkdsa_circuit,
+        LOG_MAX_N_USERS,
+        LOG_MAX_N_TXS,
+        LOG_MAX_N_CONTRACTS,
+        LOG_MAX_N_VARIABLES,
+        LOG_N_TXS,
+        LOG_N_RECIPIENTS,
+        LOG_N_CONTRACTS,
+        LOG_N_VARIABLES,
         N_DIFFS,
         N_MERGES,
         N_TXS,
         N_DEPOSITS,
-    >(config, &merge_and_purge_circuit, &zkdsa_circuit);
+    );
 
     let block_number = prev_block_header.block_number + 1;
 
@@ -513,7 +511,7 @@ fn main() {
         root: block_headers_digest,
         siblings: block_headers_proof_siblings,
         ..
-    } = get_merkle_proof(&block_headers, prev_block_number as usize, N_LOG_MAX_BLOCKS);
+    } = get_merkle_proof(&block_headers, prev_block_number as usize, LOG_MAX_N_BLOCKS);
 
     let block2_deposit_list: Vec<DepositInfo<F>> = vec![DepositInfo {
         receiver_address: Address(sender2_address),
@@ -549,7 +547,7 @@ fn main() {
             })
             .collect::<Vec<_>>();
         let interior_deposit_digest = deposit_process_proofs.last().unwrap().0.new_root;
-        let deposit_digest = get_merkle_proof(&[interior_deposit_digest], 0, N_LOG_TXS).root;
+        let deposit_digest = get_merkle_proof(&[interior_deposit_digest], 0, LOG_N_TXS).root;
 
         let transaction_hashes = user_transactions
             .iter()
@@ -557,7 +555,7 @@ fn main() {
             .collect::<Vec<_>>();
         let default_tx_hash = MergeAndPurgeTransitionPublicInputs::default().tx_hash;
         let transactions_digest =
-            get_merkle_proof_with_zero(&transaction_hashes, 0, N_LOG_TXS as usize, default_tx_hash)
+            get_merkle_proof_with_zero(&transaction_hashes, 0, LOG_N_TXS as usize, default_tx_hash)
                 .root;
 
         let address_list = user_transactions

@@ -31,26 +31,18 @@ use crate::{
 use super::asset_mess::{verify_equal_assets, AssetTargets};
 
 #[derive(Clone, Debug)]
-pub struct PurgeTransitionTarget<
-    const LOG_MAX_N_BLOCKS: usize,
-    const LOG_MAX_N_CONTRACTS: usize,
-    const LOG_MAX_N_VARIABLES: usize,
-    const N_LOG_RECIPIENTS: usize,
-    const LOG_N_CONTRACTS: usize,
-    const LOG_N_VARIABLES: usize,
-    const N_DIFFS: usize,
-> {
+pub struct PurgeTransitionTarget {
     pub sender_address: AddressTarget, // input
-    pub input_proofs: [(
-        SparseMerkleProcessProofTarget<LOG_MAX_N_BLOCKS>,
-        SparseMerkleProcessProofTarget<LOG_MAX_N_CONTRACTS>,
-        SparseMerkleProcessProofTarget<LOG_MAX_N_VARIABLES>,
-    ); N_DIFFS], // input
-    pub output_proofs: [(
-        SparseMerkleProcessProofTarget<N_LOG_RECIPIENTS>,
-        SparseMerkleProcessProofTarget<LOG_N_CONTRACTS>,
-        SparseMerkleProcessProofTarget<LOG_N_VARIABLES>,
-    ); N_DIFFS], // input
+    pub input_proofs: Vec<(
+        SparseMerkleProcessProofTarget,
+        SparseMerkleProcessProofTarget,
+        SparseMerkleProcessProofTarget,
+    )>, // input
+    pub output_proofs: Vec<(
+        SparseMerkleProcessProofTarget,
+        SparseMerkleProcessProofTarget,
+        SparseMerkleProcessProofTarget,
+    )>, // input
     pub old_user_asset_root: HashOutTarget, // input
     pub new_user_asset_root: HashOutTarget, // output
     pub diff_root: HashOutTarget,      // output
@@ -63,60 +55,57 @@ pub struct PurgeTransitionTarget<
     pub tx_hash: HashOutTarget, // output
 }
 
-impl<
-        const N_LOG_MAX_TXS: usize,
-        const N_LOG_MAX_CONTRACTS: usize,
-        const N_LOG_MAX_VARIABLES: usize,
-        const N_LOG_RECIPIENTS: usize,
-        const N_LOG_CONTRACTS: usize,
-        const N_LOG_VARIABLES: usize,
-        const N_DIFFS: usize,
-    >
-    PurgeTransitionTarget<
-        N_LOG_MAX_TXS,
-        N_LOG_MAX_CONTRACTS,
-        N_LOG_MAX_VARIABLES,
-        N_LOG_RECIPIENTS,
-        N_LOG_CONTRACTS,
-        N_LOG_VARIABLES,
-        N_DIFFS,
-    >
-{
+impl PurgeTransitionTarget {
     pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
+        log_max_n_txs: usize,
+        log_max_n_contracts: usize,
+        log_max_n_variables: usize,
+        log_n_recipients: usize,
+        log_n_contracts: usize,
+        log_n_variables: usize,
+        n_diffs: usize,
     ) -> Self {
         let sender_address = AddressTarget::add_virtual_to(builder);
         let old_user_asset_root = builder.add_virtual_hash();
         let nonce = builder.add_virtual_hash();
-        let input_proofs_t = (0..N_DIFFS)
+        let input_proofs_t = (0..n_diffs)
             .map(|_| {
-                let proof0_t = SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder);
-                let proof1_t = SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder);
-                let proof2_t = SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder);
+                let proof0_t = SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(
+                    builder,
+                    log_max_n_txs,
+                );
+                let proof1_t = SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(
+                    builder,
+                    log_max_n_contracts,
+                );
+                let proof2_t = SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(
+                    builder,
+                    log_max_n_variables,
+                );
                 (proof0_t, proof1_t, proof2_t)
             })
             .collect::<Vec<_>>();
 
-        let output_proofs_t = (0..N_DIFFS)
+        let output_proofs_t = (0..n_diffs)
             .map(|_| {
-                let proof0_t = SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder);
-                let proof1_t = SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder);
-                let proof2_t = SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder);
+                let proof0_t = SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(
+                    builder,
+                    log_n_recipients,
+                );
+                let proof1_t = SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(
+                    builder,
+                    log_n_contracts,
+                );
+                let proof2_t = SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(
+                    builder,
+                    log_n_variables,
+                );
                 (proof0_t, proof1_t, proof2_t)
             })
             .collect::<Vec<_>>();
 
-        let (new_user_asset_root, diff_root, tx_hash) = verify_user_asset_purge_proof::<
-            F,
-            H,
-            D,
-            N_LOG_MAX_TXS,
-            N_LOG_MAX_CONTRACTS,
-            N_LOG_MAX_VARIABLES,
-            N_LOG_RECIPIENTS,
-            N_LOG_CONTRACTS,
-            N_LOG_VARIABLES,
-        >(
+        let (new_user_asset_root, diff_root, tx_hash) = verify_user_asset_purge_proof::<F, H, D>(
             builder,
             &input_proofs_t,
             &output_proofs_t,
@@ -126,8 +115,8 @@ impl<
 
         Self {
             sender_address,
-            input_proofs: input_proofs_t.try_into().unwrap(),
-            output_proofs: output_proofs_t.try_into().unwrap(),
+            input_proofs: input_proofs_t,
+            output_proofs: output_proofs_t,
             old_user_asset_root,
             new_user_asset_root,
             diff_root,
@@ -293,23 +282,17 @@ pub fn verify_user_asset_purge_proof<
     F: RichField + Extendable<D>,
     H: AlgebraicHasher<F>,
     const D: usize,
-    const N_LOG_MAX_TXS: usize,
-    const N_LOG_MAX_CONTRACTS: usize,
-    const N_LOG_MAX_VARIABLES: usize,
-    const N_LOG_RECIPIENTS: usize,
-    const N_LOG_CONTRACTS: usize,
-    const N_LOG_VARIABLES: usize,
 >(
     builder: &mut CircuitBuilder<F, D>,
     input_proofs_t: &[(
-        SparseMerkleProcessProofTarget<N_LOG_MAX_TXS>,
-        SparseMerkleProcessProofTarget<N_LOG_MAX_CONTRACTS>,
-        SparseMerkleProcessProofTarget<N_LOG_MAX_VARIABLES>,
+        SparseMerkleProcessProofTarget,
+        SparseMerkleProcessProofTarget,
+        SparseMerkleProcessProofTarget,
     )],
     output_proofs_t: &[(
-        SparseMerkleProcessProofTarget<N_LOG_RECIPIENTS>,
-        SparseMerkleProcessProofTarget<N_LOG_CONTRACTS>,
-        SparseMerkleProcessProofTarget<N_LOG_VARIABLES>,
+        SparseMerkleProcessProofTarget,
+        SparseMerkleProcessProofTarget,
+        SparseMerkleProcessProofTarget,
     )],
     old_user_asset_root: HashOutTarget,
     nonce: HashOutTarget,
@@ -470,7 +453,8 @@ fn test_purge_proof_by_plonky2() {
     let config = CircuitConfig::standard_recursion_config();
 
     let mut builder = CircuitBuilder::<F, D>::new(config);
-    let target: PurgeTransitionTarget<
+    let target = PurgeTransitionTarget::add_virtual_to::<F, H, D>(
+        &mut builder,
         LOG_MAX_N_BLOCKS,
         LOG_MAX_N_CONTRACTS,
         LOG_MAX_N_VARIABLES,
@@ -478,7 +462,7 @@ fn test_purge_proof_by_plonky2() {
         LOG_N_CONTRACTS,
         LOG_N_VARIABLES,
         N_DIFFS,
-    > = PurgeTransitionTarget::add_virtual_to::<F, H, D>(&mut builder);
+    );
     builder.register_public_inputs(&target.new_user_asset_root.elements);
     builder.register_public_inputs(&target.diff_root.elements);
     builder.register_public_inputs(&target.tx_hash.elements);

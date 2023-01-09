@@ -44,65 +44,12 @@ pub struct MergeAndPurgeTransition<F: RichField> {
     pub old_user_asset_root: WrappedHashOut<F>,
 }
 
-pub struct MergeAndPurgeTransitionTarget<
-    const N_LOG_MAX_USERS: usize,
-    const N_LOG_MAX_TXS: usize,
-    const N_LOG_MAX_CONTRACTS: usize,
-    const N_LOG_MAX_VARIABLES: usize,
-    const N_LOG_TXS: usize,
-    const N_LOG_RECIPIENTS: usize,
-    const N_LOG_CONTRACTS: usize,
-    const N_LOG_VARIABLES: usize,
-    const N_DIFFS: usize,
-    const N_MERGES: usize,
-    const N_DEPOSITS: usize,
-> {
-    pub merge_proof_target: MergeTransitionTarget<
-        N_LOG_MAX_USERS,
-        N_LOG_MAX_TXS,
-        N_LOG_TXS,
-        N_LOG_RECIPIENTS,
-        N_MERGES,
-        N_DEPOSITS,
-    >,
-    pub purge_proof_target: PurgeTransitionTarget<
-        N_LOG_MAX_TXS,
-        N_LOG_MAX_CONTRACTS,
-        N_LOG_MAX_VARIABLES,
-        N_LOG_RECIPIENTS,
-        N_LOG_CONTRACTS,
-        N_LOG_VARIABLES,
-        N_DIFFS,
-    >,
+pub struct MergeAndPurgeTransitionTarget {
+    pub merge_proof_target: MergeTransitionTarget,
+    pub purge_proof_target: PurgeTransitionTarget,
 }
 
-impl<
-        const N_LOG_MAX_USERS: usize,
-        const N_LOG_MAX_TXS: usize,
-        const N_LOG_MAX_CONTRACTS: usize,
-        const N_LOG_MAX_VARIABLES: usize,
-        const N_LOG_TXS: usize,
-        const N_LOG_RECIPIENTS: usize,
-        const N_LOG_CONTRACTS: usize,
-        const N_LOG_VARIABLES: usize,
-        const N_DIFFS: usize,
-        const N_MERGES: usize,
-        const N_DEPOSITS: usize,
-    >
-    MergeAndPurgeTransitionTarget<
-        N_LOG_MAX_USERS,
-        N_LOG_MAX_TXS,
-        N_LOG_MAX_CONTRACTS,
-        N_LOG_MAX_VARIABLES,
-        N_LOG_TXS,
-        N_LOG_RECIPIENTS,
-        N_LOG_CONTRACTS,
-        N_LOG_VARIABLES,
-        N_DIFFS,
-        N_MERGES,
-        N_DEPOSITS,
-    >
-{
+impl MergeAndPurgeTransitionTarget {
     #[allow(clippy::too_many_arguments)]
     pub fn set_witness<F: RichField>(
         &self,
@@ -141,60 +88,48 @@ pub fn make_user_proof_circuit<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F = F>,
     const D: usize,
-    const N_LOG_MAX_USERS: usize,
-    const N_LOG_MAX_TXS: usize,
-    const N_LOG_MAX_CONTRACTS: usize,
-    const N_LOG_MAX_VARIABLES: usize,
-    const N_LOG_TXS: usize,
-    const N_LOG_RECIPIENTS: usize,
-    const N_LOG_CONTRACTS: usize,
-    const N_LOG_VARIABLES: usize,
-    const N_DIFFS: usize,
-    const N_MERGES: usize,
-    const N_DEPOSITS: usize,
 >(
     config: CircuitConfig,
-    // zkdsa_circuit: SimpleSignatureCircuit,
-) -> MergeAndPurgeTransitionCircuit<
-    F,
-    C,
-    D,
-    N_LOG_MAX_USERS,
-    N_LOG_MAX_TXS,
-    N_LOG_MAX_CONTRACTS,
-    N_LOG_MAX_VARIABLES,
-    N_LOG_TXS,
-    N_LOG_RECIPIENTS,
-    N_LOG_CONTRACTS,
-    N_LOG_VARIABLES,
-    N_DIFFS,
-    N_MERGES,
-    N_DEPOSITS,
->
+    log_max_n_users: usize,
+    log_max_n_txs: usize,
+    log_max_n_contracts: usize,
+    log_max_n_variables: usize,
+    log_n_txs: usize,
+    log_n_recipients: usize,
+    log_n_contracts: usize,
+    log_n_variables: usize,
+    n_deposits: usize,
+    n_merges: usize,
+    n_diffs: usize,
+) -> MergeAndPurgeTransitionCircuit<F, C, D>
 where
     C::Hasher: AlgebraicHasher<F>,
 {
     let mut builder = CircuitBuilder::<F, D>::new(config);
     // builder.debug_gate_row = Some(282);
 
-    let merge_proof_target: MergeTransitionTarget<
-        N_LOG_MAX_USERS,
-        N_LOG_MAX_TXS,
-        N_LOG_TXS,
-        N_LOG_RECIPIENTS,
-        N_MERGES,
-        N_DEPOSITS,
-    > = MergeTransitionTarget::add_virtual_to::<F, C::Hasher, D>(&mut builder);
+    let merge_proof_target: MergeTransitionTarget =
+        MergeTransitionTarget::add_virtual_to::<F, C::Hasher, D>(
+            &mut builder,
+            log_max_n_users,
+            log_max_n_txs,
+            log_n_txs,
+            log_n_recipients,
+            n_deposits,
+            n_merges,
+        );
 
-    let purge_proof_target: PurgeTransitionTarget<
-        N_LOG_MAX_TXS,
-        N_LOG_MAX_CONTRACTS,
-        N_LOG_MAX_VARIABLES,
-        N_LOG_RECIPIENTS,
-        N_LOG_CONTRACTS,
-        N_LOG_VARIABLES,
-        N_DIFFS,
-    > = PurgeTransitionTarget::add_virtual_to::<F, C::Hasher, D>(&mut builder);
+    let purge_proof_target: PurgeTransitionTarget =
+        PurgeTransitionTarget::add_virtual_to::<F, C::Hasher, D>(
+            &mut builder,
+            log_max_n_txs,
+            log_max_n_contracts,
+            log_max_n_variables,
+            log_n_recipients,
+            log_n_contracts,
+            log_n_variables,
+            n_diffs,
+        );
     builder.connect_hashes(
         merge_proof_target.new_user_asset_root,
         purge_proof_target.old_user_asset_root,
@@ -242,32 +177,9 @@ pub struct MergeAndPurgeTransitionCircuit<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F = F>,
     const D: usize,
-    const N_LOG_MAX_USERS: usize,
-    const N_LOG_MAX_TXS: usize,
-    const N_LOG_MAX_CONTRACTS: usize,
-    const N_LOG_MAX_VARIABLES: usize,
-    const N_LOG_TXS: usize,
-    const N_LOG_RECIPIENTS: usize,
-    const N_LOG_CONTRACTS: usize,
-    const N_LOG_VARIABLES: usize,
-    const N_DIFFS: usize,
-    const N_MERGES: usize,
-    const N_DEPOSITS: usize,
 > {
     pub data: CircuitData<F, C, D>,
-    pub targets: MergeAndPurgeTransitionTarget<
-        N_LOG_MAX_USERS,
-        N_LOG_MAX_TXS,
-        N_LOG_MAX_CONTRACTS,
-        N_LOG_MAX_VARIABLES,
-        N_LOG_TXS,
-        N_LOG_RECIPIENTS,
-        N_LOG_CONTRACTS,
-        N_LOG_VARIABLES,
-        N_DIFFS,
-        N_MERGES,
-        N_DEPOSITS,
-    >,
+    pub targets: MergeAndPurgeTransitionTarget,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -531,38 +443,8 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
 //     }
 // }
 
-impl<
-        F: RichField + Extendable<D>,
-        C: GenericConfig<D, F = F>,
-        const D: usize,
-        const N_LOG_MAX_USERS: usize,
-        const N_LOG_MAX_TXS: usize,
-        const N_LOG_MAX_CONTRACTS: usize,
-        const N_LOG_MAX_VARIABLES: usize,
-        const N_LOG_TXS: usize,
-        const N_LOG_RECIPIENTS: usize,
-        const N_LOG_CONTRACTS: usize,
-        const N_LOG_VARIABLES: usize,
-        const N_DIFFS: usize,
-        const N_MERGES: usize,
-        const N_DEPOSITS: usize,
-    >
-    MergeAndPurgeTransitionCircuit<
-        F,
-        C,
-        D,
-        N_LOG_MAX_USERS,
-        N_LOG_MAX_TXS,
-        N_LOG_MAX_CONTRACTS,
-        N_LOG_MAX_VARIABLES,
-        N_LOG_TXS,
-        N_LOG_RECIPIENTS,
-        N_LOG_CONTRACTS,
-        N_LOG_VARIABLES,
-        N_DIFFS,
-        N_MERGES,
-        N_DEPOSITS,
-    >
+impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
+    MergeAndPurgeTransitionCircuit<F, C, D>
 {
     pub fn parse_public_inputs(&self) -> MergeAndPurgeTransitionPublicInputsTarget {
         let public_inputs_t = self.data.prover_only.public_inputs.clone();
@@ -621,14 +503,14 @@ pub fn prove_user_transaction<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F = F>,
     const D: usize,
-    const N_LOG_MAX_USERS: usize,
-    const N_LOG_MAX_TXS: usize,
-    const N_LOG_MAX_CONTRACTS: usize,
-    const N_LOG_MAX_VARIABLES: usize,
-    const N_LOG_TXS: usize,
-    const N_LOG_RECIPIENTS: usize,
-    const N_LOG_CONTRACTS: usize,
-    const N_LOG_VARIABLES: usize,
+    const LOG_MAX_N_USERS: usize,
+    const LOG_MAX_N_TXS: usize,
+    const LOG_MAX_N_CONTRACTS: usize,
+    const LOG_MAX_N_VARIABLES: usize,
+    const LOG_N_TXS: usize,
+    const LOG_N_RECIPIENTS: usize,
+    const LOG_N_CONTRACTS: usize,
+    const LOG_N_VARIABLES: usize,
     const N_DIFFS: usize,
     const N_MERGES: usize,
     const N_DEPOSITS: usize,
@@ -645,22 +527,20 @@ where
 {
     // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
     let config = CircuitConfig::standard_recursion_config();
-    let merge_and_purge_circuit = make_user_proof_circuit::<
-        F,
-        C,
-        D,
-        N_LOG_MAX_USERS,
-        N_LOG_MAX_TXS,
-        N_LOG_MAX_CONTRACTS,
-        N_LOG_MAX_VARIABLES,
-        N_LOG_TXS,
-        N_LOG_RECIPIENTS,
-        N_LOG_CONTRACTS,
-        N_LOG_VARIABLES,
-        N_DIFFS,
-        N_MERGES,
+    let merge_and_purge_circuit = make_user_proof_circuit::<F, C, D>(
+        config,
+        LOG_MAX_N_USERS,
+        LOG_MAX_N_TXS,
+        LOG_MAX_N_CONTRACTS,
+        LOG_MAX_N_VARIABLES,
+        LOG_N_TXS,
+        LOG_N_RECIPIENTS,
+        LOG_N_CONTRACTS,
+        LOG_N_VARIABLES,
         N_DEPOSITS,
-    >(config);
+        N_MERGES,
+        N_DIFFS,
+    );
 
     let mut pw = PartialWitness::new();
     let _public_inputs = merge_and_purge_circuit.targets.set_witness(

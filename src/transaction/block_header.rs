@@ -17,7 +17,7 @@ use crate::{
 
 use super::circuits::MergeAndPurgeTransitionPublicInputs;
 
-const N_LOG_MAX_BLOCKS: usize = 32;
+const LOG_MAX_N_BLOCKS: usize = 32;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BlockHeader<F: Field> {
@@ -139,7 +139,7 @@ impl<F: RichField> BlockHeader<F> {
         let default_tx_hash = MergeAndPurgeTransitionPublicInputs::default().tx_hash;
         let default_transactions_digest =
             get_merkle_proof_with_zero(&[], 0, log_num_txs_in_block, default_tx_hash).root;
-        let default_block_headers_digest = get_merkle_proof(&[], 0, N_LOG_MAX_BLOCKS).root;
+        let default_block_headers_digest = get_merkle_proof(&[], 0, LOG_MAX_N_BLOCKS).root;
 
         Self {
             block_number: 0,

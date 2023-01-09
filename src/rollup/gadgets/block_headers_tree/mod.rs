@@ -9,7 +9,7 @@ use crate::{
     transaction::gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
 };
 
-const N_LOG_MAX_BLOCKS: usize = 32;
+const LOG_MAX_N_BLOCKS: usize = 32;
 
 pub fn calc_block_headers_proof<
     F: RichField + Extendable<D>,
@@ -17,9 +17,10 @@ pub fn calc_block_headers_proof<
     const D: usize,
 >(
     builder: &mut CircuitBuilder<F, D>,
-    prev_block_headers_proof_siblings: [HashOutTarget; N_LOG_MAX_BLOCKS],
+    prev_block_headers_proof_siblings: Vec<HashOutTarget>,
     prev_block_header: &BlockHeaderTarget,
-) -> MerkleProofTarget<N_LOG_MAX_BLOCKS> {
+) -> MerkleProofTarget {
+    assert_eq!(prev_block_headers_proof_siblings.len(), LOG_MAX_N_BLOCKS);
     let zero = builder.zero();
     let default_hash = HashOutTarget::from_partial(&[], zero);
 

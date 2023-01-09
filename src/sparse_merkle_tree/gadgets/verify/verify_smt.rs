@@ -26,8 +26,8 @@ pub type LayeredLayeredSmtInclusionProof<F> = (
 );
 
 #[derive(Clone, Debug)]
-pub struct SparseMerkleInclusionProofTarget<const N_LEVELS: usize> {
-    pub siblings: [HashOutTarget; N_LEVELS],
+pub struct SparseMerkleInclusionProofTarget {
+    pub siblings: Vec<HashOutTarget>,
     pub root: HashOutTarget,
     pub old_key: HashOutTarget,
     pub old_value: HashOutTarget,
@@ -38,11 +38,12 @@ pub struct SparseMerkleInclusionProofTarget<const N_LEVELS: usize> {
     pub fnc: BoolTarget,
 }
 
-impl<const N_LEVELS: usize> SparseMerkleInclusionProofTarget<N_LEVELS> {
+impl SparseMerkleInclusionProofTarget {
     pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
+        n_levels: usize,
     ) -> Self {
-        let siblings = builder.add_virtual_hashes(N_LEVELS);
+        let siblings = builder.add_virtual_hashes(n_levels);
         let root = builder.add_virtual_hash();
         let old_key = builder.add_virtual_hash();
         let old_value = builder.add_virtual_hash();
@@ -57,7 +58,7 @@ impl<const N_LEVELS: usize> SparseMerkleInclusionProofTarget<N_LEVELS> {
         );
 
         Self {
-            siblings: siblings.try_into().unwrap(),
+            siblings,
             root,
             old_key,
             old_value,
@@ -75,11 +76,11 @@ impl<const N_LEVELS: usize> SparseMerkleInclusionProofTarget<N_LEVELS> {
         witness: &SmtInclusionProof<F>,
         enabled: bool,
     ) {
-        assert!(witness.siblings.len() < N_LEVELS);
+        assert!(witness.siblings.len() < self.siblings.len());
         for i in 0..witness.siblings.len() {
             pw.set_hash_target(self.siblings[i], *witness.siblings[i]);
         }
-        for i in witness.siblings.len()..N_LEVELS {
+        for i in witness.siblings.len()..self.siblings.len() {
             pw.set_hash_target(self.siblings[i], HashOut::<F>::ZERO);
         }
         pw.set_hash_target(self.root, *witness.root);

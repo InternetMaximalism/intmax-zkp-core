@@ -31,16 +31,17 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct ProposalBlockProductionTarget<
-    const D: usize,
-    const N_LOG_MAX_USERS: usize,
-    const N_TXS: usize,
-> {
-    pub world_state_process_proofs: [SparseMerkleProcessProofTarget<N_LOG_MAX_USERS>; N_TXS], // input
+pub struct WorldStateProcessTransitionTarget {
+    pub world_state_process_proof: SparseMerkleProcessProofTarget,
 
-    pub user_transactions: [MergeAndPurgeTransitionPublicInputsTarget; N_TXS], // input
+    pub user_transaction: MergeAndPurgeTransitionPublicInputsTarget,
 
-    pub enabled_list: [BoolTarget; N_TXS], // input
+    pub enabled: BoolTarget,
+}
+
+#[derive(Clone)]
+pub struct ProposalBlockProductionTarget {
+    pub world_state_process_transitions: Vec<WorldStateProcessTransitionTarget>,
 
     pub transactions_digest: HashOutTarget, // output
 
@@ -49,51 +50,39 @@ pub struct ProposalBlockProductionTarget<
     pub new_world_state_root: HashOutTarget, // output
 }
 
-impl<const D: usize, const N_LOG_MAX_USERS: usize, const N_TXS: usize>
-    ProposalBlockProductionTarget<D, N_LOG_MAX_USERS, N_TXS>
-{
-    pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>>(
+impl ProposalBlockProductionTarget {
+    pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
+        log_max_n_users: usize,
+        n_txs: usize,
     ) -> Self {
         // N_TXS は 2 のべき
-        assert_eq!(N_TXS.next_power_of_two(), N_TXS);
+        assert_eq!(n_txs.next_power_of_two(), n_txs);
 
-        let mut world_state_process_proofs = vec![];
-        for _ in 0..N_TXS {
-            let a = SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder); // XXX: row: 529
-            world_state_process_proofs.push(a);
-        }
-
-        let mut user_transactions = vec![];
-        for _ in 0..N_TXS {
-            let b = MergeAndPurgeTransitionPublicInputsTarget::add_virtual_to(builder);
-            user_transactions.push(b);
-        }
-
-        let mut enabled_list = vec![];
-        for _ in 0..N_TXS {
-            let c = builder.add_virtual_bool_target_safe();
-            enabled_list.push(c);
+        let mut world_state_process_transitions = vec![];
+        for _ in 0..n_txs {
+            let world_state_process_proof =
+                SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder, log_max_n_users); // XXX: row: 529
+            let user_transaction =
+                MergeAndPurgeTransitionPublicInputsTarget::add_virtual_to(builder);
+            let enabled = builder.add_virtual_bool_target_safe();
+            world_state_process_transitions.push(WorldStateProcessTransitionTarget {
+                world_state_process_proof,
+                user_transaction,
+                enabled,
+            });
         }
 
         let old_world_state_root = builder.add_virtual_hash();
 
-        let (transactions_digest, new_world_state_root) =
-            verify_valid_proposal_block::<F, H, D, N_LOG_MAX_USERS>(
-                builder,
-                &world_state_process_proofs,
-                &user_transactions,
-                &enabled_list,
-                old_world_state_root,
-            );
+        let (transactions_digest, new_world_state_root) = verify_valid_proposal_block::<F, H, D>(
+            builder,
+            &world_state_process_transitions,
+            old_world_state_root,
+        );
 
         Self {
-            world_state_process_proofs: world_state_process_proofs.try_into().unwrap(),
-            user_transactions: user_transactions
-                .try_into()
-                .map_err(|_| anyhow::anyhow!("fail to convert vector to constant size array"))
-                .unwrap(),
-            enabled_list: enabled_list.try_into().unwrap(),
+            world_state_process_transitions,
             transactions_digest,
             old_world_state_root,
             new_world_state_root,
@@ -101,13 +90,14 @@ impl<const D: usize, const N_LOG_MAX_USERS: usize, const N_TXS: usize>
     }
 
     /// Returns `(transactions_digest, new_world_state_root)`.
-    pub fn set_witness<F: RichField + Extendable<D>>(
+    pub fn set_witness<F: RichField + Extendable<D>, const D: usize>(
         &self,
         pw: &mut impl Witness<F>,
         world_state_process_proofs: &[SmtProcessProof<F>],
         user_transactions: &[MergeAndPurgeTransitionPublicInputs<F>],
         old_world_state_root: WrappedHashOut<F>,
     ) -> (WrappedHashOut<F>, WrappedHashOut<F>) {
+        let n_txs = self.world_state_process_transitions.len();
         pw.set_hash_target(self.old_world_state_root, *old_world_state_root);
 
         for (w, u) in world_state_process_proofs
@@ -131,48 +121,47 @@ impl<const D: usize, const N_LOG_MAX_USERS: usize, const N_TXS: usize>
             .unwrap();
         }
 
-        assert!(world_state_process_proofs.len() <= self.world_state_process_proofs.len());
+        assert!(world_state_process_proofs.len() <= self.world_state_process_transitions.len());
         let mut prev_world_state_root = old_world_state_root;
         for (p_t, p) in self
-            .world_state_process_proofs
+            .world_state_process_transitions
             .iter()
             .zip(world_state_process_proofs.iter())
         {
             assert_eq!(p.old_root, prev_world_state_root);
             prev_world_state_root = p.new_root;
-            p_t.set_witness(pw, p);
+            p_t.world_state_process_proof.set_witness(pw, p);
         }
         let new_world_state_root = prev_world_state_root;
 
         let default_proof = SmtProcessProof::with_root(new_world_state_root);
         for p_t in self
-            .world_state_process_proofs
+            .world_state_process_transitions
             .iter()
             .skip(world_state_process_proofs.len())
         {
-            p_t.set_witness(pw, &default_proof);
+            p_t.world_state_process_proof
+                .set_witness(pw, &default_proof);
         }
 
         // assert!(!user_transactions.is_empty());
         assert_eq!(user_transactions.len(), world_state_process_proofs.len());
-        for ((r_t, enabled_t), r) in self
-            .user_transactions
+        for (r_t, r) in self
+            .world_state_process_transitions
             .iter()
-            .zip(self.enabled_list)
             .zip(user_transactions.iter())
         {
-            r_t.set_witness(pw, r);
-            pw.set_bool_target(enabled_t, true);
+            r_t.user_transaction.set_witness(pw, r);
+            pw.set_bool_target(r_t.enabled, true);
         }
 
-        for (r_t, enabled_t) in self
-            .user_transactions
+        for r_t in self
+            .world_state_process_transitions
             .iter()
-            .zip(self.enabled_list)
             .skip(user_transactions.len())
         {
-            r_t.set_witness(pw, &Default::default());
-            pw.set_bool_target(enabled_t, false);
+            r_t.user_transaction.set_witness(pw, &Default::default());
+            pw.set_bool_target(r_t.enabled, false);
         }
 
         let mut transaction_hashes = vec![];
@@ -182,10 +171,10 @@ impl<const D: usize, const N_LOG_MAX_USERS: usize, const N_TXS: usize>
 
         let default_tx_hash = MergeAndPurgeTransitionPublicInputs::default().tx_hash;
 
-        let n_log_txs = log2_ceil(N_TXS);
-        assert_eq!(2usize.pow(n_log_txs), N_TXS);
+        let log_n_txs = log2_ceil(n_txs);
+        assert_eq!(2usize.pow(log_n_txs), n_txs);
         let transactions_digest =
-            get_merkle_proof_with_zero(&transaction_hashes, 0, n_log_txs as usize, default_tx_hash)
+            get_merkle_proof_with_zero(&transaction_hashes, 0, log_n_txs as usize, default_tx_hash)
                 .root;
 
         (transactions_digest, new_world_state_root)
@@ -197,12 +186,9 @@ pub fn verify_valid_proposal_block<
     F: RichField + Extendable<D>,
     H: AlgebraicHasher<F>,
     const D: usize,
-    const N_LOG_MAX_USERS: usize,
 >(
     builder: &mut CircuitBuilder<F, D>,
-    world_state_process_proofs: &[SparseMerkleProcessProofTarget<N_LOG_MAX_USERS>],
-    user_transactions: &[MergeAndPurgeTransitionPublicInputsTarget],
-    enabled_list: &[BoolTarget],
+    world_state_process_transitions: &[WorldStateProcessTransitionTarget],
     old_world_state_root: HashOutTarget,
 ) -> (HashOutTarget, HashOutTarget) {
     let constant_true = builder._true();
@@ -210,7 +196,7 @@ pub fn verify_valid_proposal_block<
 
     // world state process proof は正しい遷移になるように並んでいる.
     let mut new_world_state_root = old_world_state_root;
-    for proof in world_state_process_proofs {
+    for t in world_state_process_transitions {
         // let fnc = get_process_merkle_proof_role(builder, proof.fnc);
         // enforce_equal_if_enabled(
         //     builder,
@@ -218,17 +204,17 @@ pub fn verify_valid_proposal_block<
         //     new_world_state_root,
         //     fnc.is_not_no_op,
         // );
-        builder.connect_hashes(proof.old_root, new_world_state_root);
+        builder.connect_hashes(t.world_state_process_proof.old_root, new_world_state_root);
 
-        new_world_state_root = proof.new_root;
+        new_world_state_root = t.world_state_process_proof.new_root;
     }
 
     // 各 user asset root は world state tree に含まれていることの検証.
-    assert_eq!(world_state_process_proofs.len(), user_transactions.len());
-    for ((w, u), enabled) in world_state_process_proofs
-        .iter()
-        .zip(user_transactions.iter())
-        .zip(enabled_list.iter().cloned())
+    for WorldStateProcessTransitionTarget {
+        world_state_process_proof: w,
+        user_transaction: u,
+        enabled,
+    } in world_state_process_transitions
     {
         let ProcessMerkleProofRoleTarget {
             is_no_op,
@@ -237,7 +223,7 @@ pub fn verify_valid_proposal_block<
         } = get_process_merkle_proof_role(builder, w.fnc);
 
         // If user transaction is not enabled, corresponding process proof is for noop process.
-        let is_no_op_or_enabled = logical_or(builder, is_no_op, enabled);
+        let is_no_op_or_enabled = logical_or(builder, is_no_op, *enabled);
         builder.connect(is_no_op_or_enabled.target, constant_true.target);
 
         // double spending 防止用のフラグが付いているので u.new_user_asset_root は 0 にならない.
@@ -255,8 +241,8 @@ pub fn verify_valid_proposal_block<
 
     // block tx root は block_txs から生まれる Merkle tree の root である.
     let mut transaction_hashes = vec![];
-    for u in user_transactions {
-        transaction_hashes.push(u.tx_hash);
+    for t in world_state_process_transitions {
+        transaction_hashes.push(t.user_transaction.tx_hash);
     }
 
     let transactions_digest =
@@ -300,10 +286,10 @@ fn test_proposal_block() {
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = <C as GenericConfig<D>>::F;
-    const N_LOG_MAX_BLOCKS: usize = 32;
-    const N_LOG_MAX_USERS: usize = 3;
-    const N_LOG_TXS: usize = 2;
-    const N_TXS: usize = 2usize.pow(N_LOG_TXS as u32);
+    const LOG_MAX_N_BLOCKS: usize = 32;
+    const LOG_MAX_N_USERS: usize = 3;
+    const LOG_N_TXS: usize = 2;
+    const N_TXS: usize = 2usize.pow(LOG_N_TXS as u32);
 
     let aggregator_nodes_db = NodeDataMemory::default();
     let mut world_state_tree =
@@ -422,19 +408,19 @@ fn test_proposal_block() {
     let deposit_diff_root = merge_inclusion_proof2.root;
     let deposit_tx_hash = PoseidonHash::two_to_one(*deposit_diff_root, deposit_nonce).into();
 
-    let merge_inclusion_proof1 = get_merkle_proof(&[deposit_tx_hash], 0, N_LOG_TXS);
+    let merge_inclusion_proof1 = get_merkle_proof(&[deposit_tx_hash], 0, LOG_N_TXS);
 
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
     let default_tx_hash = MergeAndPurgeTransitionPublicInputs::default().tx_hash;
     let default_transactions_digest =
-        get_merkle_proof_with_zero(&[], 0, N_LOG_TXS, default_tx_hash).root;
+        get_merkle_proof_with_zero(&[], 0, LOG_N_TXS, default_tx_hash).root;
     let prev_block_number = 1u32;
     let mut block_headers: Vec<WrappedHashOut<F>> =
         vec![WrappedHashOut::ZERO; prev_block_number as usize];
     let prev_block_headers_digest = get_merkle_proof(
         &block_headers,
         prev_block_number as usize - 1,
-        N_LOG_MAX_BLOCKS,
+        LOG_MAX_N_BLOCKS,
     )
     .root;
 
@@ -591,16 +577,17 @@ fn test_proposal_block() {
     // proposal block
     let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
-    let proposal_block_target: ProposalBlockProductionTarget<D, N_LOG_MAX_USERS, N_TXS> =
-        ProposalBlockProductionTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(
-            &mut builder,
-        );
+    let proposal_block_target = ProposalBlockProductionTarget::add_virtual_to::<
+        F,
+        <C as GenericConfig<D>>::Hasher,
+        D,
+    >(&mut builder, LOG_MAX_N_USERS, N_TXS);
     builder.register_public_inputs(&proposal_block_target.transactions_digest.elements);
     builder.register_public_inputs(&proposal_block_target.new_world_state_root.elements);
     let circuit_data = builder.build::<C>();
 
     let mut pw = PartialWitness::new();
-    let (transactions_digest, new_world_state_root) = proposal_block_target.set_witness(
+    let (transactions_digest, new_world_state_root) = proposal_block_target.set_witness::<F, D>(
         &mut pw,
         &world_state_process_proofs,
         &user_transactions,

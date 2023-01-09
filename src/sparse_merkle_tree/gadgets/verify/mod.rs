@@ -37,8 +37,8 @@ fn test_verify_inclusion_proof_by_plonky2() {
 
     let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
-    let target: SparseMerkleInclusionProofTarget<N_LEVELS> =
-        SparseMerkleInclusionProofTarget::add_virtual_to::<F, H, D>(&mut builder);
+    let target =
+        SparseMerkleInclusionProofTarget::add_virtual_to::<F, H, D>(&mut builder, N_LEVELS);
     let data = builder.build::<C>();
 
     let mut pw = PartialWitness::new();

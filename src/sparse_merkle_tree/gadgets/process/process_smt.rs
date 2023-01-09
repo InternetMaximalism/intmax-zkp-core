@@ -24,8 +24,8 @@ pub type LayeredLayeredSmtProcessProof<F> =
     (SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>);
 
 #[derive(Clone, Debug)]
-pub struct SparseMerkleProcessProofTarget<const N_LEVELS: usize> {
-    pub siblings: [HashOutTarget; N_LEVELS],
+pub struct SparseMerkleProcessProofTarget {
+    pub siblings: Vec<HashOutTarget>,
     pub old_root: HashOutTarget,
     pub new_root: HashOutTarget,
     pub old_key: HashOutTarget,
@@ -36,11 +36,12 @@ pub struct SparseMerkleProcessProofTarget<const N_LEVELS: usize> {
     pub fnc: [BoolTarget; 2],
 }
 
-impl<const N_LEVELS: usize> SparseMerkleProcessProofTarget<N_LEVELS> {
+impl SparseMerkleProcessProofTarget {
     pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
+        n_levels: usize,
     ) -> Self {
-        let siblings = builder.add_virtual_hashes(N_LEVELS);
+        let siblings = builder.add_virtual_hashes(n_levels);
         let old_root = builder.add_virtual_hash();
         let old_key = builder.add_virtual_hash();
         let old_value = builder.add_virtual_hash();
@@ -66,7 +67,7 @@ impl<const N_LEVELS: usize> SparseMerkleProcessProofTarget<N_LEVELS> {
         );
 
         Self {
-            siblings: siblings.try_into().unwrap(),
+            siblings,
             old_root,
             new_root,
             old_key,
@@ -83,13 +84,14 @@ impl<const N_LEVELS: usize> SparseMerkleProcessProofTarget<N_LEVELS> {
         pw: &mut impl Witness<F>,
         witness: &SmtProcessProof<F>,
     ) {
-        if witness.siblings.len() >= N_LEVELS {
+        let n_levels = self.siblings.len();
+        if witness.siblings.len() >= n_levels {
             dbg!(witness);
             panic!("siblings are too long");
         }
         // `witness.old_key` と `witness.new_key` は一致するか, 末尾の `N_LEVELS` 桁が完全には一致しない.
         if !witness.is_old0
-            && first_different_bit_index(witness.old_key, witness.new_key) >= Some(N_LEVELS)
+            && first_different_bit_index(witness.old_key, witness.new_key) >= Some(n_levels)
         {
             dbg!(witness);
             panic!("invalid `new_key`");
@@ -98,7 +100,7 @@ impl<const N_LEVELS: usize> SparseMerkleProcessProofTarget<N_LEVELS> {
         for i in 0..witness.siblings.len() {
             pw.set_hash_target(self.siblings[i], *witness.siblings[i]);
         }
-        for i in witness.siblings.len()..N_LEVELS {
+        for i in witness.siblings.len()..n_levels {
             pw.set_hash_target(self.siblings[i], HashOut::<F>::ZERO);
         }
         pw.set_hash_target(self.old_root, *witness.old_root);

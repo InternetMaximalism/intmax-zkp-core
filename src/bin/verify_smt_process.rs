@@ -84,8 +84,7 @@ fn benchmark() {
     let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
 
-    let target: SparseMerkleProcessProofTarget<N_LEVELS> =
-        SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(&mut builder);
+    let target = SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(&mut builder, N_LEVELS);
     builder.register_public_inputs(&target.old_key.elements);
     builder.register_public_inputs(&target.old_value.elements);
     builder.register_public_inputs(&target.new_key.elements);

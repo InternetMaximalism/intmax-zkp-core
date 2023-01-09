@@ -203,59 +203,49 @@ impl DepositInfoTarget {
 }
 
 #[derive(Clone, Debug)]
-pub struct DepositBlockProductionTarget<
-    const D: usize,
-    const N_LOG_RECIPIENTS: usize,
-    const N_LOG_CONTRACTS: usize,
-    const N_LOG_VARIABLES: usize,
-    const N_DEPOSITS: usize,
-> {
-    pub deposit_process_proofs: [(
-        SparseMerkleProcessProofTarget<N_LOG_RECIPIENTS>,
-        SparseMerkleProcessProofTarget<N_LOG_CONTRACTS>,
-        SparseMerkleProcessProofTarget<N_LOG_VARIABLES>,
-    ); N_DEPOSITS], // input
+pub struct DepositBlockProductionTarget {
+    pub deposit_process_proofs: Vec<(
+        SparseMerkleProcessProofTarget,
+        SparseMerkleProcessProofTarget,
+        SparseMerkleProcessProofTarget,
+    )>, // input
 
     pub interior_deposit_digest: HashOutTarget, // output
 }
 
-impl<
-        const D: usize,
-        const N_LOG_RECIPIENTS: usize,
-        const N_LOG_CONTRACTS: usize,
-        const N_LOG_VARIABLES: usize,
-        const N_DEPOSITS: usize,
-    >
-    DepositBlockProductionTarget<D, N_LOG_RECIPIENTS, N_LOG_CONTRACTS, N_LOG_VARIABLES, N_DEPOSITS>
-{
-    pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>>(
+impl DepositBlockProductionTarget {
+    pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
+        log_n_recipients: usize,
+        log_n_contracts: usize,
+        log_n_variables: usize,
+        n_deposits: usize,
     ) -> Self {
         let mut deposit_process_proofs = vec![];
-        for _ in 0..N_DEPOSITS {
+        for _ in 0..n_deposits {
             let targets = (
-                SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder),
-                SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder),
-                SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder),
+                SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(
+                    builder,
+                    log_n_recipients,
+                ),
+                SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder, log_n_contracts),
+                SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder, log_n_variables),
             );
 
             deposit_process_proofs.push(targets);
         }
 
         let interior_deposit_digest =
-            calc_deposit_digest::<F, H, D, N_LOG_RECIPIENTS, N_LOG_CONTRACTS, N_LOG_VARIABLES>(
-                builder,
-                &deposit_process_proofs,
-            );
+            calc_deposit_digest::<F, H, D>(builder, &deposit_process_proofs);
 
         Self {
-            deposit_process_proofs: deposit_process_proofs.try_into().unwrap(),
+            deposit_process_proofs,
             interior_deposit_digest,
         }
     }
 
     /// Returns `interior_deposit_digest`
-    pub fn set_witness<F: RichField + Extendable<D>>(
+    pub fn set_witness<F: RichField + Extendable<D>, const D: usize>(
         &self,
         pw: &mut impl Witness<F>,
         deposit_process_proofs: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
@@ -311,19 +301,12 @@ impl<
 }
 
 /// Returns `(block_tx_root, old_world_state_root, new_world_state_root)`
-pub fn calc_deposit_digest<
-    F: RichField + Extendable<D>,
-    H: AlgebraicHasher<F>,
-    const D: usize,
-    const N_LOG_RECIPIENTS: usize,
-    const N_LOG_CONTRACTS: usize,
-    const N_LOG_VARIABLES: usize,
->(
+pub fn calc_deposit_digest<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     deposit_process_proofs: &[(
-        SparseMerkleProcessProofTarget<N_LOG_RECIPIENTS>,
-        SparseMerkleProcessProofTarget<N_LOG_CONTRACTS>,
-        SparseMerkleProcessProofTarget<N_LOG_VARIABLES>,
+        SparseMerkleProcessProofTarget,
+        SparseMerkleProcessProofTarget,
+        SparseMerkleProcessProofTarget,
     )],
 ) -> HashOutTarget {
     let zero = builder.zero();
@@ -389,9 +372,9 @@ fn test_deposit_block() {
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = <C as GenericConfig<D>>::F;
-    const N_LOG_RECIPIENTS: usize = 3;
-    const N_LOG_CONTRACTS: usize = 3;
-    const N_LOG_VARIABLES: usize = 3;
+    const LOG_N_RECIPIENTS: usize = 3;
+    const LOG_N_CONTRACTS: usize = 3;
+    const LOG_N_VARIABLES: usize = 3;
     const N_DEPOSITS: usize = 2;
 
     let sender2_private_key = HashOut {
@@ -410,15 +393,14 @@ fn test_deposit_block() {
     // builder.debug_gate_row = Some(529); // xors in SparseMerkleProcessProof in DepositBlock
 
     // deposit block
-    let deposit_block_target: DepositBlockProductionTarget<
-        D,
-        N_LOG_RECIPIENTS,
-        N_LOG_CONTRACTS,
-        N_LOG_VARIABLES,
-        N_DEPOSITS,
-    > = DepositBlockProductionTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher>(
-        &mut builder,
-    );
+    let deposit_block_target =
+        DepositBlockProductionTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher, D>(
+            &mut builder,
+            LOG_N_RECIPIENTS,
+            LOG_N_CONTRACTS,
+            LOG_N_VARIABLES,
+            N_DEPOSITS,
+        );
     builder.register_public_inputs(&deposit_block_target.interior_deposit_digest.elements);
     let circuit_data = builder.build::<C>();
 
@@ -449,7 +431,7 @@ fn test_deposit_block() {
 
     let mut pw = PartialWitness::new();
     let interior_deposit_digest =
-        deposit_block_target.set_witness(&mut pw, &deposit_process_proofs);
+        deposit_block_target.set_witness::<F, D>(&mut pw, &deposit_process_proofs);
 
     println!("start proving: block_proof");
     let start = Instant::now();
@@ -465,7 +447,7 @@ fn test_deposit_block() {
     circuit_data.verify(deposit_block_proof).unwrap();
 
     let mut pw = PartialWitness::new();
-    let default_interior_deposit_digest = deposit_block_target.set_witness(&mut pw, &[]);
+    let default_interior_deposit_digest = deposit_block_target.set_witness::<F, D>(&mut pw, &[]);
 
     println!("start proving: block_proof");
     let start = Instant::now();

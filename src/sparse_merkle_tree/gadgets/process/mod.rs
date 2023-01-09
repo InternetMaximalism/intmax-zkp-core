@@ -66,8 +66,7 @@ fn test_verify_process_proof_by_plonky2() {
     let mut builder = CircuitBuilder::<F, D>::new(config);
 
     // assert!(N_LEVELS > witness.siblings.len());
-    let target: SparseMerkleProcessProofTarget<N_LEVELS> =
-        SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(&mut builder);
+    let target = SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(&mut builder, N_LEVELS);
     builder.register_public_inputs(&target.old_key.elements);
     builder.register_public_inputs(&target.old_value.elements);
     builder.register_public_inputs(&target.new_key.elements);
@@ -116,7 +115,7 @@ fn test_verify_process_proof2_by_plonky2() {
     type H = <C as GenericConfig<D>>::InnerHasher;
     type F = <C as GenericConfig<D>>::F;
     // type F = GoldilocksField;
-    const N_LOG_MAX_USERS: usize = 32;
+    const LOG_MAX_N_USERS: usize = 32;
 
     let sender1_private_key = HashOut {
         elements: [
@@ -214,9 +213,9 @@ fn test_verify_process_proof2_by_plonky2() {
     let mut builder = CircuitBuilder::<F, D>::new(config);
     // builder.debug_gate_row = Some(83);
 
-    assert!(N_LOG_MAX_USERS > witness.siblings.len());
-    let target: SparseMerkleProcessProofTarget<N_LOG_MAX_USERS> =
-        SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(&mut builder);
+    assert!(LOG_MAX_N_USERS > witness.siblings.len());
+    let target =
+        SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(&mut builder, LOG_MAX_N_USERS);
     builder.register_public_inputs(&target.old_key.elements);
     builder.register_public_inputs(&target.old_value.elements);
     builder.register_public_inputs(&target.new_key.elements);

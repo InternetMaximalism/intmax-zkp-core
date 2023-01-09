@@ -56,6 +56,7 @@ pub struct PurgeTransitionTarget {
 }
 
 impl PurgeTransitionTarget {
+    #[allow(clippy::too_many_arguments)]
     pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
         log_max_n_txs: usize,

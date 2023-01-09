@@ -19,6 +19,7 @@ use plonky2::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    config::RollupConstants,
     merkle_tree::{
         gadgets::{get_merkle_root_target_from_leaves, MerkleProofTarget},
         tree::{get_merkle_proof, get_merkle_root},
@@ -338,34 +339,25 @@ pub fn make_block_proof_circuit<
     const D: usize,
 >(
     config: CircuitConfig,
+    rollup_constants: RollupConstants,
     merge_and_purge_circuit: &MergeAndPurgeTransitionCircuit<F, C, D>,
     simple_signature_circuit: &SimpleSignatureCircuit<F, C, D>,
-    LOG_MAX_N_USERS: usize,
-    LOG_MAX_N_TXS: usize,
-    LOG_MAX_N_CONTRACTS: usize,
-    LOG_MAX_N_VARIABLES: usize,
-    LOG_N_TXS: usize,
-    LOG_N_RECIPIENTS: usize,
-    LOG_N_CONTRACTS: usize,
-    LOG_N_VARIABLES: usize,
-    N_DIFFS: usize,
-    N_MERGES: usize,
-    N_TXS: usize,
-    N_DEPOSITS: usize,
 ) -> BlockProductionCircuit<F, C, D>
 where
     C::Hasher: AlgebraicHasher<F>,
 {
     let mut builder = CircuitBuilder::<F, D>::new(config);
 
+    let n_txs = 2usize.pow(rollup_constants.log_n_txs as u32);
+
     // deposit block
     let deposit_block_target =
         DepositBlockProductionTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher, D>(
             &mut builder,
-            LOG_N_RECIPIENTS,
-            LOG_N_CONTRACTS,
-            LOG_N_VARIABLES,
-            N_DEPOSITS,
+            rollup_constants.log_n_recipients,
+            rollup_constants.log_n_contracts,
+            rollup_constants.log_n_variables,
+            rollup_constants.n_deposits,
         );
 
     // proposal block
@@ -373,16 +365,16 @@ where
         F,
         <C as GenericConfig<D>>::Hasher,
         D,
-    >(&mut builder, LOG_MAX_N_USERS, N_TXS);
+    >(&mut builder, rollup_constants.log_max_n_users, n_txs);
 
     // approval block
     let approval_block_target = ApprovalBlockProductionTarget::add_virtual_to::<
         F,
         <C as GenericConfig<D>>::Hasher,
         D,
-    >(&mut builder, LOG_MAX_N_USERS, N_TXS);
+    >(&mut builder, rollup_constants.log_max_n_users, n_txs);
 
-    let user_tx_proofs = (0..N_TXS)
+    let user_tx_proofs = (0..n_txs)
         .map(|_| RecursiveProofTarget::add_virtual_to(&mut builder, &merge_and_purge_circuit.data))
         .collect::<Vec<_>>();
 
@@ -407,7 +399,7 @@ where
         transaction_hashes_t.push(user_tx_public_inputs.tx_hash);
     }
 
-    let received_signature_proofs = (0..N_TXS)
+    let received_signature_proofs = (0..n_txs)
         .map(|_| RecursiveProofTarget::add_virtual_to(&mut builder, &simple_signature_circuit.data))
         .collect::<Vec<_>>();
 
@@ -483,7 +475,7 @@ where
     let default_hash = HashOutTarget::from_partial(&[], zero);
     let deposit_digest = {
         let mut deposit_tree_leaves = vec![interior_deposit_digest];
-        deposit_tree_leaves.resize(N_TXS, default_hash);
+        deposit_tree_leaves.resize(n_txs, default_hash);
 
         get_merkle_root_target_from_leaves::<F, C::Hasher, D>(&mut builder, deposit_tree_leaves)
     };
@@ -1014,19 +1006,8 @@ pub fn prove_block_production<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F = F>,
     const D: usize,
-    const LOG_MAX_N_USERS: usize,
-    const LOG_MAX_N_TXS: usize,
-    const LOG_MAX_N_CONTRACTS: usize,
-    const LOG_MAX_N_VARIABLES: usize,
-    const LOG_N_TXS: usize,
-    const LOG_N_RECIPIENTS: usize,
-    const LOG_N_CONTRACTS: usize,
-    const LOG_N_VARIABLES: usize,
-    const N_DIFFS: usize,
-    const N_MERGES: usize,
-    const N_TXS: usize,
-    const N_DEPOSITS: usize,
 >(
+    rollup_constants: RollupConstants,
     input: &BlockDetail<F, C, D>,
 ) -> anyhow::Result<BlockProductionProofWithPublicInputs<F, C, D>>
 where
@@ -1034,20 +1015,7 @@ where
 {
     // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
     let config = CircuitConfig::standard_recursion_config();
-    let merge_and_purge_circuit = make_user_proof_circuit::<F, C, D>(
-        config,
-        LOG_MAX_N_USERS,
-        LOG_MAX_N_TXS,
-        LOG_MAX_N_CONTRACTS,
-        LOG_MAX_N_VARIABLES,
-        LOG_N_TXS,
-        LOG_N_RECIPIENTS,
-        LOG_N_CONTRACTS,
-        LOG_N_VARIABLES,
-        N_DEPOSITS,
-        N_MERGES,
-        N_DIFFS,
-    );
+    let merge_and_purge_circuit = make_user_proof_circuit::<F, C, D>(config, rollup_constants);
     let default_user_transaction = MergeAndPurgeTransition::default();
     let default_user_tx_proof = merge_and_purge_circuit
         .set_witness_and_prove(
@@ -1070,20 +1038,9 @@ where
     let config = CircuitConfig::standard_recursion_config();
     let block_production_circuit = make_block_proof_circuit::<F, C, D>(
         config,
+        rollup_constants,
         &merge_and_purge_circuit,
         &simple_signature_circuit,
-        LOG_MAX_N_USERS,
-        LOG_MAX_N_TXS,
-        LOG_MAX_N_CONTRACTS,
-        LOG_MAX_N_VARIABLES,
-        LOG_N_TXS,
-        LOG_N_RECIPIENTS,
-        LOG_N_CONTRACTS,
-        LOG_N_VARIABLES,
-        N_DIFFS,
-        N_MERGES,
-        N_TXS,
-        N_DEPOSITS,
     );
 
     let block_production_proof = block_production_circuit
@@ -1108,36 +1065,23 @@ fn test_prove_block_production() {
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = <C as GenericConfig<D>>::F;
-    const LOG_MAX_N_USERS: usize = 3;
-    const LOG_MAX_N_TXS: usize = 3;
-    const LOG_MAX_N_CONTRACTS: usize = 3;
-    const LOG_MAX_N_VARIABLES: usize = 3;
-    const LOG_N_TXS: usize = 2;
-    const LOG_N_RECIPIENTS: usize = 3;
-    const LOG_N_CONTRACTS: usize = 3;
-    const LOG_N_VARIABLES: usize = 3;
-    const N_DIFFS: usize = 2;
-    const N_MERGES: usize = 2;
-    const N_TXS: usize = 2usize.pow(LOG_N_TXS as u32);
-    const N_DEPOSITS: usize = 2;
+    let rollup_constants = RollupConstants {
+        log_max_n_users: 3,
+        log_max_n_txs: 3,
+        log_max_n_contracts: 3,
+        log_max_n_variables: 3,
+        log_n_txs: 2,
+        log_n_recipients: 3,
+        log_n_contracts: 3,
+        log_n_variables: 3,
+        n_diffs: 2,
+        n_merges: 2,
+        n_deposits: 2,
+        n_blocks: 2,
+    };
 
-    let default_block_details: BlockDetail<F, C, D> = BlockDetail::new(N_TXS);
-    let _default_block_production_proof = prove_block_production::<
-        F,
-        C,
-        D,
-        LOG_MAX_N_USERS,
-        LOG_MAX_N_TXS,
-        LOG_MAX_N_CONTRACTS,
-        LOG_MAX_N_VARIABLES,
-        LOG_N_TXS,
-        LOG_N_RECIPIENTS,
-        LOG_N_CONTRACTS,
-        LOG_N_VARIABLES,
-        N_DIFFS,
-        N_MERGES,
-        N_TXS,
-        N_DEPOSITS,
-    >(&default_block_details)
-    .unwrap();
+    let n_txs = 2usize.pow(rollup_constants.log_n_txs as u32);
+    let default_block_details: BlockDetail<F, C, D> = BlockDetail::new(n_txs);
+    let _default_block_production_proof =
+        prove_block_production::<F, C, D>(rollup_constants, &default_block_details).unwrap();
 }

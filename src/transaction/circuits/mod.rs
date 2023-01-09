@@ -18,6 +18,7 @@ use plonky2::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    config::RollupConstants,
     poseidon::gadgets::poseidon_two_to_one,
     sparse_merkle_tree::{
         gadgets::process::process_smt::SmtProcessProof, goldilocks_poseidon::WrappedHashOut,
@@ -90,17 +91,7 @@ pub fn make_user_proof_circuit<
     const D: usize,
 >(
     config: CircuitConfig,
-    log_max_n_users: usize,
-    log_max_n_txs: usize,
-    log_max_n_contracts: usize,
-    log_max_n_variables: usize,
-    log_n_txs: usize,
-    log_n_recipients: usize,
-    log_n_contracts: usize,
-    log_n_variables: usize,
-    n_deposits: usize,
-    n_merges: usize,
-    n_diffs: usize,
+    rollup_constants: RollupConstants,
 ) -> MergeAndPurgeTransitionCircuit<F, C, D>
 where
     C::Hasher: AlgebraicHasher<F>,
@@ -111,24 +102,24 @@ where
     let merge_proof_target: MergeTransitionTarget =
         MergeTransitionTarget::add_virtual_to::<F, C::Hasher, D>(
             &mut builder,
-            log_max_n_users,
-            log_max_n_txs,
-            log_n_txs,
-            log_n_recipients,
-            n_deposits,
-            n_merges,
+            rollup_constants.log_max_n_users,
+            rollup_constants.log_max_n_txs,
+            rollup_constants.log_n_txs,
+            rollup_constants.log_n_recipients,
+            rollup_constants.n_deposits,
+            rollup_constants.n_merges,
         );
 
     let purge_proof_target: PurgeTransitionTarget =
         PurgeTransitionTarget::add_virtual_to::<F, C::Hasher, D>(
             &mut builder,
-            log_max_n_txs,
-            log_max_n_contracts,
-            log_max_n_variables,
-            log_n_recipients,
-            log_n_contracts,
-            log_n_variables,
-            n_diffs,
+            rollup_constants.log_max_n_txs,
+            rollup_constants.log_max_n_contracts,
+            rollup_constants.log_max_n_variables,
+            rollup_constants.log_n_recipients,
+            rollup_constants.log_n_contracts,
+            rollup_constants.log_n_variables,
+            rollup_constants.n_diffs,
         );
     builder.connect_hashes(
         merge_proof_target.new_user_asset_root,
@@ -503,18 +494,8 @@ pub fn prove_user_transaction<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F = F>,
     const D: usize,
-    const LOG_MAX_N_USERS: usize,
-    const LOG_MAX_N_TXS: usize,
-    const LOG_MAX_N_CONTRACTS: usize,
-    const LOG_MAX_N_VARIABLES: usize,
-    const LOG_N_TXS: usize,
-    const LOG_N_RECIPIENTS: usize,
-    const LOG_N_CONTRACTS: usize,
-    const LOG_N_VARIABLES: usize,
-    const N_DIFFS: usize,
-    const N_MERGES: usize,
-    const N_DEPOSITS: usize,
 >(
+    rollup_constants: RollupConstants,
     sender_address: Address<F>,
     merge_witnesses: &[MergeProof<F>],
     purge_input_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
@@ -527,20 +508,7 @@ where
 {
     // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
     let config = CircuitConfig::standard_recursion_config();
-    let merge_and_purge_circuit = make_user_proof_circuit::<F, C, D>(
-        config,
-        LOG_MAX_N_USERS,
-        LOG_MAX_N_TXS,
-        LOG_MAX_N_CONTRACTS,
-        LOG_MAX_N_VARIABLES,
-        LOG_N_TXS,
-        LOG_N_RECIPIENTS,
-        LOG_N_CONTRACTS,
-        LOG_N_VARIABLES,
-        N_DEPOSITS,
-        N_MERGES,
-        N_DIFFS,
-    );
+    let merge_and_purge_circuit = make_user_proof_circuit::<F, C, D>(config, rollup_constants);
 
     let mut pw = PartialWitness::new();
     let _public_inputs = merge_and_purge_circuit.targets.set_witness(

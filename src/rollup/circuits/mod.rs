@@ -348,7 +348,7 @@ where
 {
     let mut builder = CircuitBuilder::<F, D>::new(config);
 
-    let n_txs = 2usize.pow(rollup_constants.log_n_txs as u32);
+    let n_txs = 1 << rollup_constants.log_n_txs;
 
     // deposit block
     let deposit_block_target =
@@ -1081,7 +1081,7 @@ fn test_prove_block_production() {
         n_blocks: 2,
     };
 
-    let n_txs = 2usize.pow(ROLLUP_CONSTANTS.log_n_txs as u32);
+    let n_txs = 1 << ROLLUP_CONSTANTS.log_n_txs;
     let default_block_details: BlockDetail<F, C, D> = BlockDetail::new(n_txs);
     let _default_block_production_proof =
         prove_block_production::<F, C, D>(ROLLUP_CONSTANTS, &default_block_details).unwrap();

@@ -400,7 +400,7 @@ fn test_approval_block() {
         n_deposits: 2,
         n_blocks: 2,
     };
-    let n_txs = 2usize.pow(ROLLUP_CONSTANTS.log_n_txs as u32);
+    let n_txs = 1 << ROLLUP_CONSTANTS.log_n_txs;
 
     let aggregator_nodes_db = NodeDataMemory::default();
     let mut world_state_tree =

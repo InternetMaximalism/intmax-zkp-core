@@ -53,6 +53,13 @@ pub struct PurgeTransitionTarget {
     /// `hash(diff_root, nonce)` で計算される transaction ごとに unique な値
     /// NOTICE: deposit の場合は計算方法が異なる.
     pub tx_hash: HashOutTarget, // output
+
+    pub log_max_n_txs: usize,       // constant
+    pub log_max_n_contracts: usize, // constant
+    pub log_max_n_variables: usize, // constant
+    pub log_n_recipients: usize,    // constant
+    pub log_n_contracts: usize,     // constant
+    pub log_n_variables: usize,     // constant
 }
 
 impl PurgeTransitionTarget {
@@ -123,6 +130,12 @@ impl PurgeTransitionTarget {
             diff_root,
             nonce,
             tx_hash,
+            log_max_n_txs,
+            log_max_n_contracts,
+            log_max_n_variables,
+            log_n_recipients,
+            log_n_contracts,
+            log_n_variables,
         }
     }
 

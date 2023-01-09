@@ -55,6 +55,8 @@ pub struct ApprovalBlockProductionTarget {
     pub old_latest_account_root: HashOutTarget,
 
     pub new_latest_account_root: HashOutTarget,
+
+    pub log_max_n_users: usize, // constant
 }
 
 impl ApprovalBlockProductionTarget {
@@ -71,15 +73,15 @@ impl ApprovalBlockProductionTarget {
                 SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder, log_max_n_users);
             let user_transaction =
                 MergeAndPurgeTransitionPublicInputsTarget::add_virtual_to(builder);
-            let c0 = SimpleSignaturePublicInputsTarget::add_virtual_to(builder);
-            let c1 = builder.add_virtual_bool_target_safe();
+            let signature = SimpleSignaturePublicInputsTarget::add_virtual_to(builder);
+            let validity = builder.add_virtual_bool_target_safe();
             let latest_account_process_proof =
                 SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder, log_max_n_users);
             let enabled = builder.add_virtual_bool_target_safe();
             world_state_revert_transitions.push(WorldStateRevertTransitionTarget {
                 world_state_revert_proof,
                 user_transaction,
-                received_signature: (c0, c1),
+                received_signature: (signature, validity),
                 latest_account_process_proof,
                 enabled,
             });
@@ -103,6 +105,7 @@ impl ApprovalBlockProductionTarget {
             new_world_state_root,
             old_latest_account_root,
             new_latest_account_root,
+            log_max_n_users,
         }
     }
 

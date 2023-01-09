@@ -106,7 +106,6 @@ where
             rollup_constants.log_max_n_txs,
             rollup_constants.log_n_txs,
             rollup_constants.log_n_recipients,
-            rollup_constants.n_deposits,
             rollup_constants.n_merges,
         );
 

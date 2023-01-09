@@ -211,6 +211,10 @@ pub struct DepositBlockProductionTarget {
     )>, // input
 
     pub interior_deposit_digest: HashOutTarget, // output
+
+    pub log_n_recipients: usize, // constant
+    pub log_n_contracts: usize,  // constant
+    pub log_n_variables: usize,  // constant
 }
 
 impl DepositBlockProductionTarget {
@@ -241,6 +245,9 @@ impl DepositBlockProductionTarget {
         Self {
             deposit_process_proofs,
             interior_deposit_digest,
+            log_n_recipients,
+            log_n_contracts,
+            log_n_variables,
         }
     }
 

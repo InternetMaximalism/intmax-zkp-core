@@ -13,32 +13,27 @@ use plonky2::{
 use crate::recursion::gadgets::RecursiveProofTarget;
 
 #[derive(Clone)]
-pub struct BlockBatchTarget<const D: usize, const N_BLOCKS: usize> {
-    pub block_proofs: [RecursiveProofTarget<D>; N_BLOCKS],
+pub struct BlockBatchTarget<const D: usize> {
+    pub block_proofs: Vec<RecursiveProofTarget<D>>,
 }
 
-impl<const D: usize, const N_BLOCKS: usize> BlockBatchTarget<D, N_BLOCKS> {
+impl<const D: usize> BlockBatchTarget<D> {
     pub fn add_virtual_to<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>>(
         builder: &mut CircuitBuilder<F, D>,
         block_circuit_data: &CircuitData<F, C, D>,
+        n_blocks: usize,
     ) -> Self
     where
         C::Hasher: AlgebraicHasher<F>,
     {
         let mut block_proofs = vec![];
-
-        for _ in 0..N_BLOCKS {
+        for _ in 0..n_blocks {
             let target: RecursiveProofTarget<D> =
                 RecursiveProofTarget::add_virtual_to::<F, C>(builder, block_circuit_data);
             block_proofs.push(target);
         }
 
-        Self {
-            block_proofs: block_proofs
-                .try_into()
-                .map_err(|_| anyhow::anyhow!("fail to convert vector to constant size array"))
-                .unwrap(),
-        }
+        Self { block_proofs }
     }
 
     pub fn set_witness<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>>(

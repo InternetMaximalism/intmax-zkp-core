@@ -12,6 +12,7 @@ use plonky2::{
 };
 
 use intmax_zkp_core::{
+    config::RollupConstants,
     merkle_tree::tree::{get_merkle_proof, get_merkle_proof_with_zero, MerkleProof},
     rollup::{
         address_list::TransactionSenderWithValidity,
@@ -45,20 +46,22 @@ fn main() {
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = <C as GenericConfig<D>>::F;
-    const N_LOG_MAX_BLOCKS: usize = 32;
-    const N_LOG_MAX_USERS: usize = 3;
-    const N_LOG_MAX_TXS: usize = 3;
-    const N_LOG_MAX_CONTRACTS: usize = 3;
-    const N_LOG_MAX_VARIABLES: usize = 3;
-    const N_LOG_TXS: usize = 2;
-    const N_LOG_RECIPIENTS: usize = 3;
-    const N_LOG_CONTRACTS: usize = 3;
-    const N_LOG_VARIABLES: usize = 3;
-    const N_DIFFS: usize = 2;
-    const N_MERGES: usize = 2;
-    const N_TXS: usize = 2usize.pow(N_LOG_TXS as u32);
-    const N_DEPOSITS: usize = 2;
-    const N_BLOCKS: usize = 2;
+    const LOG_MAX_N_BLOCKS: usize = 32;
+    const ROLLUP_CONSTANTS: RollupConstants = RollupConstants {
+        log_max_n_users: 3,
+        log_max_n_txs: 3,
+        log_max_n_contracts: 3,
+        log_max_n_variables: 3,
+        log_n_txs: 2,
+        log_n_recipients: 3,
+        log_n_contracts: 3,
+        log_n_variables: 3,
+        n_registrations: 2,
+        n_diffs: 2,
+        n_merges: 2,
+        n_deposits: 2,
+        n_blocks: 2,
+    };
 
     let aggregator_nodes_db = NodeDataMemory::default();
     let mut world_state_tree =
@@ -66,22 +69,7 @@ fn main() {
 
     // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
     let config = CircuitConfig::standard_recursion_config();
-    let merge_and_purge_circuit = make_user_proof_circuit::<
-        F,
-        C,
-        D,
-        N_LOG_MAX_USERS,
-        N_LOG_MAX_TXS,
-        N_LOG_MAX_CONTRACTS,
-        N_LOG_MAX_VARIABLES,
-        N_LOG_TXS,
-        N_LOG_RECIPIENTS,
-        N_LOG_CONTRACTS,
-        N_LOG_VARIABLES,
-        N_DIFFS,
-        N_MERGES,
-        N_DEPOSITS,
-    >(config);
+    let merge_and_purge_circuit = make_user_proof_circuit::<F, C, D>(config, ROLLUP_CONSTANTS);
 
     // dbg!(&purge_proof_circuit_data.common);
 
@@ -200,17 +188,18 @@ fn main() {
     let deposit_diff_root = merge_inclusion_proof2.root;
     let deposit_tx_hash = PoseidonHash::two_to_one(*deposit_diff_root, deposit_nonce).into();
 
-    let merge_inclusion_proof1 = get_merkle_proof(&[deposit_tx_hash], 0, N_LOG_TXS);
+    let merge_inclusion_proof1 =
+        get_merkle_proof(&[deposit_tx_hash], 0, ROLLUP_CONSTANTS.log_n_txs);
 
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
-    let default_merkle_root = get_merkle_proof(&[], 0, N_LOG_TXS).root;
+    let default_merkle_root = get_merkle_proof(&[], 0, ROLLUP_CONSTANTS.log_n_txs).root;
     let prev_block_number = 1u32;
     let mut block_headers: Vec<WrappedHashOut<F>> =
         vec![WrappedHashOut::ZERO; prev_block_number as usize];
     let prev_block_headers_digest = get_merkle_proof(
         &block_headers,
         prev_block_number as usize - 1,
-        N_LOG_MAX_BLOCKS,
+        LOG_MAX_N_BLOCKS,
     )
     .root;
 
@@ -438,23 +427,12 @@ fn main() {
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
     let config = CircuitConfig::standard_recursion_config();
-    let block_circuit = make_block_proof_circuit::<
-        F,
-        C,
-        D,
-        N_LOG_MAX_USERS,
-        N_LOG_MAX_TXS,
-        N_LOG_MAX_CONTRACTS,
-        N_LOG_MAX_VARIABLES,
-        N_LOG_TXS,
-        N_LOG_RECIPIENTS,
-        N_LOG_CONTRACTS,
-        N_LOG_VARIABLES,
-        N_DIFFS,
-        N_MERGES,
-        N_TXS,
-        N_DEPOSITS,
-    >(config, &merge_and_purge_circuit, &zkdsa_circuit);
+    let block_circuit = make_block_proof_circuit::<F, C, D>(
+        config,
+        ROLLUP_CONSTANTS,
+        &merge_and_purge_circuit,
+        &zkdsa_circuit,
+    );
 
     let block_number = prev_block_header.block_number + 1;
 
@@ -513,7 +491,7 @@ fn main() {
         root: block_headers_digest,
         siblings: block_headers_proof_siblings,
         ..
-    } = get_merkle_proof(&block_headers, prev_block_number as usize, N_LOG_MAX_BLOCKS);
+    } = get_merkle_proof(&block_headers, prev_block_number as usize, LOG_MAX_N_BLOCKS);
 
     let block2_deposit_list: Vec<DepositInfo<F>> = vec![DepositInfo {
         receiver_address: Address(sender2_address),
@@ -549,16 +527,21 @@ fn main() {
             })
             .collect::<Vec<_>>();
         let interior_deposit_digest = deposit_process_proofs.last().unwrap().0.new_root;
-        let deposit_digest = get_merkle_proof(&[interior_deposit_digest], 0, N_LOG_TXS).root;
+        let deposit_digest =
+            get_merkle_proof(&[interior_deposit_digest], 0, ROLLUP_CONSTANTS.log_n_txs).root;
 
         let transaction_hashes = user_transactions
             .iter()
             .map(|v| v.tx_hash)
             .collect::<Vec<_>>();
         let default_tx_hash = MergeAndPurgeTransitionPublicInputs::default().tx_hash;
-        let transactions_digest =
-            get_merkle_proof_with_zero(&transaction_hashes, 0, N_LOG_TXS as usize, default_tx_hash)
-                .root;
+        let transactions_digest = get_merkle_proof_with_zero(
+            &transaction_hashes,
+            0,
+            ROLLUP_CONSTANTS.log_n_txs,
+            default_tx_hash,
+        )
+        .root;
 
         let address_list = user_transactions
             .iter()
@@ -630,8 +613,11 @@ fn main() {
 
     let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
-    let block_proof_targets: BlockBatchTarget<D, N_BLOCKS> =
-        BlockBatchTarget::add_virtual_to::<F, C>(&mut builder, &block_circuit.data);
+    let block_proof_targets: BlockBatchTarget<D> = BlockBatchTarget::add_virtual_to::<F, C>(
+        &mut builder,
+        &block_circuit.data,
+        ROLLUP_CONSTANTS.n_blocks,
+    );
     let batch_block_circuit_data = builder.build::<C>();
 
     let mut pw = PartialWitness::new();

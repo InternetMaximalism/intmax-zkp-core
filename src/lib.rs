@@ -1,3 +1,4 @@
+pub mod config;
 #[cfg(feature = "ecdsa")]
 pub mod ecdsa;
 pub mod merkle_tree;

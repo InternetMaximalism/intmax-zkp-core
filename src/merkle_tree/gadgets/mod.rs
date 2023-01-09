@@ -15,22 +15,25 @@ use crate::{
 use super::tree::get_merkle_root;
 
 #[derive(Clone, Debug)]
-pub struct MerkleProofTarget<const N_LEVELS: usize> {
+pub struct MerkleProofTarget {
     pub index: Target,
     pub value: HashOutTarget,
-    pub siblings: [HashOutTarget; N_LEVELS],
+    pub siblings: Vec<HashOutTarget>,
     pub root: HashOutTarget,
     // pub enabled: BoolTarget
 }
 
-impl<const N_LEVELS: usize> MerkleProofTarget<N_LEVELS> {
+impl MerkleProofTarget {
     pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
+        n_levels: usize,
     ) -> Self {
         let index = builder.add_virtual_target();
-        builder.range_check(index, N_LEVELS);
+        builder.range_check(index, n_levels);
         let value = builder.add_virtual_hash();
-        let siblings = [0; N_LEVELS].map(|_| builder.add_virtual_hash());
+        let siblings = (0..n_levels)
+            .map(|_| builder.add_virtual_hash())
+            .collect::<Vec<_>>();
         let root = get_merkle_root_target::<F, H, D>(builder, index, value, &siblings);
         // let enabled = builder.add_virtual_bool_target_safe();
 
@@ -133,8 +136,7 @@ fn test_verify_merkle_proof_by_plonky2() {
     let config = CircuitConfig::standard_recursion_config();
 
     let mut builder = CircuitBuilder::<F, D>::new(config);
-    let targets: MerkleProofTarget<N_LEVELS> =
-        MerkleProofTarget::add_virtual_to::<F, H, D>(&mut builder);
+    let targets = MerkleProofTarget::add_virtual_to::<F, H, D>(&mut builder, N_LEVELS);
     builder.register_public_inputs(&targets.root.elements);
     builder.register_public_input(targets.index);
     builder.register_public_inputs(&targets.value.elements);

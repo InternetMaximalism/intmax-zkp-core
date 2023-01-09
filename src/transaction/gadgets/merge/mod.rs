@@ -64,9 +64,13 @@ pub struct MergeProofTarget {
 
 #[derive(Clone, Debug)]
 pub struct MergeTransitionTarget {
-    pub proofs: Vec<MergeProofTarget>,
-    pub old_user_asset_root: HashOutTarget,
-    pub new_user_asset_root: HashOutTarget,
+    pub proofs: Vec<MergeProofTarget>,      // input
+    pub old_user_asset_root: HashOutTarget, // input
+    pub new_user_asset_root: HashOutTarget, // output
+    pub log_max_n_users: usize,             // constant
+    pub log_max_n_txs: usize,               // constant
+    pub log_n_txs: usize,                   // constant
+    pub log_n_recipients: usize,            // constant
 }
 
 impl MergeTransitionTarget {
@@ -76,7 +80,6 @@ impl MergeTransitionTarget {
         log_max_n_txs: usize,
         log_n_txs: usize,
         log_n_recipients: usize,
-        _n_deposits: usize,
         n_merges: usize,
     ) -> Self {
         let mut proofs = vec![];
@@ -114,6 +117,10 @@ impl MergeTransitionTarget {
             proofs,
             old_user_asset_root,
             new_user_asset_root,
+            log_max_n_users,
+            log_max_n_txs,
+            log_n_txs,
+            log_n_recipients,
         }
     }
 
@@ -124,7 +131,6 @@ impl MergeTransitionTarget {
         proofs: &[MergeProof<F>],
         old_user_asset_root: HashOut<F>,
     ) -> WrappedHashOut<F> {
-        let log_n_txs = self.proofs.len();
         pw.set_hash_target(self.old_user_asset_root, old_user_asset_root);
 
         let first_root = old_user_asset_root.into();
@@ -228,8 +234,8 @@ impl MergeTransitionTarget {
             new_user_asset_root = witness.merge_process_proof.new_root
         }
 
-        let default_header = BlockHeader::new(log_n_txs);
-        let default_merkle_proof = MerkleProof::new(log_n_txs);
+        let default_header = BlockHeader::new(self.log_n_txs);
+        let default_merkle_proof = MerkleProof::new(self.log_n_txs);
         let default_inclusion_proof = SmtInclusionProof::with_root(Default::default());
         let default_process_proof = SmtProcessProof::with_root(new_user_asset_root);
         for target in self.proofs.iter().skip(proofs.len()) {
@@ -430,7 +436,6 @@ fn test_merge_proof_by_plonky2() {
     pub const LOG_N_TXS: usize = 3;
     pub const LOG_N_RECIPIENTS: usize = 3;
     pub const N_MERGES: usize = 3;
-    pub const N_DEPOSITS: usize = 3;
 
     let config = CircuitConfig::standard_recursion_config();
 
@@ -443,7 +448,6 @@ fn test_merge_proof_by_plonky2() {
         LOG_MAX_N_TXS,
         LOG_N_TXS,
         LOG_N_RECIPIENTS,
-        N_DEPOSITS,
         N_MERGES,
     );
     builder.register_public_inputs(&merge_proof_target.old_user_asset_root.elements);

@@ -48,6 +48,8 @@ pub struct ProposalBlockProductionTarget {
     pub old_world_state_root: HashOutTarget, // input
 
     pub new_world_state_root: HashOutTarget, // output
+
+    pub log_max_n_users: usize, // constant
 }
 
 impl ProposalBlockProductionTarget {
@@ -86,6 +88,7 @@ impl ProposalBlockProductionTarget {
             transactions_digest,
             old_world_state_root,
             new_world_state_root,
+            log_max_n_users,
         }
     }
 

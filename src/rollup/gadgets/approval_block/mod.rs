@@ -385,7 +385,7 @@ fn test_approval_block() {
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = <C as GenericConfig<D>>::F;
-    let rollup_constants = RollupConstants {
+    const ROLLUP_CONSTANTS: RollupConstants = RollupConstants {
         log_max_n_users: 3,
         log_max_n_txs: 3,
         log_max_n_contracts: 3,
@@ -394,19 +394,20 @@ fn test_approval_block() {
         log_n_recipients: 3,
         log_n_contracts: 3,
         log_n_variables: 3,
+        n_registrations: 2,
         n_diffs: 2,
         n_merges: 2,
         n_deposits: 2,
         n_blocks: 2,
     };
-    let n_txs = 2usize.pow(rollup_constants.log_n_txs as u32);
+    let n_txs = 2usize.pow(ROLLUP_CONSTANTS.log_n_txs as u32);
 
     let aggregator_nodes_db = NodeDataMemory::default();
     let mut world_state_tree =
         PoseidonSparseMerkleTree::new(aggregator_nodes_db.clone(), RootDataTmp::default());
 
     let config = CircuitConfig::standard_recursion_config();
-    let merge_and_purge_circuit = make_user_proof_circuit::<F, C, D>(config, rollup_constants);
+    let merge_and_purge_circuit = make_user_proof_circuit::<F, C, D>(config, ROLLUP_CONSTANTS);
 
     // dbg!(&purge_proof_circuit_data.common);
 
@@ -524,12 +525,12 @@ fn test_approval_block() {
     let deposit_tx_hash = PoseidonHash::two_to_one(*deposit_diff_root, deposit_nonce).into();
 
     let merge_inclusion_proof1 =
-        get_merkle_proof(&[deposit_tx_hash], 0, rollup_constants.log_n_txs);
+        get_merkle_proof(&[deposit_tx_hash], 0, ROLLUP_CONSTANTS.log_n_txs);
 
     let default_hash = HashOut::ZERO;
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
     // let default_merkle_root = get_merkle_proof(&[], 0, LOG_N_TXS).root;
-    let mut prev_block_header = BlockHeader::new(rollup_constants.log_n_txs);
+    let mut prev_block_header = BlockHeader::new(ROLLUP_CONSTANTS.log_n_txs);
     prev_block_header.block_number = 1;
     prev_block_header.deposit_digest = *merge_inclusion_proof1.root;
     // let prev_block_header = BlockHeader {
@@ -752,7 +753,7 @@ fn test_approval_block() {
         F,
         <C as GenericConfig<D>>::Hasher,
         D,
-    >(&mut builder, rollup_constants.log_max_n_users, n_txs);
+    >(&mut builder, ROLLUP_CONSTANTS.log_max_n_users, n_txs);
     let circuit_data = builder.build::<C>();
 
     let block_number = prev_block_header.block_number + 1;

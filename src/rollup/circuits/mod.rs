@@ -1065,7 +1065,7 @@ fn test_prove_block_production() {
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = <C as GenericConfig<D>>::F;
-    let rollup_constants = RollupConstants {
+    const ROLLUP_CONSTANTS: RollupConstants = RollupConstants {
         log_max_n_users: 3,
         log_max_n_txs: 3,
         log_max_n_contracts: 3,
@@ -1074,14 +1074,15 @@ fn test_prove_block_production() {
         log_n_recipients: 3,
         log_n_contracts: 3,
         log_n_variables: 3,
+        n_registrations: 2,
         n_diffs: 2,
         n_merges: 2,
         n_deposits: 2,
         n_blocks: 2,
     };
 
-    let n_txs = 2usize.pow(rollup_constants.log_n_txs as u32);
+    let n_txs = 2usize.pow(ROLLUP_CONSTANTS.log_n_txs as u32);
     let default_block_details: BlockDetail<F, C, D> = BlockDetail::new(n_txs);
     let _default_block_production_proof =
-        prove_block_production::<F, C, D>(rollup_constants, &default_block_details).unwrap();
+        prove_block_production::<F, C, D>(ROLLUP_CONSTANTS, &default_block_details).unwrap();
 }

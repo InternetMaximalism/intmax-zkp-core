@@ -1,20 +1,22 @@
 use plonky2::{
     field::extension::Extendable,
     hash::hash_types::{HashOutTarget, RichField},
-    iop::target::Target,
+    iop::{target::Target, witness::Witness},
     plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
 };
+
+use crate::transaction::asset::Asset;
 
 use super::utils::is_non_zero;
 
 #[derive(Copy, Clone, Debug)]
-pub struct AssetTargets {
+pub struct AssetTarget {
     pub contract_address: HashOutTarget,
     pub token_id: HashOutTarget,
     pub amount: Target,
 }
 
-impl AssetTargets {
+impl AssetTarget {
     pub fn add_virtual_to<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
@@ -24,6 +26,34 @@ impl AssetTargets {
             amount: builder.add_virtual_target(),
         }
     }
+
+    pub fn add_constant_default<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+    ) -> Self {
+        Self {
+            contract_address: builder.add_virtual_hash(),
+            token_id: builder.add_virtual_hash(),
+            amount: builder.add_virtual_target(),
+        }
+    }
+
+    pub fn set_witness<F: RichField>(&self, pw: &mut impl Witness<F>, value: Asset<F>) {
+        pw.set_hash_target(
+            self.contract_address,
+            value.kind.contract_address.to_hash_out(),
+        );
+        pw.set_hash_target(self.token_id, value.kind.variable_index.to_hash_out());
+        pw.set_target(self.amount, F::from_canonical_u64(value.amount));
+    }
+
+    pub fn encode(&self) -> Vec<Target> {
+        [
+            self.contract_address.elements.to_vec(),
+            self.token_id.elements.to_vec(),
+            vec![self.amount],
+        ]
+        .concat()
+    }
 }
 
 /// asset の組み合わせから一意に定まる hash を作成する.
@@ -32,7 +62,7 @@ impl AssetTargets {
 ///  例えば, 1 種類の NFT を mess にすると, その asset_id がそのまま現れるため容易に推測される.
 pub fn assets_into_mess<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
-    assets_t: &[AssetTargets],
+    assets_t: &[AssetTarget],
 ) -> (HashOutTarget, Target) {
     let mut total_amount_t = builder.zero();
     let mut mess_t = HashOutTarget {
@@ -96,8 +126,8 @@ pub fn calc_asset_id<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const 
 ///  一定値 (例えば 2^56) 未満であることを事前に検証すると, より安全である.
 pub fn verify_equal_assets<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
-    input_assets_t: &[AssetTargets],
-    output_assets_t: &[AssetTargets],
+    input_assets_t: &[AssetTarget],
+    output_assets_t: &[AssetTarget],
 ) {
     let (input_mess_t, total_inputs_t) = assets_into_mess::<F, H, D>(builder, input_assets_t);
     let (output_mess_t, total_outputs_t) = assets_into_mess::<F, H, D>(builder, output_assets_t);

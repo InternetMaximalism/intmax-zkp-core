@@ -30,8 +30,10 @@ use crate::{
     zkdsa::account::Address,
 };
 
+use super::gadgets::purge::{PurgeInputProcessProof, PurgeOutputProcessProof};
+
 // type C = PoseidonGoldilocksConfig;
-// type H = <C as GenericConfig<D>>::InnerHasher;
+// type H = <C as GenericConfig<D>>::Hasher;
 // type F = <C as GenericConfig<D>>::F;
 // const D: usize = 2;
 
@@ -52,27 +54,28 @@ pub struct MergeAndPurgeTransitionTarget {
 
 impl MergeAndPurgeTransitionTarget {
     #[allow(clippy::too_many_arguments)]
-    pub fn set_witness<F: RichField>(
+    pub fn set_witness<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
         &self,
         pw: &mut impl Witness<F>,
         sender_address: Address<F>,
         merge_witnesses: &[MergeProof<F>],
-        purge_input_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
-        purge_output_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
+        purge_input_witnesses: &[PurgeInputProcessProof<F, H>],
+        purge_output_witnesses: &[PurgeOutputProcessProof<F, H>],
         nonce: WrappedHashOut<F>,
         old_user_asset_root: WrappedHashOut<F>,
     ) -> MergeAndPurgeTransitionPublicInputs<F> {
         let middle_user_asset_root =
             self.merge_proof_target
-                .set_witness(pw, merge_witnesses, *old_user_asset_root);
-        let (new_user_asset_root, diff_root, tx_hash) = self.purge_proof_target.set_witness(
-            pw,
-            sender_address,
-            purge_input_witnesses,
-            purge_output_witnesses,
-            middle_user_asset_root,
-            nonce,
-        );
+                .set_witness::<F, H>(pw, merge_witnesses, *old_user_asset_root);
+        let (new_user_asset_root, diff_root, tx_hash) =
+            self.purge_proof_target.set_witness::<F, H>(
+                pw,
+                sender_address,
+                purge_input_witnesses,
+                purge_output_witnesses,
+                middle_user_asset_root,
+                nonce,
+            );
 
         MergeAndPurgeTransitionPublicInputs {
             sender_address,
@@ -435,6 +438,8 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
 
 impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     MergeAndPurgeTransitionCircuit<F, C, D>
+where
+    C::Hasher: AlgebraicHasher<F>,
 {
     pub fn parse_public_inputs(&self) -> MergeAndPurgeTransitionPublicInputsTarget {
         let public_inputs_t = self.data.prover_only.public_inputs.clone();
@@ -460,21 +465,22 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
         &self,
         sender_address: Address<F>,
         merge_witnesses: &[MergeProof<F>],
-        purge_input_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
-        purge_output_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
+        purge_input_witnesses: &[PurgeInputProcessProof<F, C::Hasher>],
+        purge_output_witnesses: &[PurgeOutputProcessProof<F, C::Hasher>],
         nonce: WrappedHashOut<F>,
         old_user_asset_root: WrappedHashOut<F>,
     ) -> anyhow::Result<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>> {
         let mut pw = PartialWitness::new();
-        self.targets.set_witness(
-            &mut pw,
-            sender_address,
-            merge_witnesses,
-            purge_input_witnesses,
-            purge_output_witnesses,
-            nonce,
-            old_user_asset_root,
-        );
+        self.targets
+            .set_witness::<F, <C as GenericConfig<D>>::Hasher>(
+                &mut pw,
+                sender_address,
+                merge_witnesses,
+                purge_input_witnesses,
+                purge_output_witnesses,
+                nonce,
+                old_user_asset_root,
+            );
 
         self.prove(pw)
     }
@@ -497,8 +503,8 @@ pub fn prove_user_transaction<
     rollup_constants: RollupConstants,
     sender_address: Address<F>,
     merge_witnesses: &[MergeProof<F>],
-    purge_input_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
-    purge_output_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
+    purge_input_witnesses: &[PurgeInputProcessProof<F, C::Hasher>],
+    purge_output_witnesses: &[PurgeOutputProcessProof<F, C::Hasher>],
     nonce: WrappedHashOut<F>,
     old_user_asset_root: WrappedHashOut<F>,
 ) -> anyhow::Result<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>>
@@ -510,7 +516,7 @@ where
     let merge_and_purge_circuit = make_user_proof_circuit::<F, C, D>(config, rollup_constants);
 
     let mut pw = PartialWitness::new();
-    let _public_inputs = merge_and_purge_circuit.targets.set_witness(
+    let _public_inputs = merge_and_purge_circuit.targets.set_witness::<F, C::Hasher>(
         &mut pw,
         sender_address,
         merge_witnesses,

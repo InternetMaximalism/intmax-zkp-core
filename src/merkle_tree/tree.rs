@@ -195,3 +195,14 @@ fn test_get_block_hash_tree_proofs2() {
     let index = leaves.len() - 1;
     get_merkle_proof(&leaves, index, N_LEVELS);
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(bound(deserialize = "WrappedHashOut<F>: Deserialize<'de>"))]
+pub struct MerkleProcessProof<F: RichField> {
+    pub index: usize,
+    pub siblings: Vec<WrappedHashOut<F>>,
+    pub old_value: WrappedHashOut<F>,
+    pub new_value: WrappedHashOut<F>,
+    pub old_root: WrappedHashOut<F>,
+    pub new_root: WrappedHashOut<F>,
+}

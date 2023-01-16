@@ -24,7 +24,7 @@ use super::{
 mod hash;
 pub use self::hash::{GoldilocksHashOut, WrappedHashOut, Wrapper};
 
-fn le_bytes_to_bits(bytes: &[u8]) -> Vec<bool> {
+pub fn le_bytes_to_bits(bytes: &[u8]) -> Vec<bool> {
     bytes
         .iter()
         .flat_map(|byte| {

@@ -117,14 +117,14 @@ impl<F: RichField, H: Hasher<F>> SparseMerkleTreeMemory<F, H> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Node<F: RichField, H: Hasher<F>> {
     Inner { left: H::Hash, right: H::Hash },
     Leaf { data: Vec<F> },
 }
 
 impl<F: RichField, H: Hasher<F>> Node<F, H> {
-    fn hash(&self) -> H::Hash {
+    pub fn hash(&self) -> H::Hash {
         match self {
             Node::Inner { left, right } => H::two_to_one(*left, *right),
             Node::Leaf { data } => H::hash_or_noop(data),

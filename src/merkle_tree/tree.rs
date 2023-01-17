@@ -1,10 +1,13 @@
 use plonky2::{
-    hash::{hash_types::RichField, poseidon::PoseidonHash},
+    hash::{
+        hash_types::{HashOut, RichField},
+        poseidon::PoseidonHash,
+    },
     plonk::config::Hasher,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut;
+use crate::sparse_merkle_tree::tree::KeyLike;
 
 pub fn log2_ceil(value: usize) -> u32 {
     assert!(value != 0, "The first argument must be a positive number.");
@@ -24,20 +27,20 @@ pub fn log2_ceil(value: usize) -> u32 {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound(deserialize = "WrappedHashOut<F>: Deserialize<'de>"))]
-pub struct MerkleProof<F: RichField> {
-    pub index: usize,
-    pub value: WrappedHashOut<F>,
-    pub siblings: Vec<WrappedHashOut<F>>,
-    pub root: WrappedHashOut<F>,
+#[serde(bound(deserialize = "H::Hash: Deserialize<'de>, K: Deserialize<'de>"))]
+pub struct MerkleProof<F: RichField, H: Hasher<F>, K: Clone> {
+    pub index: K,
+    pub value: H::Hash,
+    pub siblings: Vec<H::Hash>,
+    pub root: H::Hash,
 }
 
-impl<F: RichField> MerkleProof<F> {
+impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> MerkleProof<F, H, usize> {
     pub fn new(depth: usize) -> Self {
         let index = Default::default();
         let value = Default::default();
 
-        get_merkle_proof(&[value], index, depth)
+        get_merkle_proof::<F, H>(&[value], index, depth)
     }
 }
 
@@ -47,12 +50,12 @@ impl<F: RichField> MerkleProof<F> {
 /// leaves に 1 つも leaf を与えなかったり, leaves の個数が 2 のべきでなかった場合,
 /// もとの個数より小さくない最小の 2 のべきになるように `zero` を埋める.
 /// Returns `(siblings, root)`
-pub fn get_merkle_proof_with_zero<F: RichField>(
-    leaves: &[WrappedHashOut<F>],
+pub fn get_merkle_proof_with_zero<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+    leaves: &[H::Hash],
     index: usize,
     depth: usize,
-    zero: WrappedHashOut<F>,
-) -> MerkleProof<F> {
+    zero: H::Hash,
+) -> MerkleProof<F, H, usize> {
     let mut nodes = if leaves.is_empty() {
         vec![zero]
     } else {
@@ -67,17 +70,17 @@ pub fn get_merkle_proof_with_zero<F: RichField>(
 
     let mut siblings = vec![zero]; // initialize by zero hashes
     for _ in 1..depth {
-        let last_zero: WrappedHashOut<F> = *siblings.last().unwrap();
-        siblings.push(PoseidonHash::two_to_one(*last_zero, *last_zero).into());
+        let last_zero: H::Hash = *siblings.last().unwrap();
+        siblings.push(PoseidonHash::two_to_one(last_zero, last_zero));
     }
 
     let mut rest_index = index;
     for sibling in siblings.iter_mut().take(log_num_leaves) {
         let _ = std::mem::replace(sibling, nodes[rest_index ^ 1]); // XXX: out of index が起こる
 
-        let mut new_nodes: Vec<WrappedHashOut<F>> = vec![];
+        let mut new_nodes: Vec<HashOut<F>> = vec![];
         for j in 0..(nodes.len() / 2) {
-            new_nodes.push(PoseidonHash::two_to_one(*nodes[2 * j], *nodes[2 * j + 1]).into());
+            new_nodes.push(PoseidonHash::two_to_one(nodes[2 * j], nodes[2 * j + 1]));
         }
 
         rest_index >>= 1;
@@ -88,7 +91,7 @@ pub fn get_merkle_proof_with_zero<F: RichField>(
     let mut root = nodes[0];
     for sibling in siblings.iter().cloned().skip(log_num_leaves) {
         // log_num_leaves 層より上は sibling が必ず右側にくる.
-        root = PoseidonHash::two_to_one(*root, *sibling).into();
+        root = PoseidonHash::two_to_one(root, sibling);
     }
 
     MerkleProof {
@@ -99,30 +102,28 @@ pub fn get_merkle_proof_with_zero<F: RichField>(
     }
 }
 
-pub fn get_merkle_proof<F: RichField>(
-    leaves: &[WrappedHashOut<F>],
+pub fn get_merkle_proof<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+    leaves: &[H::Hash],
     index: usize,
     depth: usize,
-) -> MerkleProof<F> {
-    get_merkle_proof_with_zero(leaves, index, depth, WrappedHashOut::ZERO)
+) -> MerkleProof<F, H, usize> {
+    get_merkle_proof_with_zero(leaves, index, depth, HashOut::ZERO)
 }
 
 /// 与えられた leaf `(index, value)` と `siblings` から Merkle root を計算する.
-pub fn get_merkle_root<F: RichField>(
-    index: usize,
-    value: WrappedHashOut<F>,
-    siblings: &[WrappedHashOut<F>],
-) -> WrappedHashOut<F> {
+pub fn get_merkle_root<F: RichField, K: KeyLike>(
+    index: K,
+    value: HashOut<F>,
+    siblings: &[HashOut<F>],
+) -> HashOut<F> {
     let mut root = value;
-    let mut rest_index = index;
-    for sibling in siblings {
-        let (left, right) = if rest_index & 1 == 0 {
-            (root, *sibling)
-        } else {
+    for (lr_bit, sibling) in index.to_bits().iter().zip(siblings) {
+        let (left, right) = if *lr_bit {
             (*sibling, root)
+        } else {
+            (root, *sibling)
         };
-        root = PoseidonHash::two_to_one(*left, *right).into();
-        rest_index >>= 1;
+        root = PoseidonHash::two_to_one(left, right);
     }
 
     root
@@ -135,31 +136,27 @@ fn test_get_block_hash_tree_proofs() {
         hash::hash_types::HashOut,
     };
 
+    type H = PoseidonHash;
     type F = GoldilocksField;
 
     let mut leaves = vec![0, 10, 20, 30, 40, 0]
         .into_iter()
-        .map(|i| {
-            HashOut {
-                elements: [F::from_canonical_u32(i), F::ZERO, F::ZERO, F::ZERO],
-            }
-            .into()
+        .map(|i| HashOut {
+            elements: [F::from_canonical_u32(i), F::ZERO, F::ZERO, F::ZERO],
         })
         .collect::<Vec<_>>();
     const N_LEVELS: usize = 10;
     let index = leaves.len() - 1;
     let MerkleProof {
         siblings,
-        root: old_root,
+        root: _old_root,
         ..
-    } = get_merkle_proof(&leaves, index, N_LEVELS);
-    dbg!(old_root);
+    } = get_merkle_proof::<F, H>(&leaves, index, N_LEVELS);
 
     // TODO: `index` 番目の要素が変化しても siblings は同じであることを確かめる.
     let new_leaf = HashOut {
         elements: [F::from_canonical_u32(50), F::ZERO, F::ZERO, F::ZERO],
-    }
-    .into();
+    };
     let new_root = get_merkle_root(index, new_leaf, &siblings);
 
     leaves[index] = new_leaf;
@@ -167,7 +164,7 @@ fn test_get_block_hash_tree_proofs() {
         siblings: actual_siblings,
         root: actual_new_root,
         ..
-    } = get_merkle_proof(&leaves, index, N_LEVELS);
+    } = get_merkle_proof::<F, H>(&leaves, index, N_LEVELS);
     assert_eq!(siblings, actual_siblings);
     assert_eq!(new_root, actual_new_root);
 }
@@ -180,29 +177,27 @@ fn test_get_block_hash_tree_proofs2() {
         hash::hash_types::HashOut,
     };
 
+    // type H = PoseidonHash;
     type F = GoldilocksField;
 
     let leaves = vec![0, 10, 20, 30, 40, 0]
         .into_iter()
-        .map(|i| {
-            HashOut {
-                elements: [F::from_canonical_u32(i), F::ZERO, F::ZERO, F::ZERO],
-            }
-            .into()
+        .map(|i| HashOut {
+            elements: [F::from_canonical_u32(i), F::ZERO, F::ZERO, F::ZERO],
         })
-        .collect::<Vec<_>>();
+        .collect::<Vec<HashOut<F>>>();
     const N_LEVELS: usize = 2;
     let index = leaves.len() - 1;
-    get_merkle_proof(&leaves, index, N_LEVELS);
+    get_merkle_proof::<F, PoseidonHash>(&leaves, index, N_LEVELS);
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound(deserialize = "WrappedHashOut<F>: Deserialize<'de>"))]
-pub struct MerkleProcessProof<F: RichField> {
-    pub index: usize,
-    pub siblings: Vec<WrappedHashOut<F>>,
-    pub old_value: WrappedHashOut<F>,
-    pub new_value: WrappedHashOut<F>,
-    pub old_root: WrappedHashOut<F>,
-    pub new_root: WrappedHashOut<F>,
+#[serde(bound(deserialize = "H::Hash: Deserialize<'de>, K: Deserialize<'de>"))]
+pub struct MerkleProcessProof<F: RichField, H: Hasher<F>, K: Clone + std::fmt::Debug + Eq> {
+    pub index: K,
+    pub siblings: Vec<H::Hash>,
+    pub old_value: H::Hash,
+    pub new_value: H::Hash,
+    pub old_root: H::Hash,
+    pub new_root: H::Hash,
 }

@@ -1,7 +1,6 @@
 use std::{collections::HashMap, fmt::Debug};
 
 use plonky2::{
-    field::goldilocks_field::GoldilocksField,
     hash::{
         hash_types::{HashOut, RichField},
         merkle_proofs::MerkleProof,
@@ -11,19 +10,13 @@ use plonky2::{
 
 use crate::{
     merkle_tree::sparse_merkle_tree::{MerklePath, Node},
-    rollup::gadgets::deposit_block::VariableIndex,
-    sparse_merkle_tree::goldilocks_poseidon::{le_bytes_to_bits, PoseidonNodeHash, WrappedHashOut},
+    sparse_merkle_tree::goldilocks_poseidon::{le_bytes_to_bits, WrappedHashOut},
     transaction::{
-        asset::{Asset, TokenKind},
+        asset::{Asset, TokenKind, VariableIndex},
         gadgets::purge::encode_asset,
     },
     zkdsa::account::Address,
 };
-
-type F = GoldilocksField;
-type I = WrappedHashOut<F>;
-type K = WrappedHashOut<F>;
-type H = PoseidonNodeHash;
 
 #[derive(Debug)]
 pub struct UserAssetTree<F: RichField, H: Hasher<F>> {
@@ -137,7 +130,8 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
     ) {
         let mut merge_key_path = le_bytes_to_bits(&merge_key.to_bytes());
         merge_key_path.resize(self.log_max_n_txs, false);
-        let path = merge_key_path.clone();
+        let mut path = merge_key_path.clone();
+        let mut token_index = token_index;
         path.append(&mut token_index);
         self.nodes.insert(
             path.clone(),
@@ -158,7 +152,7 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
         // merge_key_path.resize(self.log_max_n_txs, false);
         for (i, asset) in assets.iter().enumerate() {
             // let mut path = merge_key_path.clone();
-            let new_leaf_data = [merge_key.0.elements.to_vec(), encode_asset(&asset)].concat();
+            let new_leaf_data = [merge_key.0.elements.to_vec(), encode_asset(asset)].concat();
             let mut token_index = le_bytes_to_bits(&i.to_le_bytes());
             token_index.resize(self.log_max_n_kinds, false);
             token_index.reverse();
@@ -176,7 +170,7 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
         let path = self
             .nodes
             .iter()
-            .filter(|v| {
+            .find(|v| {
                 if let Node::Leaf { data } = v.1 {
                     merge_key.0.elements == data[0..4]
                         && token_kind.contract_address.0.elements == data[4..8]
@@ -185,14 +179,14 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
                     false
                 }
             })
-            .next()
             .unwrap()
-            .0;
-        let default_leaf_data = [F::ZERO; 16].to_vec();
+            .0
+            .clone();
+        let default_leaf_data = vec![F::ZERO; 16];
         let old_leaf_node = self.nodes.insert(
             path.clone(),
             Node::Leaf {
-                data: default_leaf_data,
+                data: default_leaf_data.clone(),
             },
         );
 
@@ -220,8 +214,8 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
         })
     }
 
-    pub fn get_asset_root(&self, recipient: &H::Hash) -> anyhow::Result<H::Hash> {
-        let mut path = le_bytes_to_bits(&recipient.to_bytes());
+    pub fn get_asset_root(&self, merge_key: &H::Hash) -> anyhow::Result<H::Hash> {
+        let mut path = le_bytes_to_bits(&merge_key.to_bytes());
         path.resize(self.log_max_n_txs, false);
         let asset_root = self.get_node_hash(&path);
 
@@ -252,7 +246,7 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
         let path = self
             .nodes
             .iter()
-            .filter(|v| {
+            .find(|v| {
                 if let Node::Leaf { data } = v.1 {
                     merge_key.0.elements == data[0..4]
                         && token_kind.contract_address.0.elements == data[4..8]
@@ -261,11 +255,10 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
                     false
                 }
             })
-            .next()
             .unwrap()
             .0;
 
-        let siblings = self.prove(&path)?.siblings;
+        let siblings = self.prove(path)?.siblings;
 
         Ok((siblings, path.to_vec()))
     }

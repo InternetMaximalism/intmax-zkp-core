@@ -38,9 +38,9 @@ use super::gadgets::purge::{PurgeInputProcessProof, PurgeOutputProcessProof};
 // const D: usize = 2;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct MergeAndPurgeTransition<F: RichField> {
+pub struct MergeAndPurgeTransition<F: RichField, H: Hasher<F>> {
     pub sender_address: Address<F>,
-    pub merge_witnesses: Vec<MergeProof<F>>,
+    pub merge_witnesses: Vec<MergeProof<F, H>>,
     pub purge_input_witnesses: Vec<(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)>,
     pub purge_output_witnesses: Vec<(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)>,
     pub nonce: WrappedHashOut<F>,
@@ -58,7 +58,7 @@ impl MergeAndPurgeTransitionTarget {
         &self,
         pw: &mut impl Witness<F>,
         sender_address: Address<F>,
-        merge_witnesses: &[MergeProof<F>],
+        merge_witnesses: &[MergeProof<F, H>],
         purge_input_witnesses: &[PurgeInputProcessProof<F, H>],
         purge_output_witnesses: &[PurgeOutputProcessProof<F, H>],
         nonce: WrappedHashOut<F>,
@@ -73,14 +73,14 @@ impl MergeAndPurgeTransitionTarget {
                 sender_address,
                 purge_input_witnesses,
                 purge_output_witnesses,
-                middle_user_asset_root,
+                middle_user_asset_root.into(),
                 nonce,
             );
 
         MergeAndPurgeTransitionPublicInputs {
             sender_address,
             old_user_asset_root,
-            middle_user_asset_root,
+            middle_user_asset_root: middle_user_asset_root.into(),
             new_user_asset_root,
             diff_root,
             tx_hash,
@@ -109,6 +109,7 @@ where
             rollup_constants.log_max_n_txs,
             rollup_constants.log_n_txs,
             rollup_constants.log_n_recipients,
+            rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
             rollup_constants.n_merges,
         );
 
@@ -464,7 +465,7 @@ where
     pub fn set_witness_and_prove(
         &self,
         sender_address: Address<F>,
-        merge_witnesses: &[MergeProof<F>],
+        merge_witnesses: &[MergeProof<F, C::Hasher>],
         purge_input_witnesses: &[PurgeInputProcessProof<F, C::Hasher>],
         purge_output_witnesses: &[PurgeOutputProcessProof<F, C::Hasher>],
         nonce: WrappedHashOut<F>,
@@ -502,7 +503,7 @@ pub fn prove_user_transaction<
 >(
     rollup_constants: RollupConstants,
     sender_address: Address<F>,
-    merge_witnesses: &[MergeProof<F>],
+    merge_witnesses: &[MergeProof<F, C::Hasher>],
     purge_input_witnesses: &[PurgeInputProcessProof<F, C::Hasher>],
     purge_output_witnesses: &[PurgeOutputProcessProof<F, C::Hasher>],
     nonce: WrappedHashOut<F>,
@@ -531,4 +532,39 @@ where
         .map_err(|err| anyhow::anyhow!("fail to prove user transaction: {}", err))?;
 
     Ok(user_tx_proof)
+}
+
+#[test]
+fn test_prove_user_transaction() {
+    use plonky2::plonk::config::PoseidonGoldilocksConfig;
+
+    const D: usize = 2;
+    type C = PoseidonGoldilocksConfig;
+    type F = <C as GenericConfig<D>>::F;
+    const ROLLUP_CONSTANTS: RollupConstants = RollupConstants {
+        log_max_n_users: 3,
+        log_max_n_txs: 3,
+        log_max_n_contracts: 3,
+        log_max_n_variables: 3,
+        log_n_txs: 2,
+        log_n_recipients: 3,
+        log_n_contracts: 3,
+        log_n_variables: 3,
+        n_registrations: 2,
+        n_diffs: 2,
+        n_merges: 2,
+        n_deposits: 2,
+        n_blocks: 2,
+    };
+
+    let _default_user_transaction_proof = prove_user_transaction::<F, C, D>(
+        ROLLUP_CONSTANTS,
+        Default::default(),
+        Default::default(),
+        Default::default(),
+        Default::default(),
+        Default::default(),
+        Default::default(),
+    )
+    .unwrap();
 }

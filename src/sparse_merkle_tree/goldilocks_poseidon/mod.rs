@@ -7,7 +7,10 @@ use anyhow::Ok;
 use num::Integer;
 use plonky2::{
     field::goldilocks_field::GoldilocksField,
-    hash::{hash_types::HashOut, poseidon::PoseidonHash},
+    hash::{
+        hash_types::{HashOut, RichField},
+        poseidon::PoseidonHash,
+    },
     plonk::config::{GenericHashOut, Hasher},
 };
 
@@ -39,11 +42,17 @@ pub fn le_bytes_to_bits(bytes: &[u8]) -> Vec<bool> {
         .collect::<Vec<_>>()
 }
 
-impl KeyLike for GoldilocksHashOut {
+impl<F: RichField> KeyLike for HashOut<F> {
     fn to_bits(&self) -> Vec<bool> {
-        let bytes = self.0.to_bytes();
+        let bytes = self.to_bytes();
 
         le_bytes_to_bits(&bytes)
+    }
+}
+
+impl<F: RichField> KeyLike for WrappedHashOut<F> {
+    fn to_bits(&self) -> Vec<bool> {
+        self.0.to_bits()
     }
 }
 

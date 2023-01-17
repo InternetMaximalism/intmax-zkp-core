@@ -1,7 +1,6 @@
 use std::{collections::HashMap, fmt::Debug};
 
 use plonky2::{
-    field::goldilocks_field::GoldilocksField,
     hash::{
         hash_types::{HashOut, RichField},
         merkle_proofs::MerkleProof,
@@ -11,15 +10,10 @@ use plonky2::{
 
 use crate::{
     merkle_tree::sparse_merkle_tree::{MerklePath, Node},
-    sparse_merkle_tree::goldilocks_poseidon::{le_bytes_to_bits, PoseidonNodeHash, WrappedHashOut},
+    sparse_merkle_tree::goldilocks_poseidon::le_bytes_to_bits,
     transaction::asset::{Asset, TokenKind},
     zkdsa::account::Address,
 };
-
-type F = GoldilocksField;
-type I = WrappedHashOut<F>;
-type K = WrappedHashOut<F>;
-type H = PoseidonNodeHash;
 
 #[derive(Debug)]
 pub struct TxDiffTree<F: RichField, H: Hasher<F>> {
@@ -135,10 +129,14 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
             .filter(|v| v.0.starts_with(&recipient_path))
             .collect::<Vec<_>>();
         assets.sort_by_key(|v| v.0);
-        let last_asset = assets.last().unwrap();
-        let mut a = last_asset.0[self.log_n_recipients..].to_vec();
-        a.reverse();
-        let mut kind_index = le_bits_to_usize(&a) + 1;
+        let kind_index = if let Some(last_asset) = assets.last() {
+            let mut a = last_asset.0[self.log_n_recipients..].to_vec();
+            a.reverse();
+
+            le_bits_to_usize(&a) + 1
+        } else {
+            0
+        };
         let mut kind_path = le_bytes_to_bits(&kind_index.to_le_bytes());
         kind_path.resize(self.log_n_kinds, false);
         kind_path.reverse();
@@ -162,7 +160,6 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
     }
 
     fn prove(&self, path: &MerklePath) -> anyhow::Result<MerkleProof<F, H>> {
-        assert_eq!(path.len(), self.log_n_recipients + self.log_n_kinds);
         let mut path = path.clone();
         let mut siblings = vec![];
         loop {
@@ -185,7 +182,7 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
         let path = self
             .nodes
             .iter()
-            .filter(|v| {
+            .find(|v| {
                 if let Node::Leaf { data } = v.1 {
                     recipient.0.elements == data[0..4]
                         && token_kind.contract_address.0.elements == data[4..8]
@@ -194,11 +191,12 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
                     false
                 }
             })
-            .next()
             .unwrap()
             .0;
 
-        let siblings = self.prove(&path)?.siblings;
+        debug_assert_eq!(path.len(), self.log_n_recipients + self.log_n_kinds);
+
+        let siblings = self.prove(path)?.siblings;
 
         Ok((siblings, path.to_vec()))
     }

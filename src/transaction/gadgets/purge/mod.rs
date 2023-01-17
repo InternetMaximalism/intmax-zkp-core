@@ -15,8 +15,7 @@ use crate::{
     merkle_tree::sparse_merkle_tree::SparseMerkleTreeMemory,
     poseidon::gadgets::poseidon_two_to_one,
     sparse_merkle_tree::{
-        gadgets::{common::conditionally_reverse, process::process_smt::SmtProcessProof},
-        goldilocks_poseidon::WrappedHashOut,
+        gadgets::common::conditionally_reverse, goldilocks_poseidon::WrappedHashOut,
     },
     transaction::asset::Asset,
     zkdsa::{account::Address, gadgets::account::AddressTarget},
@@ -50,11 +49,10 @@ pub struct PurgeInputProcessProofTarget {
 impl PurgeInputProcessProofTarget {
     pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
-        log_max_n_contracts: usize,
-        log_max_n_variables: usize,
+        log_max_n_kinds: usize,
     ) -> Self {
-        let siblings = builder.add_virtual_hashes(log_max_n_contracts + log_max_n_variables);
-        let index = (0..(log_max_n_contracts + log_max_n_variables))
+        let siblings = builder.add_virtual_hashes(log_max_n_kinds);
+        let index = (0..log_max_n_kinds)
             .map(|_| builder.add_virtual_bool_target_safe())
             .collect::<Vec<_>>();
         let old_leaf_data = AssetTarget {
@@ -82,13 +80,13 @@ impl PurgeInputProcessProofTarget {
         let mut w1_old_root = H::hash_or_noop(&encode_asset(&witness.old_leaf_data));
         let mut w1_new_root = H::hash_or_noop(&encode_asset(&Asset::default()));
         assert_eq!(witness.index.len(), witness.siblings.len());
-        for (lr_bit, sibling) in witness.index.iter().zip(witness.siblings) {
+        for (lr_bit, sibling) in witness.index.iter().zip(witness.siblings.iter()) {
             if *lr_bit {
-                w1_old_root = H::two_to_one(sibling, w1_old_root);
-                w1_new_root = H::two_to_one(sibling, w1_new_root);
+                w1_old_root = H::two_to_one(*sibling, w1_old_root);
+                w1_new_root = H::two_to_one(*sibling, w1_new_root);
             } else {
-                w1_old_root = H::two_to_one(w1_old_root, sibling);
-                w1_new_root = H::two_to_one(w1_new_root, sibling);
+                w1_old_root = H::two_to_one(w1_old_root, *sibling);
+                w1_new_root = H::two_to_one(w1_new_root, *sibling);
             }
         }
 
@@ -137,8 +135,8 @@ impl PurgeInputProcessProofTarget {
         for (ht, value) in self.siblings.iter().zip(witness.siblings.iter()) {
             pw.set_hash_target(*ht, *value);
         }
-        for (t, lr_bit) in self.index.iter().zip(witness.index) {
-            pw.set_bool_target(*t, lr_bit);
+        for (t, lr_bit) in self.index.iter().zip(witness.index.iter()) {
+            pw.set_bool_target(*t, *lr_bit);
         }
         self.old_leaf_data.set_witness(pw, witness.old_leaf_data);
     }
@@ -161,11 +159,10 @@ pub struct PurgeOutputProcessProofTarget {
 impl PurgeOutputProcessProofTarget {
     pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
-        log_n_contracts: usize,
-        log_n_variables: usize,
+        log_n_kinds: usize,
     ) -> Self {
-        let siblings = builder.add_virtual_hashes(log_n_contracts + log_n_variables);
-        let index = (0..(log_n_contracts + log_n_variables))
+        let siblings = builder.add_virtual_hashes(log_n_kinds);
+        let index = (0..log_n_kinds)
             .map(|_| builder.add_virtual_bool_target_safe())
             .collect::<Vec<_>>();
         let new_leaf_data = AssetTarget {
@@ -198,13 +195,13 @@ impl PurgeOutputProcessProofTarget {
         let mut w1_old_root = H::hash_or_noop(&encode_asset(&Asset::default()));
         let mut w1_new_root = H::hash_or_noop(&encode_asset(&witness.new_leaf_data));
         assert_eq!(witness.index.len(), witness.siblings.len());
-        for (lr_bit, sibling) in witness.index.iter().zip(witness.siblings) {
+        for (lr_bit, sibling) in witness.index.iter().zip(witness.siblings.iter()) {
             if *lr_bit {
-                w1_old_root = H::two_to_one(sibling, w1_old_root);
-                w1_new_root = H::two_to_one(sibling, w1_new_root);
+                w1_old_root = H::two_to_one(*sibling, w1_old_root);
+                w1_new_root = H::two_to_one(*sibling, w1_new_root);
             } else {
-                w1_old_root = H::two_to_one(w1_old_root, sibling);
-                w1_new_root = H::two_to_one(w1_new_root, sibling);
+                w1_old_root = H::two_to_one(w1_old_root, *sibling);
+                w1_new_root = H::two_to_one(w1_new_root, *sibling);
             }
         }
 
@@ -249,8 +246,8 @@ impl PurgeOutputProcessProofTarget {
         for (ht, value) in self.siblings.iter().zip(witness.siblings.iter()) {
             pw.set_hash_target(*ht, *value);
         }
-        for (t, lr_bit) in self.index.iter().zip(witness.index) {
-            pw.set_bool_target(*t, lr_bit);
+        for (t, lr_bit) in self.index.iter().zip(witness.index.iter()) {
+            pw.set_bool_target(*t, *lr_bit);
         }
         self.new_leaf_data.set_witness(pw, witness.new_leaf_data);
     }
@@ -299,8 +296,7 @@ impl PurgeTransitionTarget {
             .map(|_| {
                 PurgeInputProcessProofTarget::add_virtual_to::<F, H, D>(
                     builder,
-                    log_max_n_contracts,
-                    log_max_n_variables,
+                    log_max_n_contracts + log_max_n_variables,
                 )
             })
             .collect::<Vec<_>>();
@@ -309,8 +305,7 @@ impl PurgeTransitionTarget {
             .map(|_| {
                 PurgeOutputProcessProofTarget::add_virtual_to::<F, H, D>(
                     builder,
-                    log_n_contracts,
-                    log_n_variables,
+                    log_n_contracts + log_n_variables,
                 )
             })
             .collect::<Vec<_>>();
@@ -355,21 +350,15 @@ impl PurgeTransitionTarget {
         pw.set_hash_target(self.old_user_asset_root, *old_user_asset_root);
         pw.set_hash_target(self.nonce, *nonce);
         assert!(input_witness.len() <= self.input_proofs.len());
-        let mut prev_user_asset_root = old_user_asset_root;
-        for (i, (input_witness_t, input_witness)) in self
-            .input_proofs
-            .iter()
-            .zip(input_witness.iter())
-            .enumerate()
-        {
+        let prev_user_asset_root = old_user_asset_root;
+        for (input_witness_t, input_witness) in self.input_proofs.iter().zip(input_witness.iter()) {
             input_witness_t.set_witness(pw, input_witness);
         }
         let new_user_asset_root = prev_user_asset_root;
 
-        let default_witness0 = SmtProcessProof::with_root(new_user_asset_root);
         let default_asset_tree = SparseMerkleTreeMemory::<F, H>::new(
             self.log_max_n_contracts + self.log_max_n_variables,
-            WrappedHashOut::ZERO.0.elements.to_vec(),
+            HashOut::ZERO.elements.to_vec(),
         );
         let default_merkle_proof = default_asset_tree.prove(&vec![
             false;
@@ -382,7 +371,7 @@ impl PurgeTransitionTarget {
             input_proof_t.set_witness::<F, H>(
                 pw,
                 &PurgeInputProcessProof {
-                    siblings: default_merkle_proof.siblings,
+                    siblings: default_merkle_proof.siblings.clone(),
                     index: input_proof_t
                         .index
                         .iter()
@@ -394,24 +383,17 @@ impl PurgeTransitionTarget {
         }
 
         assert!(output_witness.len() <= self.output_proofs.len());
-        let mut prev_diff_root = WrappedHashOut::default();
-        for (i, (output_proof_t, output_proof)) in self
-            .output_proofs
-            .iter()
-            .zip(output_witness.iter())
-            .enumerate()
-        {
-            output_proof_t.set_witness(pw, &output_proof);
+        let prev_diff_root = WrappedHashOut::default();
+        for (output_proof_t, output_proof) in self.output_proofs.iter().zip(output_witness.iter()) {
+            output_proof_t.set_witness(pw, output_proof);
         }
         let diff_root = prev_diff_root;
-
-        let default_witness0 = SmtProcessProof::with_root(diff_root);
 
         for output_proof_t in self.output_proofs.iter().skip(output_witness.len()) {
             output_proof_t.set_witness::<F, H>(
                 pw,
                 &PurgeOutputProcessProof {
-                    siblings: default_merkle_proof.siblings,
+                    siblings: default_merkle_proof.siblings.clone(),
                     index: output_proof_t
                         .index
                         .iter()
@@ -688,7 +670,6 @@ fn test_purge_proof_by_plonky2() {
     let mut tx_diff_tree =
         TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
 
-    let zero = GoldilocksHashOut::from_u128(0);
     user_asset_tree
         .insert_assets(merge_key1, vec![asset1])
         .unwrap();

@@ -128,8 +128,8 @@ impl<F: RichField> BlockHeader<F> {
         let default_hash = HashOut::ZERO;
 
         // transaction tree と deposit tree の深さは同じ.
-        let default_interior_deposit_digest = default_hash.into();
-        let default_deposit_digest = get_merkle_proof_with_zero(
+        let default_interior_deposit_digest = default_hash;
+        let default_deposit_digest = get_merkle_proof_with_zero::<F, PoseidonHash>(
             &[],
             0,
             log_num_txs_in_block,
@@ -137,16 +137,22 @@ impl<F: RichField> BlockHeader<F> {
         )
         .root;
         let default_tx_hash = MergeAndPurgeTransitionPublicInputs::default().tx_hash;
-        let default_transactions_digest =
-            get_merkle_proof_with_zero(&[], 0, log_num_txs_in_block, default_tx_hash).root;
-        let default_block_headers_digest = get_merkle_proof(&[], 0, LOG_MAX_N_BLOCKS).root;
+        let default_transactions_digest = get_merkle_proof_with_zero::<F, PoseidonHash>(
+            &[],
+            0,
+            log_num_txs_in_block,
+            *default_tx_hash,
+        )
+        .root;
+        let default_block_headers_digest =
+            get_merkle_proof::<F, PoseidonHash>(&[], 0, LOG_MAX_N_BLOCKS).root;
 
         Self {
             block_number: 0,
             prev_block_hash: default_hash,
-            block_headers_digest: *default_block_headers_digest,
-            transactions_digest: *default_transactions_digest,
-            deposit_digest: *default_deposit_digest,
+            block_headers_digest: default_block_headers_digest,
+            transactions_digest: default_transactions_digest,
+            deposit_digest: default_deposit_digest,
             proposed_world_state_digest: default_hash,
             approved_world_state_digest: default_hash,
             latest_account_digest: default_hash,
@@ -179,8 +185,20 @@ pub fn get_block_header_tree_proof<F: RichField>(
     depth: usize,
 ) -> (Vec<WrappedHashOut<F>>, WrappedHashOut<F>, WrappedHashOut<F>) {
     let current_index = block_hashes.len();
-    let old_proof = get_merkle_proof(block_hashes, current_index, depth);
-    let new_root = get_merkle_root(current_index, new_block_hash, &old_proof.siblings);
+    let old_proof = get_merkle_proof::<F, PoseidonHash>(
+        &block_hashes.iter().map(|v| v.0).collect::<Vec<_>>(),
+        current_index,
+        depth,
+    );
+    let new_root = get_merkle_root::<F, usize>(current_index, *new_block_hash, &old_proof.siblings);
 
-    (old_proof.siblings, old_proof.root, new_root)
+    (
+        old_proof
+            .siblings
+            .into_iter()
+            .map(|v| v.into())
+            .collect::<Vec<_>>(),
+        old_proof.root.into(),
+        new_root.into(),
+    )
 }

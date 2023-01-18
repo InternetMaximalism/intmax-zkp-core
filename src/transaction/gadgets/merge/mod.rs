@@ -249,7 +249,7 @@ impl MergeProofTarget {
         }
 
         // pw.set_bool_target(target.is_deposit, witness.is_deposit);
-        if !is_no_op {
+        {
             let diff_tree_inclusion_root2 =
                 self.diff_tree_inclusion_proof.2.set_witness::<_, H, _>(
                     pw,
@@ -257,20 +257,24 @@ impl MergeProofTarget {
                     witness.diff_tree_inclusion_proof.value2,
                     &witness.diff_tree_inclusion_proof.siblings2,
                 );
-            assert_eq!(
-                diff_tree_inclusion_root2,
-                witness.diff_tree_inclusion_proof.root2
-            );
+            if !is_no_op {
+                assert_eq!(
+                    diff_tree_inclusion_root2,
+                    witness.diff_tree_inclusion_proof.root2
+                );
+            }
         }
 
-        if !is_no_op {
+        {
             let diff_tree_root = self.diff_tree_inclusion_proof.1.set_witness::<_, H, _>(
                 pw,
                 &witness.diff_tree_inclusion_proof.index1,
                 witness.diff_tree_inclusion_proof.value1,
                 &witness.diff_tree_inclusion_proof.siblings1,
             );
-            assert_eq!(diff_tree_root, witness.diff_tree_inclusion_proof.root1);
+            if !is_no_op {
+                assert_eq!(diff_tree_root, witness.diff_tree_inclusion_proof.root1);
+            }
         }
 
         self.diff_tree_inclusion_proof
@@ -398,12 +402,12 @@ pub fn verify_user_asset_merge_proof<
     //     is_not_no_op,
     // ); // XXX
 
-    let asset_root = diff_tree_inclusion_proof.1.value;
-    let asset_root_with_merge_key = poseidon_two_to_one::<F, H, D>(builder, asset_root, merge_key);
+    let asset_root = diff_tree_inclusion_proof.2.value;
+    // let asset_root_with_merge_key = poseidon_two_to_one::<F, H, D>(builder, asset_root, merge_key);
     enforce_equal_if_enabled(
         builder,
         merge_process_proof.1.value,
-        asset_root_with_merge_key,
+        asset_root, // asset_root_with_merge_key,
         is_not_no_op,
     );
 
@@ -413,14 +417,6 @@ pub fn verify_user_asset_merge_proof<
         latest_account_tree_inclusion_proof.root,
         is_not_no_op,
     );
-
-    // 不要
-    // enforce_equal_if_enabled(
-    //     builder,
-    //     diff_tree_inclusion_proof.1.root,
-    //     block_header.transactions_digest,
-    //     is_not_no_op,
-    // );
 }
 
 #[derive(Clone, Debug)]

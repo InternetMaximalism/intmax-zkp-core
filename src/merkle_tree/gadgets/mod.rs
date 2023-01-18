@@ -34,14 +34,12 @@ impl MerkleProofTarget {
             .map(|_| builder.add_virtual_hash())
             .collect::<Vec<_>>();
         let root = get_merkle_root_target::<F, H, D>(builder, &index, value, &siblings);
-        // let enabled = builder.add_virtual_bool_target_safe();
 
         Self {
             index,
             value,
             siblings,
             root,
-            // enabled
         }
     }
 
@@ -51,10 +49,10 @@ impl MerkleProofTarget {
         index: &K,
         value: HashOut<F>,
         siblings: &[HashOut<F>],
-        // enabled: bool,
     ) -> HashOut<F> {
-        // pw.set_bool_target(self.enabled, enabled);
-        for (target, value) in self.index.iter().zip(index.to_bits().iter()) {
+        let mut index = index.to_bits();
+        index.resize(self.index.len(), false);
+        for (target, value) in self.index.iter().zip(index.iter()) {
             pw.set_bool_target(*target, *value);
         }
 
@@ -65,7 +63,7 @@ impl MerkleProofTarget {
             pw.set_hash_target(sibling_t, sibling);
         }
 
-        get_merkle_root::<F, H, K>(index, value, siblings)
+        get_merkle_root::<F, H, Vec<bool>>(&index, value, siblings)
     }
 }
 

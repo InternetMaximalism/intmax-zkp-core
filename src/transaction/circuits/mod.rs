@@ -181,7 +181,7 @@ pub struct MergeAndPurgeTransitionCircuit<
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound(deserialize = "Address<F>: Deserialize<'de>, WrappedHashOut<F>: Deserialize<'de>"))]
+#[serde(bound = "F: RichField")]
 pub struct MergeAndPurgeTransitionPublicInputs<F: RichField> {
     pub sender_address: Address<F>,
     pub old_user_asset_root: WrappedHashOut<F>,

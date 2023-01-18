@@ -543,74 +543,6 @@ pub fn verify_user_asset_merge_transitions<
 }
 
 #[test]
-fn test_prove_tx_diff_tree() {
-    use plonky2::{
-        field::types::Field,
-        plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
-    };
-
-    use crate::{
-        sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
-        transaction::{
-            asset::{Asset, TokenKind, VariableIndex},
-            tree::tx_diff::TxDiffTree,
-        },
-        zkdsa::account::{private_key_to_account, Address},
-    };
-
-    type C = PoseidonGoldilocksConfig;
-    type H = <C as GenericConfig<D>>::InnerHasher;
-    type F = <C as GenericConfig<D>>::F;
-    const D: usize = 2;
-
-    pub const LOG_MAX_N_TXS: usize = 3;
-    pub const LOG_MAX_N_CONTRACTS: usize = 3;
-    pub const LOG_MAX_N_VARIABLES: usize = 3;
-    pub const LOG_N_RECIPIENTS: usize = 3;
-    pub const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
-    pub const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
-
-    let asset1 = Asset {
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 2053,
-    };
-    let asset2 = Asset {
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 1111,
-    };
-
-    let private_key = HashOut {
-        elements: [
-            F::from_canonical_u64(15657143458229430356),
-            F::from_canonical_u64(6012455030006979790),
-            F::from_canonical_u64(4280058849535143691),
-            F::from_canonical_u64(5153662694263190591),
-        ],
-    };
-    let user_account = private_key_to_account(private_key);
-    let user_address = user_account.address;
-
-    let mut deposit_tree =
-        TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
-
-    deposit_tree.insert(user_address, asset1).unwrap();
-    deposit_tree.insert(user_address, asset2).unwrap();
-
-    // let proof = deposit_tree.prove_asset_root(&user_address).unwrap();
-    let proof = deposit_tree
-        .prove_leaf_node(&user_address, &asset2.kind)
-        .unwrap();
-    let root = get_merkle_root::<_, H, _>(proof.index, proof.value, &proof.siblings);
-    assert_eq!(root, proof.root);
-}
-
-#[test]
 fn test_two_tree_compatibility() {
     use plonky2::{
         field::types::Field,
@@ -693,6 +625,73 @@ fn test_two_tree_compatibility() {
     {
         assert_eq!(asset_root, diff_tree_inclusion_value2);
     }
+}
+
+#[test]
+fn test_prove_tx_diff_tree() {
+    use plonky2::{
+        field::types::Field,
+        plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
+    };
+
+    use crate::{
+        sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
+        transaction::{
+            asset::{Asset, TokenKind, VariableIndex},
+            tree::tx_diff::TxDiffTree,
+        },
+        zkdsa::account::{private_key_to_account, Address},
+    };
+
+    type C = PoseidonGoldilocksConfig;
+    type H = <C as GenericConfig<D>>::InnerHasher;
+    type F = <C as GenericConfig<D>>::F;
+    const D: usize = 2;
+
+    pub const LOG_MAX_N_CONTRACTS: usize = 3;
+    pub const LOG_MAX_N_VARIABLES: usize = 3;
+    pub const LOG_N_RECIPIENTS: usize = 3;
+    pub const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
+    pub const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
+
+    let asset1 = Asset {
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 2053,
+    };
+    let asset2 = Asset {
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 1111,
+    };
+
+    let private_key = HashOut {
+        elements: [
+            F::from_canonical_u64(15657143458229430356),
+            F::from_canonical_u64(6012455030006979790),
+            F::from_canonical_u64(4280058849535143691),
+            F::from_canonical_u64(5153662694263190591),
+        ],
+    };
+    let user_account = private_key_to_account(private_key);
+    let user_address = user_account.address;
+
+    let mut deposit_tree =
+        TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
+
+    deposit_tree.insert(user_address, asset1).unwrap();
+    deposit_tree.insert(user_address, asset2).unwrap();
+
+    // let proof = deposit_tree.prove_asset_root(&user_address).unwrap();
+    let proof = deposit_tree
+        .prove_leaf_node(&user_address, &asset2.kind)
+        .unwrap();
+    let root = get_merkle_root::<_, H, _>(proof.index, proof.value, &proof.siblings);
+    assert_eq!(root, proof.root);
 }
 
 #[test]

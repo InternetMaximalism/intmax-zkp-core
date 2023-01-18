@@ -15,7 +15,7 @@ use crate::{
     merkle_tree::sparse_merkle_tree::SparseMerkleTreeMemory,
     poseidon::gadgets::poseidon_two_to_one,
     sparse_merkle_tree::{
-        gadgets::common::conditionally_reverse, goldilocks_poseidon::WrappedHashOut,
+        gadgets::common::conditionally_reverse, goldilocks_poseidon::WrappedHashOut, tree::KeyLike,
     },
     transaction::asset::Asset,
     zkdsa::{account::Address, gadgets::account::AddressTarget},
@@ -33,9 +33,9 @@ pub fn encode_asset<F: RichField>(asset: &Asset<F>) -> Vec<F> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PurgeInputProcessProof<F: RichField, H: Hasher<F>> {
+pub struct PurgeInputProcessProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     siblings: Vec<H::Hash>,
-    index: Vec<bool>,
+    index: K,
     old_leaf_data: Asset<F>,
 }
 
@@ -68,19 +68,20 @@ impl PurgeInputProcessProofTarget {
         }
     }
 
-    pub fn set_witness<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+    pub fn set_witness<F: RichField, H: Hasher<F, Hash = HashOut<F>>, K: KeyLike>(
         &self,
         pw: &mut impl Witness<F>,
-        witness: &PurgeInputProcessProof<F, H>,
+        witness: &PurgeInputProcessProof<F, H, K>,
     ) {
         // let (w1, index, old_leaf_data) = witness;
         // assert_eq!(w0.old_root, prev_user_asset_root);
         // prev_user_asset_root = w0.new_root;
 
+        let index = witness.index.to_bits();
         let mut w1_old_root = H::hash_or_noop(&encode_asset(&witness.old_leaf_data));
         let mut w1_new_root = H::hash_or_noop(&encode_asset(&Asset::default()));
-        assert_eq!(witness.index.len(), witness.siblings.len());
-        for (lr_bit, sibling) in witness.index.iter().zip(witness.siblings.iter()) {
+        assert_eq!(index.len(), witness.siblings.len());
+        for (lr_bit, sibling) in index.iter().zip(witness.siblings.iter()) {
             if *lr_bit {
                 w1_old_root = H::two_to_one(*sibling, w1_old_root);
                 w1_new_root = H::two_to_one(*sibling, w1_new_root);
@@ -135,7 +136,7 @@ impl PurgeInputProcessProofTarget {
         for (ht, value) in self.siblings.iter().zip(witness.siblings.iter()) {
             pw.set_hash_target(*ht, *value);
         }
-        for (t, lr_bit) in self.index.iter().zip(witness.index.iter()) {
+        for (t, lr_bit) in self.index.iter().zip(index.iter()) {
             pw.set_bool_target(*t, *lr_bit);
         }
         self.old_leaf_data.set_witness(pw, witness.old_leaf_data);
@@ -143,9 +144,9 @@ impl PurgeInputProcessProofTarget {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PurgeOutputProcessProof<F: RichField, H: Hasher<F>> {
+pub struct PurgeOutputProcessProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     siblings: Vec<H::Hash>,
-    index: Vec<bool>,
+    index: K,
     new_leaf_data: Asset<F>,
 }
 
@@ -178,10 +179,10 @@ impl PurgeOutputProcessProofTarget {
         }
     }
 
-    pub fn set_witness<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+    pub fn set_witness<F: RichField, H: Hasher<F, Hash = HashOut<F>>, K: KeyLike>(
         &self,
         pw: &mut impl Witness<F>,
-        witness: &PurgeOutputProcessProof<F, H>,
+        witness: &PurgeOutputProcessProof<F, H, K>,
     ) {
         // let { w1, index, new_leaf_data} = witness;
         // assert_eq!(w0.old_root, prev_diff_root);
@@ -192,10 +193,11 @@ impl PurgeOutputProcessProofTarget {
         //         || w0.fnc == ProcessMerkleProofRole::ProcessInsert
         // );
 
+        let index = witness.index.to_bits();
         let mut w1_old_root = H::hash_or_noop(&encode_asset(&Asset::default()));
         let mut w1_new_root = H::hash_or_noop(&encode_asset(&witness.new_leaf_data));
-        assert_eq!(witness.index.len(), witness.siblings.len());
-        for (lr_bit, sibling) in witness.index.iter().zip(witness.siblings.iter()) {
+        assert_eq!(index.len(), witness.siblings.len());
+        for (lr_bit, sibling) in index.iter().zip(witness.siblings.iter()) {
             if *lr_bit {
                 w1_old_root = H::two_to_one(*sibling, w1_old_root);
                 w1_new_root = H::two_to_one(*sibling, w1_new_root);
@@ -246,7 +248,7 @@ impl PurgeOutputProcessProofTarget {
         for (ht, value) in self.siblings.iter().zip(witness.siblings.iter()) {
             pw.set_hash_target(*ht, *value);
         }
-        for (t, lr_bit) in self.index.iter().zip(witness.index.iter()) {
+        for (t, lr_bit) in self.index.iter().zip(index.iter()) {
             pw.set_bool_target(*t, *lr_bit);
         }
         self.new_leaf_data.set_witness(pw, witness.new_leaf_data);
@@ -337,12 +339,12 @@ impl PurgeTransitionTarget {
     }
 
     /// Returns (new_user_asset_root, tx_diff_root)
-    pub fn set_witness<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+    pub fn set_witness<F: RichField, H: Hasher<F, Hash = HashOut<F>>, K: KeyLike>(
         &self,
         pw: &mut impl Witness<F>,
         sender_address: Address<F>,
-        input_witness: &[PurgeInputProcessProof<F, H>],
-        output_witness: &[PurgeOutputProcessProof<F, H>],
+        input_witness: &[PurgeInputProcessProof<F, H, K>],
+        output_witness: &[PurgeOutputProcessProof<F, H, K>],
         old_user_asset_root: WrappedHashOut<F>,
         nonce: WrappedHashOut<F>,
     ) -> (WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>) {
@@ -368,7 +370,7 @@ impl PurgeTransitionTarget {
         let default_leaf_data = Asset::default();
 
         for input_proof_t in self.input_proofs.iter().skip(input_witness.len()) {
-            input_proof_t.set_witness::<F, H>(
+            input_proof_t.set_witness::<F, H, Vec<bool>>(
                 pw,
                 &PurgeInputProcessProof {
                     siblings: default_merkle_proof.siblings.clone(),
@@ -390,7 +392,7 @@ impl PurgeTransitionTarget {
         let diff_root = prev_diff_root;
 
         for output_proof_t in self.output_proofs.iter().skip(output_witness.len()) {
-            output_proof_t.set_witness::<F, H>(
+            output_proof_t.set_witness::<F, H, Vec<bool>>(
                 pw,
                 &PurgeOutputProcessProof {
                     siblings: default_merkle_proof.siblings.clone(),
@@ -671,10 +673,10 @@ fn test_purge_proof_by_plonky2() {
         TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
 
     user_asset_tree
-        .insert_assets(merge_key1, vec![asset1])
+        .insert_assets(merge_key1, user_address, vec![asset1])
         .unwrap();
     user_asset_tree
-        .insert_assets(merge_key2, vec![asset2])
+        .insert_assets(merge_key2, user_address, vec![asset2])
         .unwrap();
 
     world_state_tree
@@ -705,25 +707,25 @@ fn test_purge_proof_by_plonky2() {
 
     let input_witness = vec![
         PurgeInputProcessProof {
-            siblings: proof1.0,
-            index: proof1.1,
+            siblings: proof1.siblings,
+            index: proof1.index,
             old_leaf_data: old_leaf_data1,
         },
         PurgeInputProcessProof {
-            siblings: proof2.0,
-            index: proof2.1,
+            siblings: proof2.siblings,
+            index: proof2.index,
             old_leaf_data: old_leaf_data2,
         },
     ];
     let output_witness = vec![
         PurgeOutputProcessProof {
-            siblings: proof3.0,
-            index: proof3.1,
+            siblings: proof3.siblings,
+            index: proof3.index,
             new_leaf_data: asset3,
         },
         PurgeOutputProcessProof {
-            siblings: proof4.0,
-            index: proof4.1,
+            siblings: proof4.siblings,
+            index: proof4.index,
             new_leaf_data: asset4,
         },
     ];
@@ -737,7 +739,7 @@ fn test_purge_proof_by_plonky2() {
     });
 
     let mut pw = PartialWitness::new();
-    target.set_witness::<F, H>(
+    target.set_witness::<F, H, HashOut<F>>(
         &mut pw,
         user_address,
         &input_witness,
@@ -758,7 +760,7 @@ fn test_purge_proof_by_plonky2() {
     }
 
     let mut pw = PartialWitness::new();
-    target.set_witness::<F, H>(
+    target.set_witness::<F, H, HashOut<F>>(
         &mut pw,
         Default::default(),
         &[],

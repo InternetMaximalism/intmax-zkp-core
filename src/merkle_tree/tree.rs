@@ -111,11 +111,11 @@ pub fn get_merkle_proof<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
 }
 
 /// 与えられた leaf `(index, value)` と `siblings` から Merkle root を計算する.
-pub fn get_merkle_root<F: RichField, K: KeyLike>(
+pub fn get_merkle_root<F: RichField, H: Hasher<F>, K: KeyLike>(
     index: K,
-    value: HashOut<F>,
-    siblings: &[HashOut<F>],
-) -> HashOut<F> {
+    value: H::Hash,
+    siblings: &[H::Hash],
+) -> H::Hash {
     let mut root = value;
     for (lr_bit, sibling) in index.to_bits().iter().zip(siblings) {
         let (left, right) = if *lr_bit {
@@ -123,7 +123,8 @@ pub fn get_merkle_root<F: RichField, K: KeyLike>(
         } else {
             (root, *sibling)
         };
-        root = PoseidonHash::two_to_one(left, right);
+        root = H::two_to_one(left, right);
+        dbg!(left, right, root);
     }
 
     root
@@ -157,7 +158,7 @@ fn test_get_block_hash_tree_proofs() {
     let new_leaf = HashOut {
         elements: [F::from_canonical_u32(50), F::ZERO, F::ZERO, F::ZERO],
     };
-    let new_root = get_merkle_root(index, new_leaf, &siblings);
+    let new_root = get_merkle_root::<_, PoseidonHash, _>(index, new_leaf, &siblings);
 
     leaves[index] = new_leaf;
     let MerkleProof {

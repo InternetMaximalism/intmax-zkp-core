@@ -190,7 +190,11 @@ pub fn get_block_header_tree_proof<F: RichField>(
         current_index,
         depth,
     );
-    let new_root = get_merkle_root::<F, usize>(current_index, *new_block_hash, &old_proof.siblings);
+    let new_root = get_merkle_root::<F, PoseidonHash, usize>(
+        current_index,
+        *new_block_hash,
+        &old_proof.siblings,
+    );
 
     (
         old_proof

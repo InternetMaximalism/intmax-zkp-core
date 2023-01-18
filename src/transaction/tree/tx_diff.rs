@@ -1,17 +1,20 @@
 use std::{collections::HashMap, fmt::Debug};
 
 use plonky2::{
-    hash::{
-        hash_types::{HashOut, RichField},
-        merkle_proofs::MerkleProof,
-    },
+    hash::hash_types::{HashOut, RichField},
     plonk::config::{GenericHashOut, Hasher},
 };
 
 use crate::{
-    merkle_tree::sparse_merkle_tree::{MerklePath, Node},
+    merkle_tree::{
+        sparse_merkle_tree::{MerklePath, Node},
+        tree::MerkleProof,
+    },
     sparse_merkle_tree::goldilocks_poseidon::le_bytes_to_bits,
-    transaction::asset::{Asset, TokenKind},
+    transaction::{
+        asset::{Asset, TokenKind},
+        gadgets::purge::encode_asset,
+    },
     zkdsa::account::Address,
 };
 
@@ -88,21 +91,21 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
         let mut path = path.clone();
         loop {
             let hash = self.get_node_hash(&path);
+            dbg!(hash);
             let parent_path = path[0..path.len() - 1].to_vec();
-            self.nodes.insert(
-                parent_path.clone(),
-                if path[path.len() - 1] {
-                    Node::Inner {
-                        left: self.get_sibling_hash(&path),
-                        right: hash,
-                    }
-                } else {
-                    Node::Inner {
-                        left: hash,
-                        right: self.get_sibling_hash(&path),
-                    }
-                },
-            );
+            let node = if path[path.len() - 1] {
+                Node::Inner {
+                    left: self.get_sibling_hash(&path),
+                    right: hash,
+                }
+            } else {
+                Node::Inner {
+                    left: hash,
+                    right: self.get_sibling_hash(&path),
+                }
+            };
+            dbg!(&node);
+            self.nodes.insert(parent_path.clone(), node);
             if path.len() == 1 {
                 break;
             } else {
@@ -112,13 +115,7 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
     }
 
     pub fn insert(&mut self, recipient: Address<F>, asset: Asset<F>) -> anyhow::Result<()> {
-        let leaf_data = [
-            recipient.elements.to_vec(),
-            asset.kind.contract_address.elements.to_vec(),
-            asset.kind.variable_index.to_hash_out().elements.to_vec(),
-            vec![F::from_canonical_u64(asset.amount)],
-        ]
-        .concat();
+        let leaf_data = [recipient.elements.to_vec(), encode_asset(&asset)].concat();
         let mut recipient_path = le_bytes_to_bits(&recipient.to_bytes());
         recipient_path.resize(self.log_n_recipients, false);
 
@@ -159,7 +156,7 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
         Ok(asset_root)
     }
 
-    fn prove(&self, path: &MerklePath) -> anyhow::Result<MerkleProof<F, H>> {
+    fn prove(&self, path: &MerklePath) -> anyhow::Result<Vec<H::Hash>> {
         let mut path = path.clone();
         let mut siblings = vec![];
         loop {
@@ -171,14 +168,14 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
             }
         }
 
-        Ok(MerkleProof { siblings })
+        Ok(siblings)
     }
 
     pub fn prove_leaf_node(
         &self,
         recipient: &Address<F>,
         token_kind: &TokenKind<F>,
-    ) -> anyhow::Result<(Vec<H::Hash>, MerklePath)> {
+    ) -> anyhow::Result<MerkleProof<F, H, HashOut<F>>> {
         let path = self
             .nodes
             .iter()
@@ -196,21 +193,37 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
 
         debug_assert_eq!(path.len(), self.log_n_recipients + self.log_n_kinds);
 
-        let siblings = self.prove(path)?.siblings;
+        let siblings = self.prove(path)?;
+        let value = self.get_asset_root(recipient).unwrap();
+        let root = self.get_root().unwrap();
+        let proof = MerkleProof::<F, H, HashOut<F>> {
+            index: recipient.to_hash_out(),
+            value,
+            siblings,
+            root,
+        };
 
-        Ok((siblings, path.to_vec()))
+        Ok(proof)
     }
 
     pub fn prove_asset_root(
         &self,
         recipient: &Address<F>,
-    ) -> anyhow::Result<(Vec<H::Hash>, MerklePath)> {
+    ) -> anyhow::Result<MerkleProof<F, H, HashOut<F>>> {
         let mut path = le_bytes_to_bits(&recipient.to_bytes());
         path.resize(self.log_n_recipients, false);
 
-        let siblings = self.prove(&path)?.siblings;
+        let siblings = self.prove(&path)?;
+        let value = self.get_asset_root(recipient).unwrap();
+        let root = self.get_root().unwrap();
+        let proof = MerkleProof::<F, H, HashOut<F>> {
+            index: recipient.to_hash_out(),
+            value,
+            siblings,
+            root,
+        };
 
-        Ok((siblings, path.to_vec()))
+        Ok(proof)
     }
 }
 

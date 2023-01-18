@@ -1,15 +1,15 @@
 use std::{collections::HashMap, fmt::Debug};
 
 use plonky2::{
-    hash::{
-        hash_types::{HashOut, RichField},
-        merkle_proofs::MerkleProof,
-    },
+    hash::hash_types::{HashOut, RichField},
     plonk::config::{GenericHashOut, Hasher},
 };
 
 use crate::{
-    merkle_tree::sparse_merkle_tree::{MerklePath, Node},
+    merkle_tree::{
+        sparse_merkle_tree::{MerklePath, Node},
+        tree::MerkleProof,
+    },
     sparse_merkle_tree::goldilocks_poseidon::{le_bytes_to_bits, WrappedHashOut},
     transaction::{
         asset::{Asset, TokenKind, VariableIndex},
@@ -146,13 +146,12 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
     pub fn insert_assets(
         &mut self,
         merge_key: WrappedHashOut<F>,
+        user_address: Address<F>,
         assets: Vec<Asset<F>>,
     ) -> anyhow::Result<()> {
-        // let mut merge_key_path = le_bytes_to_bits(&merge_key.to_bytes());
-        // merge_key_path.resize(self.log_max_n_txs, false);
         for (i, asset) in assets.iter().enumerate() {
-            // let mut path = merge_key_path.clone();
-            let new_leaf_data = [merge_key.0.elements.to_vec(), encode_asset(asset)].concat();
+            // XXX: `merge_key` does not include in leaf data
+            let new_leaf_data = [user_address.elements.to_vec(), encode_asset(asset)].concat();
             let mut token_index = le_bytes_to_bits(&i.to_le_bytes());
             token_index.resize(self.log_max_n_kinds, false);
             token_index.reverse();
@@ -223,7 +222,7 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
     }
 
     /// Returns `(siblings, path)`
-    fn prove(&self, path: &MerklePath) -> anyhow::Result<MerkleProof<F, H>> {
+    fn prove(&self, path: &MerklePath) -> anyhow::Result<Vec<H::Hash>> {
         let mut siblings = vec![];
         let mut path = path.clone();
         loop {
@@ -235,20 +234,20 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
             }
         }
 
-        Ok(MerkleProof { siblings })
+        Ok(siblings)
     }
 
     pub fn prove_leaf_node(
         &self,
-        merge_key: &WrappedHashOut<F>,
+        merge_key: &H::Hash,
         token_kind: &TokenKind<F>,
-    ) -> anyhow::Result<(Vec<H::Hash>, MerklePath)> {
+    ) -> anyhow::Result<MerkleProof<F, H, HashOut<F>>> {
         let path = self
             .nodes
             .iter()
             .find(|v| {
                 if let Node::Leaf { data } = v.1 {
-                    merge_key.0.elements == data[0..4]
+                    merge_key.elements == data[0..4]
                         && token_kind.contract_address.0.elements == data[4..8]
                         && token_kind.variable_index.to_hash_out().elements == data[8..12]
                 } else {
@@ -258,20 +257,36 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
             .unwrap()
             .0;
 
-        let siblings = self.prove(path)?.siblings;
+        let siblings = self.prove(path)?;
+        let value = self.get_asset_root(merge_key).unwrap();
+        let root = self.get_root().unwrap();
+        let proof = MerkleProof::<F, H, HashOut<F>> {
+            index: *merge_key,
+            value,
+            siblings,
+            root,
+        };
 
-        Ok((siblings, path.to_vec()))
+        Ok(proof)
     }
 
     pub fn prove_asset_root(
         &self,
         merge_key: &H::Hash,
-    ) -> anyhow::Result<(Vec<H::Hash>, MerklePath)> {
+    ) -> anyhow::Result<MerkleProof<F, H, HashOut<F>>> {
         let mut path = le_bytes_to_bits(&merge_key.to_bytes());
         path.resize(self.log_max_n_txs, false);
 
-        let siblings = self.prove(&path)?.siblings;
+        let siblings = self.prove(&path)?;
+        let value = self.get_asset_root(merge_key).unwrap();
+        let root = self.get_root().unwrap();
+        let proof = MerkleProof::<F, H, HashOut<F>> {
+            index: *merge_key,
+            value,
+            siblings,
+            root,
+        };
 
-        Ok((siblings, path.to_vec()))
+        Ok(proof)
     }
 }

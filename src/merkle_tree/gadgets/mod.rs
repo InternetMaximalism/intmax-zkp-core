@@ -1,6 +1,9 @@
 use plonky2::{
     field::extension::Extendable,
-    hash::hash_types::{HashOut, HashOutTarget, RichField},
+    hash::{
+        hash_types::{HashOut, HashOutTarget, RichField},
+        poseidon::PoseidonHash,
+    },
     iop::{target::BoolTarget, witness::Witness},
     plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
 };
@@ -65,7 +68,7 @@ impl MerkleProofTarget {
             pw.set_hash_target(sibling_t, sibling);
         }
 
-        get_merkle_root::<F, K>(index, value, siblings)
+        get_merkle_root::<F, PoseidonHash, K>(index, value, siblings)
     }
 }
 

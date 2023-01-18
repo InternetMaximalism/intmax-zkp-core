@@ -1,9 +1,6 @@
 use plonky2::{
     field::extension::Extendable,
-    hash::{
-        hash_types::{HashOut, HashOutTarget, RichField},
-        poseidon::PoseidonHash,
-    },
+    hash::hash_types::{HashOut, HashOutTarget, RichField},
     iop::witness::Witness,
     plonk::{
         circuit_builder::CircuitBuilder,
@@ -15,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     merkle_tree::{
         gadgets::{get_merkle_root_target, MerkleProofTarget},
-        tree::{get_merkle_proof_with_zero, MerkleProcessProof, MerkleProof},
+        tree::{get_merkle_proof_with_zero, get_merkle_root, MerkleProcessProof, MerkleProof},
     },
     poseidon::gadgets::poseidon_two_to_one,
     sparse_merkle_tree::{
@@ -219,13 +216,13 @@ impl MergeProofTarget {
 
         // diff_tree_inclusion_proof.2.root と diff_tree_inclusion_proof.1.value の関係を拘束する
         let diff_root = witness.diff_tree_inclusion_proof.root2;
-        let tx_hash = PoseidonHash::two_to_one(diff_root, witness.nonce);
+        let tx_hash = H::two_to_one(diff_root, witness.nonce);
         assert_eq!(witness.diff_tree_inclusion_proof.value1, tx_hash);
 
         // deposit と purge の場合で merge の計算方法が異なる.
         let block_hash = get_block_hash(block_header);
         let merge_key = if witness.is_deposit {
-            PoseidonHash::two_to_one(tx_hash, block_hash)
+            H::two_to_one(tx_hash, block_hash)
         } else {
             tx_hash
         };
@@ -235,11 +232,11 @@ impl MergeProofTarget {
         // } // XXX
         assert_eq!(witness.merge_process_proof.old_value, Default::default());
         let asset_root = witness.diff_tree_inclusion_proof.value2;
-        let asset_root_with_merge_key = PoseidonHash::two_to_one(asset_root, merge_key);
+        // let asset_root_with_merge_key = H::two_to_one(asset_root, merge_key);
         if !is_no_op {
             assert_eq!(
                 witness.merge_process_proof.new_value,
-                asset_root_with_merge_key
+                asset_root // asset_root_with_merge_key
             );
 
             assert_eq!(
@@ -546,6 +543,159 @@ pub fn verify_user_asset_merge_transitions<
 }
 
 #[test]
+fn test_prove_tx_diff_tree() {
+    use plonky2::{
+        field::types::Field,
+        plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
+    };
+
+    use crate::{
+        sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
+        transaction::{
+            asset::{Asset, TokenKind, VariableIndex},
+            tree::tx_diff::TxDiffTree,
+        },
+        zkdsa::account::{private_key_to_account, Address},
+    };
+
+    type C = PoseidonGoldilocksConfig;
+    type H = <C as GenericConfig<D>>::InnerHasher;
+    type F = <C as GenericConfig<D>>::F;
+    const D: usize = 2;
+
+    pub const LOG_MAX_N_TXS: usize = 3;
+    pub const LOG_MAX_N_CONTRACTS: usize = 3;
+    pub const LOG_MAX_N_VARIABLES: usize = 3;
+    pub const LOG_N_RECIPIENTS: usize = 3;
+    pub const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
+    pub const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
+
+    let asset1 = Asset {
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 2053,
+    };
+    let asset2 = Asset {
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 1111,
+    };
+
+    let private_key = HashOut {
+        elements: [
+            F::from_canonical_u64(15657143458229430356),
+            F::from_canonical_u64(6012455030006979790),
+            F::from_canonical_u64(4280058849535143691),
+            F::from_canonical_u64(5153662694263190591),
+        ],
+    };
+    let user_account = private_key_to_account(private_key);
+    let user_address = user_account.address;
+
+    let mut deposit_tree =
+        TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
+
+    deposit_tree.insert(user_address, asset1).unwrap();
+    deposit_tree.insert(user_address, asset2).unwrap();
+
+    // let proof = deposit_tree.prove_asset_root(&user_address).unwrap();
+    let proof = deposit_tree
+        .prove_leaf_node(&user_address, &asset2.kind)
+        .unwrap();
+    let root = get_merkle_root::<_, H, _>(proof.index, proof.value, &proof.siblings);
+    assert_eq!(root, proof.root);
+}
+
+#[test]
+fn test_two_tree_compatibility() {
+    use plonky2::{
+        field::types::Field,
+        plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
+    };
+
+    use crate::{
+        sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
+        transaction::{
+            asset::{Asset, TokenKind, VariableIndex},
+            tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
+        },
+        zkdsa::account::{private_key_to_account, Address},
+    };
+
+    type C = PoseidonGoldilocksConfig;
+    type H = <C as GenericConfig<D>>::InnerHasher;
+    type F = <C as GenericConfig<D>>::F;
+    const D: usize = 2;
+
+    pub const LOG_MAX_N_TXS: usize = 3;
+    pub const LOG_MAX_N_CONTRACTS: usize = 3;
+    pub const LOG_MAX_N_VARIABLES: usize = 3;
+    pub const LOG_N_RECIPIENTS: usize = 3;
+    pub const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
+    pub const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
+
+    let asset1 = Asset {
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 2053,
+    };
+    let asset2 = Asset {
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 1111,
+    };
+
+    let private_key = HashOut {
+        elements: [
+            F::from_canonical_u64(15657143458229430356),
+            F::from_canonical_u64(6012455030006979790),
+            F::from_canonical_u64(4280058849535143691),
+            F::from_canonical_u64(5153662694263190591),
+        ],
+    };
+    let user_account = private_key_to_account(private_key);
+    let user_address = user_account.address;
+
+    let mut user_asset_tree =
+        UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
+
+    let mut deposit_tree =
+        TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
+
+    deposit_tree.insert(user_address, asset1).unwrap();
+    deposit_tree.insert(user_address, asset2).unwrap();
+
+    let diff_tree_inclusion_value2 = deposit_tree.get_asset_root(&user_address).unwrap();
+
+    let deposit_merge_key = HashOut {
+        elements: [
+            F::from_canonical_u64(10129591887907959457),
+            F::from_canonical_u64(12952496368791909874),
+            F::from_canonical_u64(5623826813413271961),
+            F::from_canonical_u64(13962620032426109816),
+        ],
+    };
+
+    user_asset_tree
+        .insert_assets(deposit_merge_key.into(), user_address, vec![asset1, asset2])
+        .unwrap();
+
+    // let mut user_asset_tree: UserAssetTree<_, _> = user_asset_tree.into();
+    let asset_root = user_asset_tree.get_asset_root(&deposit_merge_key).unwrap();
+    {
+        assert_eq!(asset_root, diff_tree_inclusion_value2);
+    }
+}
+
+#[test]
 fn test_merge_proof_by_plonky2() {
     use std::time::Instant;
 
@@ -638,30 +788,24 @@ fn test_merge_proof_by_plonky2() {
         TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
 
     deposit_tree.insert(user_address, asset1).unwrap();
+    dbg!("start");
     deposit_tree.insert(user_address, asset2).unwrap();
+    dbg!("end");
 
     // let deposit_tree: PoseidonSparseMerkleTree<_, _> = deposit_tree.into();
 
-    let (diff_tree_inclusion_siblings2, _) = deposit_tree.prove_asset_root(&user_address).unwrap();
-    let diff_tree_inclusion_value2 = deposit_tree.get_asset_root(&user_address).unwrap();
-    let diff_tree_inclusion_root2 = deposit_tree.get_root().unwrap();
-    let diff_tree_inclusion_proof2 = MerkleProof::<F, H, HashOut<F>> {
-        index: user_address.to_hash_out(),
-        value: diff_tree_inclusion_value2,
-        siblings: diff_tree_inclusion_siblings2,
-        root: diff_tree_inclusion_root2,
-    };
+    let diff_tree_inclusion_proof2 = deposit_tree.prove_asset_root(&user_address).unwrap();
     let interior_deposit_root = deposit_tree.get_root().unwrap();
 
     let deposit_nonce = HashOut::ZERO;
-    let deposit_tx_hash = PoseidonHash::two_to_one(interior_deposit_root, deposit_nonce);
+    let deposit_tx_hash = H::two_to_one(interior_deposit_root, deposit_nonce);
 
     // let diff_tree = TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
     let diff_tree_inclusion_proof1 = get_merkle_proof::<F, H>(&[deposit_tx_hash], 0, LOG_N_TXS);
 
     let default_hash = HashOut::ZERO;
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
-    let default_merkle_root = get_merkle_proof::<F, PoseidonHash>(&[], 0, LOG_N_TXS).root;
+    let default_merkle_root = get_merkle_proof::<F, H>(&[], 0, LOG_N_TXS).root;
     let prev_block_header = BlockHeader {
         block_number: 1,
         prev_block_hash: default_hash,
@@ -674,20 +818,18 @@ fn test_merge_proof_by_plonky2() {
     };
     let block_hash = get_block_hash(&prev_block_header);
 
-    let deposit_merge_key = PoseidonHash::two_to_one(deposit_tx_hash, block_hash).into();
+    let deposit_merge_key = H::two_to_one(deposit_tx_hash, block_hash).into();
 
     let merge_inclusion_old_root = user_asset_tree.get_root().unwrap();
     // user asset tree に deposit を merge する.
     user_asset_tree
-        .insert_assets(deposit_merge_key, vec![asset1, asset2])
+        .insert_assets(deposit_merge_key, user_address, vec![asset1, asset2])
         .unwrap();
 
     // let mut user_asset_tree: UserAssetTree<_, _> = user_asset_tree.into();
     let asset_root = user_asset_tree.get_asset_root(&deposit_merge_key).unwrap();
     {
-        let given_asset_root =
-            PoseidonHash::two_to_one(diff_tree_inclusion_proof2.value, *deposit_merge_key);
-        assert_eq!(asset_root, given_asset_root);
+        assert_eq!(asset_root, diff_tree_inclusion_proof2.value);
     }
 
     let merge_inclusion_new_root = user_asset_tree.get_root().unwrap();
@@ -696,15 +838,15 @@ fn test_merge_proof_by_plonky2() {
         .prove_asset_root(&deposit_merge_key)
         .unwrap();
     let merge_process_proof = MerkleProcessProof {
-        index: *deposit_merge_key,
-        siblings: merge_inclusion_proof.0,
+        index: merge_inclusion_proof.index,
+        siblings: merge_inclusion_proof.siblings,
         old_value: HashOut::ZERO,
         new_value: asset_root,
         old_root: merge_inclusion_old_root,
         new_root: merge_inclusion_new_root,
     };
 
-    let merge_proof = MergeProof::<F, PoseidonHash> {
+    let merge_proof = MergeProof::<F, H> {
         is_deposit: true,
         diff_tree_inclusion_proof: DiffTreeInclusionProof {
             block_header: prev_block_header,
@@ -724,7 +866,7 @@ fn test_merge_proof_by_plonky2() {
 
     let mut pw = PartialWitness::new();
 
-    merge_proof_target.set_witness(&mut pw, &[merge_proof], default_hash);
+    merge_proof_target.set_witness(&mut pw, &[merge_proof], merge_inclusion_old_root);
 
     println!("start proving: proof");
     let start = Instant::now();

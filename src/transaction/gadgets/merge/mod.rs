@@ -27,6 +27,7 @@ use crate::{
     transaction::{
         block_header::{get_block_hash, BlockHeader},
         gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
+        tree::user_asset::UserAssetTree,
     },
 };
 
@@ -40,17 +41,19 @@ pub struct DiffTreeInclusionProof<F: RichField, H: Hasher<F>> {
     index1: usize,
     value1: H::Hash,
     root2: H::Hash,
-    index2: H::Hash,
+    index2: Vec<bool>,
     value2: H::Hash,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct MergeProof<F: RichField, H: Hasher<F>> {
+pub struct MergeProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     pub is_deposit: bool,
     #[serde(bound(deserialize = "H::Hash: KeyLike, BlockHeader<F>: Deserialize<'de>"))]
     pub diff_tree_inclusion_proof: DiffTreeInclusionProof<F, H>,
-    #[serde(bound(deserialize = "MerkleProof<F, H, H::Hash>: Deserialize<'de>"))]
-    pub merge_process_proof: MerkleProcessProof<F, H, H::Hash>,
+    #[serde(bound(
+        deserialize = "MerkleProof<F, H, H::Hash>: Deserialize<'de>, K: Deserialize<'de>"
+    ))]
+    pub merge_process_proof: MerkleProcessProof<F, H, K>,
 
     /// asset を受け取った block の latest account tree から自身の address に関する inclusion proof を出す
     #[serde(bound(deserialize = "SmtInclusionProof<F>: Deserialize<'de>"))]
@@ -61,7 +64,7 @@ pub struct MergeProof<F: RichField, H: Hasher<F>> {
     pub nonce: H::Hash,
 }
 
-impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> MergeProof<F, H> {
+impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> MergeProof<F, H, Vec<bool>> {
     pub fn new(
         log_max_n_txs: usize,
         log_n_txs: usize,
@@ -88,7 +91,7 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> MergeProof<F, H> {
         let default_merge_inclusion_proof =
             get_merkle_proof_with_zero::<F, H>(&[], 0, log_max_n_txs, zero);
         let default_merge_process_proof = MerkleProcessProof {
-            index: HashOut::ZERO,
+            index: vec![false; log_max_n_txs],
             siblings: default_merge_inclusion_proof.siblings,
             old_value: default_merge_inclusion_proof.value,
             new_value: default_merge_inclusion_proof.value,
@@ -175,10 +178,10 @@ impl MergeProofTarget {
         proof
     }
 
-    pub fn set_witness<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+    pub fn set_witness<F: RichField, H: Hasher<F, Hash = HashOut<F>>, K: KeyLike>(
         &self,
         pw: &mut impl Witness<F>,
-        witness: &MergeProof<F, H>,
+        witness: &MergeProof<F, H, K>,
     ) {
         let old_value_is_zero = witness.merge_process_proof.old_value == HashOut::ZERO;
         let new_value_is_zero = witness.merge_process_proof.new_value == HashOut::ZERO;
@@ -249,7 +252,7 @@ impl MergeProofTarget {
         if !is_no_op {
             let diff_tree_inclusion_root2 = self.diff_tree_inclusion_proof.2.set_witness(
                 pw,
-                witness.diff_tree_inclusion_proof.index2,
+                witness.diff_tree_inclusion_proof.index2.clone(),
                 witness.diff_tree_inclusion_proof.value2,
                 &witness.diff_tree_inclusion_proof.siblings2,
             );
@@ -275,13 +278,13 @@ impl MergeProofTarget {
 
         let _old_root = self.merge_process_proof.0.set_witness(
             pw,
-            witness.merge_process_proof.index,
+            witness.merge_process_proof.index.clone(),
             witness.merge_process_proof.old_value,
             &witness.merge_process_proof.siblings,
         );
         let _new_root = self.merge_process_proof.1.set_witness(
             pw,
-            witness.merge_process_proof.index,
+            witness.merge_process_proof.index.clone(),
             witness.merge_process_proof.new_value,
             &witness.merge_process_proof.siblings,
         );
@@ -469,10 +472,10 @@ impl MergeTransitionTarget {
     }
 
     /// Returns new_user_asset_root
-    pub fn set_witness<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+    pub fn set_witness<F: RichField, H: Hasher<F, Hash = HashOut<F>>, K: KeyLike>(
         &self,
         pw: &mut impl Witness<F>,
-        proofs: &[MergeProof<F, H>],
+        proofs: &[MergeProof<F, H, K>],
         old_user_asset_root: HashOut<F>,
     ) -> HashOut<F> {
         pw.set_hash_target(self.old_user_asset_root, old_user_asset_root);
@@ -482,7 +485,7 @@ impl MergeTransitionTarget {
         for (target, witness) in self.proofs.iter().zip(proofs.iter()) {
             assert_eq!(witness.merge_process_proof.old_root, new_user_asset_root);
 
-            target.set_witness::<F, H>(pw, witness);
+            target.set_witness::<F, H, _>(pw, witness);
 
             new_user_asset_root = witness.merge_process_proof.new_root
         }
@@ -494,7 +497,7 @@ impl MergeTransitionTarget {
             self.log_n_kinds,
         );
         for target in self.proofs.iter().skip(proofs.len()) {
-            target.set_witness::<F, H>(pw, &default_merge_witness);
+            target.set_witness::<F, H, Vec<bool>>(pw, &default_merge_witness);
         }
 
         new_user_asset_root
@@ -625,73 +628,6 @@ fn test_two_tree_compatibility() {
     {
         assert_eq!(asset_root, diff_tree_inclusion_value2);
     }
-}
-
-#[test]
-fn test_prove_tx_diff_tree() {
-    use plonky2::{
-        field::types::Field,
-        plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
-    };
-
-    use crate::{
-        sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
-        transaction::{
-            asset::{Asset, TokenKind, VariableIndex},
-            tree::tx_diff::TxDiffTree,
-        },
-        zkdsa::account::{private_key_to_account, Address},
-    };
-
-    type C = PoseidonGoldilocksConfig;
-    type H = <C as GenericConfig<D>>::InnerHasher;
-    type F = <C as GenericConfig<D>>::F;
-    const D: usize = 2;
-
-    pub const LOG_MAX_N_CONTRACTS: usize = 3;
-    pub const LOG_MAX_N_VARIABLES: usize = 3;
-    pub const LOG_N_RECIPIENTS: usize = 3;
-    pub const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
-    pub const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
-
-    let asset1 = Asset {
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 2053,
-    };
-    let asset2 = Asset {
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 1111,
-    };
-
-    let private_key = HashOut {
-        elements: [
-            F::from_canonical_u64(15657143458229430356),
-            F::from_canonical_u64(6012455030006979790),
-            F::from_canonical_u64(4280058849535143691),
-            F::from_canonical_u64(5153662694263190591),
-        ],
-    };
-    let user_account = private_key_to_account(private_key);
-    let user_address = user_account.address;
-
-    let mut deposit_tree =
-        TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
-
-    deposit_tree.insert(user_address, asset1).unwrap();
-    deposit_tree.insert(user_address, asset2).unwrap();
-
-    // let proof = deposit_tree.prove_asset_root(&user_address).unwrap();
-    let proof = deposit_tree
-        .prove_leaf_node(&user_address, &asset2.kind)
-        .unwrap();
-    let root = get_merkle_root::<_, H, _>(proof.index, proof.value, &proof.siblings);
-    assert_eq!(root, proof.root);
 }
 
 #[test]
@@ -836,7 +772,7 @@ fn test_merge_proof_by_plonky2() {
     let merge_inclusion_proof = user_asset_tree
         .prove_asset_root(&deposit_merge_key)
         .unwrap();
-    let merge_process_proof = MerkleProcessProof {
+    let merge_process_proof = MerkleProcessProof::<F, H, Vec<bool>> {
         index: merge_inclusion_proof.index,
         siblings: merge_inclusion_proof.siblings,
         old_value: HashOut::ZERO,
@@ -845,7 +781,7 @@ fn test_merge_proof_by_plonky2() {
         new_root: merge_inclusion_new_root,
     };
 
-    let merge_proof = MergeProof::<F, H> {
+    let merge_proof = MergeProof::<F, H, _> {
         is_deposit: true,
         diff_tree_inclusion_proof: DiffTreeInclusionProof {
             block_header: prev_block_header,
@@ -880,7 +816,7 @@ fn test_merge_proof_by_plonky2() {
 
     let mut pw = PartialWitness::new();
 
-    merge_proof_target.set_witness::<F, H>(&mut pw, &[], default_hash);
+    merge_proof_target.set_witness::<F, H, Vec<bool>>(&mut pw, &[], default_hash);
 
     println!("start proving: default proof");
     let start = Instant::now();

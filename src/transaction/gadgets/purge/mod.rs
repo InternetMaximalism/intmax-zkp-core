@@ -689,11 +689,11 @@ fn test_purge_proof_by_plonky2() {
     let old_user_asset_root = user_asset_tree.get_root().unwrap();
     let old_leaf_data1 = user_asset_tree.remove(&merge_key2, &asset2.kind).unwrap();
     let proof1 = user_asset_tree
-        .prove_leaf_node(&merge_key2, &asset2.kind)
+        .prove_leaf_node(&merge_key2, &user_address, &asset2.kind)
         .unwrap();
     let old_leaf_data2 = user_asset_tree.remove(&merge_key1, &asset1.kind).unwrap();
     let proof2 = user_asset_tree
-        .prove_leaf_node(&merge_key1, &asset1.kind)
+        .prove_leaf_node(&merge_key1, &user_address, &asset1.kind)
         .unwrap();
 
     tx_diff_tree.insert(recipient3, asset3).unwrap();
@@ -739,7 +739,7 @@ fn test_purge_proof_by_plonky2() {
     });
 
     let mut pw = PartialWitness::new();
-    target.set_witness::<F, H, HashOut<F>>(
+    target.set_witness::<F, H, Vec<bool>>(
         &mut pw,
         user_address,
         &input_witness,

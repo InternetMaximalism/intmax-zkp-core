@@ -8,7 +8,7 @@ use plonky2::{
 use crate::{
     merkle_tree::{
         sparse_merkle_tree::{MerklePath, Node},
-        tree::MerkleProof,
+        tree::{get_merkle_root, MerkleProof},
     },
     sparse_merkle_tree::goldilocks_poseidon::{le_bytes_to_bits, WrappedHashOut},
     transaction::{
@@ -31,7 +31,7 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
     pub fn new(log_max_n_txs: usize, log_max_n_kinds: usize) -> Self {
         let mut zero_hashes = vec![];
 
-        let zero = vec![F::ZERO; 4];
+        let zero = vec![F::ZERO; 13];
         let node = Node::Leaf::<F, H> { data: zero.clone() };
         let mut h = node.hash();
         zero_hashes.push(h);
@@ -49,6 +49,7 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
             zero_hashes.push(h);
         }
         zero_hashes.reverse();
+        dbg!(&zero_hashes);
 
         let nodes: HashMap<MerklePath, Node<F, H>> = HashMap::new();
 
@@ -99,21 +100,22 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
         let mut path = path.clone();
         loop {
             let hash = self.get_node_hash(&path);
+            dbg!(&hash);
+            let sibling = self.get_sibling_hash(&path);
             let parent_path = path[0..path.len() - 1].to_vec();
-            self.nodes.insert(
-                parent_path.clone(),
-                if path[path.len() - 1] {
-                    Node::Inner {
-                        left: self.get_sibling_hash(&path),
-                        right: hash,
-                    }
-                } else {
-                    Node::Inner {
-                        left: hash,
-                        right: self.get_sibling_hash(&path),
-                    }
-                },
-            );
+            let node = if path[path.len() - 1] {
+                Node::Inner {
+                    left: sibling,
+                    right: hash,
+                }
+            } else {
+                Node::Inner {
+                    left: hash,
+                    right: sibling,
+                }
+            };
+            dbg!(&node);
+            self.nodes.insert(parent_path.clone(), node);
             if path.len() == 1 {
                 break;
             } else {
@@ -122,23 +124,26 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
         }
     }
 
-    fn insert(
-        &mut self,
-        merge_key: &WrappedHashOut<F>,
-        token_index: Vec<bool>,
-        new_leaf_data: Vec<F>,
-    ) {
+    fn insert(&mut self, merge_key: &WrappedHashOut<F>, token_index: usize, new_leaf_data: Vec<F>) {
         let mut merge_key_path = le_bytes_to_bits(&merge_key.to_bytes());
         merge_key_path.resize(self.log_max_n_txs, false);
+        merge_key_path.reverse();
+
+        let mut kind_path = le_bytes_to_bits(&token_index.to_le_bytes());
+        kind_path.resize(self.log_max_n_kinds, false);
+        kind_path.reverse();
+
         let mut path = merge_key_path.clone();
-        let mut token_index = token_index;
-        path.append(&mut token_index);
+        path.append(&mut kind_path);
+        dbg!(&path);
+
+        debug_assert_eq!(new_leaf_data.len(), 13);
         self.nodes.insert(
             path.clone(),
             Node::Leaf {
                 data: new_leaf_data,
             },
-        );
+        ); // path: BE
 
         self.calc_internal_nodes(&path);
     }
@@ -152,10 +157,8 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
         for (i, asset) in assets.iter().enumerate() {
             // XXX: `merge_key` does not include in leaf data
             let new_leaf_data = [user_address.elements.to_vec(), encode_asset(asset)].concat();
-            let mut token_index = le_bytes_to_bits(&i.to_le_bytes());
-            token_index.resize(self.log_max_n_kinds, false);
-            token_index.reverse();
-            self.insert(&merge_key.clone(), token_index, new_leaf_data);
+
+            self.insert(&merge_key.clone(), i, new_leaf_data);
         }
 
         Ok(())
@@ -222,6 +225,8 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
     }
 
     /// Returns `(siblings, path)`
+    // path: BE
+    // siblings: LE
     fn prove(&self, path: &MerklePath) -> anyhow::Result<Vec<H::Hash>> {
         let mut siblings = vec![];
         let mut path = path.clone();
@@ -240,14 +245,15 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
     pub fn prove_leaf_node(
         &self,
         merge_key: &H::Hash,
+        user_address: &Address<F>,
         token_kind: &TokenKind<F>,
-    ) -> anyhow::Result<MerkleProof<F, H, HashOut<F>>> {
-        let path = self
+    ) -> anyhow::Result<MerkleProof<F, H, Vec<bool>>> {
+        let mut path = self
             .nodes
             .iter()
             .find(|v| {
                 if let Node::Leaf { data } = v.1 {
-                    merge_key.elements == data[0..4]
+                    user_address.to_hash_out().elements == data[0..4]
                         && token_kind.contract_address.0.elements == data[4..8]
                         && token_kind.variable_index.to_hash_out().elements == data[8..12]
                 } else {
@@ -255,13 +261,18 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
                 }
             })
             .unwrap()
-            .0;
+            .0
+            .clone();
+        dbg!(&path);
 
-        let siblings = self.prove(path)?;
-        let value = self.get_asset_root(merge_key).unwrap();
+        assert_eq!(path.len(), self.log_max_n_txs + self.log_max_n_kinds);
+
+        let siblings = self.prove(&path)?;
+        let value = H::hash_or_noop(&self.get_leaf_data(&path));
         let root = self.get_root().unwrap();
-        let proof = MerkleProof::<F, H, HashOut<F>> {
-            index: *merge_key,
+        path.reverse(); // BE -> LE
+        let proof = MerkleProof {
+            index: path,
             value,
             siblings,
             root,
@@ -273,15 +284,15 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
     pub fn prove_asset_root(
         &self,
         merge_key: &H::Hash,
-    ) -> anyhow::Result<MerkleProof<F, H, HashOut<F>>> {
+    ) -> anyhow::Result<MerkleProof<F, H, Vec<bool>>> {
         let mut path = le_bytes_to_bits(&merge_key.to_bytes());
         path.resize(self.log_max_n_txs, false);
 
         let siblings = self.prove(&path)?;
         let value = self.get_asset_root(merge_key).unwrap();
         let root = self.get_root().unwrap();
-        let proof = MerkleProof::<F, H, HashOut<F>> {
-            index: *merge_key,
+        let proof = MerkleProof {
+            index: path,
             value,
             siblings,
             root,
@@ -289,4 +300,76 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> UserAssetTree<F, H> {
 
         Ok(proof)
     }
+}
+
+#[test]
+fn test_prove_user_asset_tree() {
+    use plonky2::{
+        field::types::Field,
+        plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
+    };
+
+    use crate::{
+        sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
+        transaction::asset::{Asset, TokenKind, VariableIndex},
+        zkdsa::account::{private_key_to_account, Address},
+    };
+
+    type C = PoseidonGoldilocksConfig;
+    type H = <C as GenericConfig<D>>::InnerHasher;
+    type F = <C as GenericConfig<D>>::F;
+    const D: usize = 2;
+
+    pub const LOG_MAX_N_TXS: usize = 3;
+    pub const LOG_MAX_N_CONTRACTS: usize = 3;
+    pub const LOG_MAX_N_VARIABLES: usize = 3;
+
+    let asset1 = Asset {
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 2053,
+    };
+    let asset2 = Asset {
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 1111,
+    };
+
+    let private_key = HashOut {
+        elements: [
+            F::from_canonical_u64(15657143458229430356),
+            F::from_canonical_u64(6012455030006979790),
+            F::from_canonical_u64(4280058849535143691),
+            F::from_canonical_u64(5153662694263190591),
+        ],
+    };
+    let user_account = private_key_to_account(private_key);
+    let user_address = user_account.address;
+
+    let mut user_asset_tree =
+        UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
+
+    let merge_key = HashOut {
+        elements: [
+            F::from_canonical_u64(10129591887907959457),
+            F::from_canonical_u64(12952496368791909874),
+            F::from_canonical_u64(5623826813413271961),
+            F::from_canonical_u64(13962620032426109816),
+        ],
+    };
+
+    user_asset_tree
+        .insert_assets(merge_key.into(), user_address, vec![asset1, asset2])
+        .unwrap();
+
+    // let proof = deposit_tree.prove_asset_root(&user_address).unwrap();
+    let proof = user_asset_tree
+        .prove_leaf_node(&merge_key, &user_address, &asset2.kind)
+        .unwrap();
+    let root = get_merkle_root::<_, H, _>(proof.index, proof.value, &proof.siblings);
+    assert_eq!(root, proof.root);
 }

@@ -114,7 +114,9 @@ pub fn get_merkle_root<F: RichField, H: Hasher<F>, K: KeyLike>(
     siblings: &[H::Hash],
 ) -> H::Hash {
     let mut root = value;
-    for (lr_bit, sibling) in index.to_bits().iter().zip(siblings) {
+    let mut index = index.to_bits();
+    index.resize(siblings.len(), false);
+    for (lr_bit, sibling) in index.iter().zip(siblings) {
         let (left, right) = if *lr_bit {
             (*sibling, root)
         } else {

@@ -14,9 +14,7 @@ use plonky2::{
 use crate::{
     merkle_tree::sparse_merkle_tree::SparseMerkleTreeMemory,
     poseidon::gadgets::poseidon_two_to_one,
-    sparse_merkle_tree::{
-        gadgets::common::conditionally_reverse, goldilocks_poseidon::WrappedHashOut, tree::KeyLike,
-    },
+    sparse_merkle_tree::{gadgets::common::conditionally_reverse, tree::KeyLike},
     transaction::asset::Asset,
     zkdsa::{account::Address, gadgets::account::AddressTarget},
 };
@@ -68,7 +66,7 @@ impl PurgeInputProcessProofTarget {
         }
     }
 
-    pub fn set_witness<F: RichField, H: Hasher<F, Hash = HashOut<F>>, K: KeyLike>(
+    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>, K: KeyLike>(
         &self,
         pw: &mut impl Witness<F>,
         witness: &PurgeInputProcessProof<F, H, K>,
@@ -179,7 +177,7 @@ impl PurgeOutputProcessProofTarget {
         }
     }
 
-    pub fn set_witness<F: RichField, H: Hasher<F, Hash = HashOut<F>>, K: KeyLike>(
+    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>, K: KeyLike>(
         &self,
         pw: &mut impl Witness<F>,
         witness: &PurgeOutputProcessProof<F, H, K>,
@@ -339,18 +337,18 @@ impl PurgeTransitionTarget {
     }
 
     /// Returns (new_user_asset_root, tx_diff_root)
-    pub fn set_witness<F: RichField, H: Hasher<F, Hash = HashOut<F>>, K: KeyLike>(
+    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>, K: KeyLike>(
         &self,
         pw: &mut impl Witness<F>,
         sender_address: Address<F>,
         input_witness: &[PurgeInputProcessProof<F, H, K>],
         output_witness: &[PurgeOutputProcessProof<F, H, K>],
-        old_user_asset_root: WrappedHashOut<F>,
-        nonce: WrappedHashOut<F>,
-    ) -> (WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>) {
+        old_user_asset_root: HashOut<F>,
+        nonce: HashOut<F>,
+    ) -> (HashOut<F>, HashOut<F>, HashOut<F>) {
         self.sender_address.set_witness(pw, sender_address);
-        pw.set_hash_target(self.old_user_asset_root, *old_user_asset_root);
-        pw.set_hash_target(self.nonce, *nonce);
+        pw.set_hash_target(self.old_user_asset_root, old_user_asset_root);
+        pw.set_hash_target(self.nonce, nonce);
         assert!(input_witness.len() <= self.input_proofs.len());
         let prev_user_asset_root = old_user_asset_root;
         for (input_witness_t, input_witness) in self.input_proofs.iter().zip(input_witness.iter()) {
@@ -385,7 +383,7 @@ impl PurgeTransitionTarget {
         }
 
         assert!(output_witness.len() <= self.output_proofs.len());
-        let prev_diff_root = WrappedHashOut::default();
+        let prev_diff_root = HashOut::ZERO;
         for (output_proof_t, output_proof) in self.output_proofs.iter().zip(output_witness.iter()) {
             output_proof_t.set_witness(pw, output_proof);
         }
@@ -406,7 +404,7 @@ impl PurgeTransitionTarget {
             );
         }
 
-        let tx_hash = PoseidonHash::two_to_one(*diff_root, *nonce).into();
+        let tx_hash = PoseidonHash::two_to_one(diff_root, nonce);
 
         (new_user_asset_root, diff_root, tx_hash)
     }
@@ -578,7 +576,6 @@ fn test_purge_proof_by_plonky2() {
     use crate::{
         sparse_merkle_tree::goldilocks_poseidon::{
             GoldilocksHashOut, NodeDataMemory, PoseidonSparseMerkleTree, RootDataTmp,
-            WrappedHashOut,
         },
         transaction::{
             asset::{Asset, TokenKind},
@@ -673,10 +670,10 @@ fn test_purge_proof_by_plonky2() {
         TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
 
     user_asset_tree
-        .insert_assets(merge_key1, user_address, vec![asset1])
+        .insert_assets(*merge_key1, user_address, vec![asset1])
         .unwrap();
     user_asset_tree
-        .insert_assets(merge_key2, user_address, vec![asset2])
+        .insert_assets(*merge_key2, user_address, vec![asset2])
         .unwrap();
 
     world_state_tree
@@ -729,14 +726,14 @@ fn test_purge_proof_by_plonky2() {
             new_leaf_data: asset4,
         },
     ];
-    let nonce = WrappedHashOut::from(HashOut {
+    let nonce = HashOut {
         elements: [
             F::from_canonical_u64(6657881311364026367),
             F::from_canonical_u64(11761473381903976612),
             F::from_canonical_u64(10768494808833234712),
             F::from_canonical_u64(3223267375194257474),
         ],
-    });
+    };
 
     let mut pw = PartialWitness::new();
     target.set_witness::<F, H, Vec<bool>>(

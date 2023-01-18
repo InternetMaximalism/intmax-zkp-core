@@ -1,9 +1,6 @@
 use plonky2::{
     field::extension::Extendable,
-    hash::{
-        hash_types::{HashOut, HashOutTarget, RichField},
-        poseidon::PoseidonHash,
-    },
+    hash::hash_types::{HashOut, HashOutTarget, RichField},
     iop::{target::BoolTarget, witness::Witness},
     plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
 };
@@ -48,10 +45,10 @@ impl MerkleProofTarget {
         }
     }
 
-    pub fn set_witness<F: RichField, K: KeyLike>(
+    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>, K: KeyLike>(
         &self,
         pw: &mut impl Witness<F>,
-        index: K,
+        index: &K,
         value: HashOut<F>,
         siblings: &[HashOut<F>],
         // enabled: bool,
@@ -68,7 +65,7 @@ impl MerkleProofTarget {
             pw.set_hash_target(sibling_t, sibling);
         }
 
-        get_merkle_root::<F, PoseidonHash, K>(index, value, siblings)
+        get_merkle_root::<F, H, K>(index, value, siblings)
     }
 }
 
@@ -155,7 +152,7 @@ fn test_verify_merkle_proof_by_plonky2() {
     let MerkleProof { siblings, root, .. } = get_merkle_proof::<F, H>(&leaves, index, N_LEVELS);
 
     let mut pw = PartialWitness::new();
-    targets.set_witness(&mut pw, index, leaves[index], &siblings);
+    targets.set_witness::<_, H, _>(&mut pw, &index, leaves[index], &siblings);
 
     println!("start proving");
     let start = Instant::now();

@@ -56,20 +56,20 @@ pub struct MergeAndPurgeTransitionTarget {
 
 impl MergeAndPurgeTransitionTarget {
     #[allow(clippy::too_many_arguments)]
-    pub fn set_witness<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>>(
         &self,
         pw: &mut impl Witness<F>,
         sender_address: Address<F>,
         merge_witnesses: &[MergeProof<F, H, Vec<bool>>],
         purge_input_witnesses: &[PurgeInputProcessProof<F, H, H::Hash>],
         purge_output_witnesses: &[PurgeOutputProcessProof<F, H, H::Hash>],
-        nonce: WrappedHashOut<F>,
-        old_user_asset_root: WrappedHashOut<F>,
+        nonce: HashOut<F>,
+        old_user_asset_root: HashOut<F>,
     ) -> MergeAndPurgeTransitionPublicInputs<F> {
         let middle_user_asset_root = self.merge_proof_target.set_witness::<F, H, Vec<bool>>(
             pw,
             merge_witnesses,
-            *old_user_asset_root,
+            old_user_asset_root,
         );
         let (new_user_asset_root, diff_root, tx_hash) =
             self.purge_proof_target.set_witness::<F, H, H::Hash>(
@@ -77,17 +77,17 @@ impl MergeAndPurgeTransitionTarget {
                 sender_address,
                 purge_input_witnesses,
                 purge_output_witnesses,
-                middle_user_asset_root.into(),
+                middle_user_asset_root,
                 nonce,
             );
 
         MergeAndPurgeTransitionPublicInputs {
             sender_address,
-            old_user_asset_root,
+            old_user_asset_root: old_user_asset_root.into(),
             middle_user_asset_root: middle_user_asset_root.into(),
-            new_user_asset_root,
-            diff_root,
-            tx_hash,
+            new_user_asset_root: new_user_asset_root.into(),
+            diff_root: diff_root.into(),
+            tx_hash: tx_hash.into(),
         }
     }
 }
@@ -472,8 +472,8 @@ where
         merge_witnesses: &[MergeProof<F, C::Hasher, MerklePath>],
         purge_input_witnesses: &[PurgeInputProcessProof<F, C::Hasher, HashOut<F>>],
         purge_output_witnesses: &[PurgeOutputProcessProof<F, C::Hasher, HashOut<F>>],
-        nonce: WrappedHashOut<F>,
-        old_user_asset_root: WrappedHashOut<F>,
+        nonce: HashOut<F>,
+        old_user_asset_root: HashOut<F>,
     ) -> anyhow::Result<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>> {
         let mut pw = PartialWitness::new();
         self.targets
@@ -510,8 +510,8 @@ pub fn prove_user_transaction<
     merge_witnesses: &[MergeProof<F, C::Hasher, MerklePath>],
     purge_input_witnesses: &[PurgeInputProcessProof<F, C::Hasher, HashOut<F>>],
     purge_output_witnesses: &[PurgeOutputProcessProof<F, C::Hasher, HashOut<F>>],
-    nonce: WrappedHashOut<F>,
-    old_user_asset_root: WrappedHashOut<F>,
+    nonce: HashOut<F>,
+    old_user_asset_root: HashOut<F>,
 ) -> anyhow::Result<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>>
 where
     C::Hasher: AlgebraicHasher<F>,

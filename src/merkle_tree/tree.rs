@@ -1,9 +1,6 @@
 use plonky2::{
-    hash::{
-        hash_types::{HashOut, RichField},
-        poseidon::PoseidonHash,
-    },
-    plonk::config::Hasher,
+    hash::hash_types::{HashOut, RichField},
+    plonk::config::{AlgebraicHasher, Hasher},
 };
 use serde::{Deserialize, Serialize};
 
@@ -35,7 +32,7 @@ pub struct MerkleProof<F: RichField, H: Hasher<F>, K: Clone> {
     pub root: H::Hash,
 }
 
-impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> MerkleProof<F, H, usize> {
+impl<F: RichField, H: AlgebraicHasher<F>> MerkleProof<F, H, usize> {
     pub fn new(depth: usize) -> Self {
         let index = Default::default();
         let value = Default::default();
@@ -50,7 +47,7 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> MerkleProof<F, H, usize> {
 /// leaves に 1 つも leaf を与えなかったり, leaves の個数が 2 のべきでなかった場合,
 /// もとの個数より小さくない最小の 2 のべきになるように `zero` を埋める.
 /// Returns `(siblings, root)`
-pub fn get_merkle_proof_with_zero<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+pub fn get_merkle_proof_with_zero<F: RichField, H: Hasher<F>>(
     leaves: &[H::Hash],
     index: usize,
     depth: usize,
@@ -71,16 +68,16 @@ pub fn get_merkle_proof_with_zero<F: RichField, H: Hasher<F, Hash = HashOut<F>>>
     let mut siblings = vec![zero]; // initialize by zero hashes
     for _ in 1..depth {
         let last_zero: H::Hash = *siblings.last().unwrap();
-        siblings.push(PoseidonHash::two_to_one(last_zero, last_zero));
+        siblings.push(H::two_to_one(last_zero, last_zero));
     }
 
     let mut rest_index = index;
     for sibling in siblings.iter_mut().take(log_num_leaves) {
         let _ = std::mem::replace(sibling, nodes[rest_index ^ 1]); // XXX: out of index が起こる
 
-        let mut new_nodes: Vec<HashOut<F>> = vec![];
+        let mut new_nodes: Vec<H::Hash> = vec![];
         for j in 0..(nodes.len() / 2) {
-            new_nodes.push(PoseidonHash::two_to_one(nodes[2 * j], nodes[2 * j + 1]));
+            new_nodes.push(H::two_to_one(nodes[2 * j], nodes[2 * j + 1]));
         }
 
         rest_index >>= 1;
@@ -91,7 +88,7 @@ pub fn get_merkle_proof_with_zero<F: RichField, H: Hasher<F, Hash = HashOut<F>>>
     let mut root = nodes[0];
     for sibling in siblings.iter().cloned().skip(log_num_leaves) {
         // log_num_leaves 層より上は sibling が必ず右側にくる.
-        root = PoseidonHash::two_to_one(root, sibling);
+        root = H::two_to_one(root, sibling);
     }
 
     MerkleProof {
@@ -102,8 +99,8 @@ pub fn get_merkle_proof_with_zero<F: RichField, H: Hasher<F, Hash = HashOut<F>>>
     }
 }
 
-pub fn get_merkle_proof<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
-    leaves: &[H::Hash],
+pub fn get_merkle_proof<F: RichField, H: AlgebraicHasher<F>>(
+    leaves: &[HashOut<F>],
     index: usize,
     depth: usize,
 ) -> MerkleProof<F, H, usize> {
@@ -112,7 +109,7 @@ pub fn get_merkle_proof<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
 
 /// 与えられた leaf `(index, value)` と `siblings` から Merkle root を計算する.
 pub fn get_merkle_root<F: RichField, H: Hasher<F>, K: KeyLike>(
-    index: K,
+    index: &K,
     value: H::Hash,
     siblings: &[H::Hash],
 ) -> H::Hash {
@@ -124,7 +121,7 @@ pub fn get_merkle_root<F: RichField, H: Hasher<F>, K: KeyLike>(
             (root, *sibling)
         };
         root = H::two_to_one(left, right);
-        dbg!(left, right, root);
+        // dbg!(left, right, root);
     }
 
     root
@@ -134,7 +131,7 @@ pub fn get_merkle_root<F: RichField, H: Hasher<F>, K: KeyLike>(
 fn test_get_block_hash_tree_proofs() {
     use plonky2::{
         field::{goldilocks_field::GoldilocksField, types::Field},
-        hash::hash_types::HashOut,
+        hash::{hash_types::HashOut, poseidon::PoseidonHash},
     };
 
     type H = PoseidonHash;
@@ -158,7 +155,7 @@ fn test_get_block_hash_tree_proofs() {
     let new_leaf = HashOut {
         elements: [F::from_canonical_u32(50), F::ZERO, F::ZERO, F::ZERO],
     };
-    let new_root = get_merkle_root::<_, PoseidonHash, _>(index, new_leaf, &siblings);
+    let new_root = get_merkle_root::<_, PoseidonHash, _>(&index, new_leaf, &siblings);
 
     leaves[index] = new_leaf;
     let MerkleProof {
@@ -175,7 +172,7 @@ fn test_get_block_hash_tree_proofs() {
 fn test_get_block_hash_tree_proofs2() {
     use plonky2::{
         field::{goldilocks_field::GoldilocksField, types::Field},
-        hash::hash_types::HashOut,
+        hash::{hash_types::HashOut, poseidon::PoseidonHash},
     };
 
     // type H = PoseidonHash;

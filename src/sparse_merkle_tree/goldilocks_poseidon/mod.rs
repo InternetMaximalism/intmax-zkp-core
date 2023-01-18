@@ -25,7 +25,7 @@ use super::{
 };
 
 mod hash;
-pub use self::hash::{GoldilocksHashOut, WrappedHashOut, Wrapper};
+pub use self::hash::{GoldilocksHashOut, SerializableHashOut, WrappedHashOut, Wrapper};
 
 pub fn le_bytes_to_bits(bytes: &[u8]) -> Vec<bool> {
     bytes

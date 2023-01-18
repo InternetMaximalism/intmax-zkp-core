@@ -54,6 +54,7 @@ impl<
 }
 
 pub trait KeyLike: Clone + Eq + Debug + Default + Hash {
+    /// little endian
     fn to_bits(&self) -> Vec<bool>;
 }
 

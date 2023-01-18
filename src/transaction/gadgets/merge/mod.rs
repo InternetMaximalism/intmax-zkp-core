@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     merkle_tree::{
         gadgets::{get_merkle_root_target, MerkleProofTarget},
-        tree::{get_merkle_proof_with_zero, get_merkle_root, MerkleProcessProof, MerkleProof},
+        tree::{get_merkle_proof_with_zero, MerkleProcessProof, MerkleProof},
     },
     poseidon::gadgets::poseidon_two_to_one,
     sparse_merkle_tree::{
@@ -178,7 +178,7 @@ impl MergeProofTarget {
         proof
     }
 
-    pub fn set_witness<F: RichField, H: Hasher<F, Hash = HashOut<F>>, K: KeyLike>(
+    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>, K: KeyLike>(
         &self,
         pw: &mut impl Witness<F>,
         witness: &MergeProof<F, H, K>,
@@ -250,12 +250,13 @@ impl MergeProofTarget {
 
         // pw.set_bool_target(target.is_deposit, witness.is_deposit);
         if !is_no_op {
-            let diff_tree_inclusion_root2 = self.diff_tree_inclusion_proof.2.set_witness(
-                pw,
-                witness.diff_tree_inclusion_proof.index2.clone(),
-                witness.diff_tree_inclusion_proof.value2,
-                &witness.diff_tree_inclusion_proof.siblings2,
-            );
+            let diff_tree_inclusion_root2 =
+                self.diff_tree_inclusion_proof.2.set_witness::<_, H, _>(
+                    pw,
+                    &witness.diff_tree_inclusion_proof.index2,
+                    witness.diff_tree_inclusion_proof.value2,
+                    &witness.diff_tree_inclusion_proof.siblings2,
+                );
             assert_eq!(
                 diff_tree_inclusion_root2,
                 witness.diff_tree_inclusion_proof.root2
@@ -263,9 +264,9 @@ impl MergeProofTarget {
         }
 
         if !is_no_op {
-            let diff_tree_root = self.diff_tree_inclusion_proof.1.set_witness(
+            let diff_tree_root = self.diff_tree_inclusion_proof.1.set_witness::<_, H, _>(
                 pw,
-                witness.diff_tree_inclusion_proof.index1,
+                &witness.diff_tree_inclusion_proof.index1,
                 witness.diff_tree_inclusion_proof.value1,
                 &witness.diff_tree_inclusion_proof.siblings1,
             );
@@ -276,15 +277,15 @@ impl MergeProofTarget {
             .0
             .set_witness(pw, &witness.diff_tree_inclusion_proof.block_header);
 
-        let _old_root = self.merge_process_proof.0.set_witness(
+        let _old_root = self.merge_process_proof.0.set_witness::<_, H, _>(
             pw,
-            witness.merge_process_proof.index.clone(),
+            &witness.merge_process_proof.index,
             witness.merge_process_proof.old_value,
             &witness.merge_process_proof.siblings,
         );
-        let _new_root = self.merge_process_proof.1.set_witness(
+        let _new_root = self.merge_process_proof.1.set_witness::<_, H, _>(
             pw,
-            witness.merge_process_proof.index.clone(),
+            &witness.merge_process_proof.index,
             witness.merge_process_proof.new_value,
             &witness.merge_process_proof.siblings,
         );
@@ -472,7 +473,7 @@ impl MergeTransitionTarget {
     }
 
     /// Returns new_user_asset_root
-    pub fn set_witness<F: RichField, H: Hasher<F, Hash = HashOut<F>>, K: KeyLike>(
+    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>, K: KeyLike>(
         &self,
         pw: &mut impl Witness<F>,
         proofs: &[MergeProof<F, H, K>],
@@ -566,12 +567,12 @@ fn test_two_tree_compatibility() {
     type F = <C as GenericConfig<D>>::F;
     const D: usize = 2;
 
-    pub const LOG_MAX_N_TXS: usize = 3;
-    pub const LOG_MAX_N_CONTRACTS: usize = 3;
-    pub const LOG_MAX_N_VARIABLES: usize = 3;
-    pub const LOG_N_RECIPIENTS: usize = 3;
-    pub const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
-    pub const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
+    const LOG_MAX_N_TXS: usize = 3;
+    const LOG_MAX_N_CONTRACTS: usize = 3;
+    const LOG_MAX_N_VARIABLES: usize = 3;
+    const LOG_N_RECIPIENTS: usize = 3;
+    const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
+    const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
 
     let asset1 = Asset {
         kind: TokenKind {
@@ -620,7 +621,7 @@ fn test_two_tree_compatibility() {
     };
 
     user_asset_tree
-        .insert_assets(deposit_merge_key.into(), user_address, vec![asset1, asset2])
+        .insert_assets(deposit_merge_key, user_address, vec![asset1, asset2])
         .unwrap();
 
     // let mut user_asset_tree: UserAssetTree<_, _> = user_asset_tree.into();
@@ -662,15 +663,15 @@ fn test_merge_proof_by_plonky2() {
     type F = <C as GenericConfig<D>>::F;
     const D: usize = 2;
 
-    pub const LOG_MAX_N_USERS: usize = 3;
-    pub const LOG_MAX_N_TXS: usize = 3;
-    pub const LOG_MAX_N_CONTRACTS: usize = 3;
-    pub const LOG_MAX_N_VARIABLES: usize = 3;
-    pub const LOG_N_TXS: usize = 3;
-    pub const LOG_N_RECIPIENTS: usize = 3;
-    pub const LOG_N_CONTRACTS: usize = 3;
-    pub const LOG_N_VARIABLES: usize = 3;
-    pub const N_MERGES: usize = 3;
+    const LOG_MAX_N_USERS: usize = 3;
+    const LOG_MAX_N_TXS: usize = 3;
+    const LOG_MAX_N_CONTRACTS: usize = 3;
+    const LOG_MAX_N_VARIABLES: usize = 3;
+    const LOG_N_TXS: usize = 3;
+    const LOG_N_RECIPIENTS: usize = 3;
+    const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
+    const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
+    const N_MERGES: usize = 3;
 
     let config = CircuitConfig::standard_recursion_config();
 
@@ -723,9 +724,7 @@ fn test_merge_proof_by_plonky2() {
         TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
 
     deposit_tree.insert(user_address, asset1).unwrap();
-    dbg!("start");
     deposit_tree.insert(user_address, asset2).unwrap();
-    dbg!("end");
 
     // let deposit_tree: PoseidonSparseMerkleTree<_, _> = deposit_tree.into();
 
@@ -753,7 +752,7 @@ fn test_merge_proof_by_plonky2() {
     };
     let block_hash = get_block_hash(&prev_block_header);
 
-    let deposit_merge_key = H::two_to_one(deposit_tx_hash, block_hash).into();
+    let deposit_merge_key = H::two_to_one(deposit_tx_hash, block_hash);
 
     let merge_inclusion_old_root = user_asset_tree.get_root().unwrap();
     // user asset tree に deposit を merge する.

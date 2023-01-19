@@ -8,10 +8,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     merkle_tree::tree::MerkleProof,
+    new_transaction::block_header::BlockHeader,
     sparse_merkle_tree::{
         gadgets::verify::verify_smt::SmtInclusionProof, goldilocks_poseidon::WrappedHashOut,
     },
-    transaction::block_header::BlockHeader,
     zkdsa::account::Address,
 };
 

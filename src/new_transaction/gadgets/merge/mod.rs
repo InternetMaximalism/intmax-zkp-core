@@ -14,6 +14,10 @@ use crate::{
         gadgets::{get_merkle_root_target, MerkleProofTarget},
         tree::{get_merkle_proof_with_zero, MerkleProcessProof, MerkleProof},
     },
+    new_transaction::{
+        block_header::{get_block_hash, BlockHeader},
+        gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
+    },
     poseidon::gadgets::poseidon_two_to_one,
     sparse_merkle_tree::{
         gadgets::{
@@ -23,10 +27,6 @@ use crate::{
             verify::verify_smt::{SmtInclusionProof, SparseMerkleInclusionProofTarget},
         },
         tree::KeyLike,
-    },
-    transaction::{
-        block_header::{get_block_hash, BlockHeader},
-        gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
     },
 };
 
@@ -549,11 +549,11 @@ fn test_two_tree_compatibility() {
     };
 
     use crate::{
-        sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
-        transaction::{
+        new_transaction::{
             asset::{ContributedAsset, TokenKind, VariableIndex},
             tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
         },
+        sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
         zkdsa::account::{private_key_to_account, Address},
     };
 
@@ -644,13 +644,13 @@ fn test_merge_proof_by_plonky2() {
 
     use crate::{
         merkle_tree::tree::get_merkle_proof,
-        sparse_merkle_tree::{
-            goldilocks_poseidon::GoldilocksHashOut, proof::SparseMerkleInclusionProof,
-        },
-        transaction::{
+        new_transaction::{
             asset::{ContributedAsset, TokenKind, VariableIndex},
             block_header::BlockHeader,
             tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
+        },
+        sparse_merkle_tree::{
+            goldilocks_poseidon::GoldilocksHashOut, proof::SparseMerkleInclusionProof,
         },
         zkdsa::account::{private_key_to_account, Address},
     };

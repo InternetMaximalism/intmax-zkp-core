@@ -10,8 +10,8 @@ use crate::{
         sparse_merkle_tree::{MerklePath, Node},
         tree::MerkleProof,
     },
+    new_transaction::asset::{encode_contributed_asset, ContributedAsset, TokenKind},
     sparse_merkle_tree::goldilocks_poseidon::le_bytes_to_bits,
-    transaction::asset::{encode_contributed_asset, ContributedAsset, TokenKind},
     zkdsa::account::Address,
 };
 
@@ -260,11 +260,11 @@ fn test_prove_tx_diff_tree() {
 
     use crate::{
         merkle_tree::tree::get_merkle_root,
-        sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
-        transaction::{
+        new_transaction::{
             asset::{TokenKind, VariableIndex},
             tree::tx_diff::TxDiffTree,
         },
+        sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
         zkdsa::account::{private_key_to_account, Address},
     };
 
@@ -329,11 +329,11 @@ fn test_tx_diff_tree_by_plonky2() {
 
     use crate::{
         merkle_tree::tree::{get_merkle_proof, get_merkle_root},
-        sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
-        transaction::{
+        new_transaction::{
             asset::{TokenKind, VariableIndex},
             tree::tx_diff::TxDiffTree,
         },
+        sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
         zkdsa::account::{private_key_to_account, Address},
     };
 

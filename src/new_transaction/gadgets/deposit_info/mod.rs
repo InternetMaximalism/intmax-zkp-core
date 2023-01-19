@@ -7,7 +7,7 @@ use plonky2::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    transaction::asset::VariableIndex,
+    new_transaction::asset::VariableIndex,
     zkdsa::{account::Address, gadgets::account::AddressTarget},
 };
 

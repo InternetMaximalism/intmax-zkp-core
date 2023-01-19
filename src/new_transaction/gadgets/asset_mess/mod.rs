@@ -5,7 +5,7 @@ use plonky2::{
     plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
 };
 
-use crate::{transaction::asset::ContributedAsset, zkdsa::gadgets::account::AddressTarget};
+use crate::{new_transaction::asset::ContributedAsset, zkdsa::gadgets::account::AddressTarget};
 
 use super::utils::is_non_zero;
 

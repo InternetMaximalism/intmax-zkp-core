@@ -20,14 +20,14 @@ use serde::{Deserialize, Serialize};
 use crate::{
     config::RollupConstants,
     merkle_tree::sparse_merkle_tree::MerklePath,
-    new_transaction::gadgets::{
-        merge::{MergeProof, MergeTransitionTarget},
-        purge::PurgeTransitionTarget,
-    },
     poseidon::gadgets::poseidon_two_to_one,
     sparse_merkle_tree::{
         gadgets::process::process_smt::SmtProcessProof, goldilocks_poseidon::WrappedHashOut,
         tree::KeyLike,
+    },
+    transaction::gadgets::{
+        merge::{MergeProof, MergeTransitionTarget},
+        purge::PurgeTransitionTarget,
     },
     zkdsa::account::Address,
 };

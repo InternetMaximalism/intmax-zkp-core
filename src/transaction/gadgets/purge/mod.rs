@@ -16,13 +16,13 @@ use crate::{
         gadgets::get_merkle_root_target,
         tree::{get_merkle_proof_with_zero, get_merkle_root},
     },
-    new_transaction::asset::{encode_contributed_asset, ContributedAsset},
     // merkle_tree::sparse_merkle_tree::SparseMerkleTreeMemory,
     poseidon::gadgets::poseidon_two_to_one,
     sparse_merkle_tree::{
         gadgets::common::{conditionally_select, enforce_equal_if_enabled},
         tree::KeyLike,
     },
+    transaction::asset::{encode_contributed_asset, ContributedAsset},
     zkdsa::{account::Address, gadgets::account::AddressTarget},
 };
 
@@ -660,12 +660,12 @@ fn test_purge_proof_by_plonky2() {
 
     use crate::{
         merkle_tree::tree::get_merkle_root,
-        new_transaction::{
-            asset::TokenKind,
-            tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
-        },
         sparse_merkle_tree::goldilocks_poseidon::{
             GoldilocksHashOut, NodeDataMemory, PoseidonSparseMerkleTree, RootDataTmp,
+        },
+        transaction::{
+            asset::TokenKind,
+            tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
         },
         zkdsa::account::{private_key_to_account, Address},
     };

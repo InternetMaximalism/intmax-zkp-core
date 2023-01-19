@@ -10,10 +10,8 @@ use crate::{
         sparse_merkle_tree::{MerklePath, Node},
         tree::MerkleProof,
     },
-    new_transaction::asset::{
-        encode_contributed_asset, ContributedAsset, TokenKind, VariableIndex,
-    },
     sparse_merkle_tree::{goldilocks_poseidon::le_bytes_to_bits, tree::KeyLike},
+    transaction::asset::{encode_contributed_asset, ContributedAsset, TokenKind, VariableIndex},
     zkdsa::account::Address,
 };
 
@@ -322,8 +320,8 @@ fn test_prove_user_asset_tree() {
 
     use crate::{
         merkle_tree::tree::get_merkle_root,
-        new_transaction::asset::{ContributedAsset, TokenKind, VariableIndex},
         sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
+        transaction::asset::{ContributedAsset, TokenKind, VariableIndex},
         zkdsa::account::{private_key_to_account, Address},
     };
 
@@ -397,11 +395,11 @@ fn test_user_asset_tree_by_plonky2() {
 
     use crate::{
         merkle_tree::tree::get_merkle_root,
-        new_transaction::{
+        sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
+        transaction::{
             asset::{ContributedAsset, TokenKind, VariableIndex},
             tree::user_asset::UserAssetTree,
         },
-        sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
         zkdsa::account::{private_key_to_account, Address},
     };
 

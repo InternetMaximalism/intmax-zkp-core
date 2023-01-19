@@ -10,11 +10,8 @@ use crate::{
         sparse_merkle_tree::{MerklePath, Node},
         tree::MerkleProof,
     },
-    sparse_merkle_tree::goldilocks_poseidon::le_bytes_to_bits,
-    transaction::{
-        asset::{Asset, TokenKind, VariableIndex},
-        gadgets::purge::encode_asset,
-    },
+    sparse_merkle_tree::{goldilocks_poseidon::le_bytes_to_bits, tree::KeyLike},
+    transaction::asset::{encode_contributed_asset, ContributedAsset, TokenKind, VariableIndex},
     zkdsa::account::Address,
 };
 
@@ -150,12 +147,11 @@ impl<F: RichField, H: Hasher<F>> UserAssetTree<F, H> {
     pub fn insert_assets(
         &mut self,
         merge_key: HashOut<F>,
-        user_address: Address<F>,
-        assets: Vec<Asset<F>>,
+        assets: Vec<ContributedAsset<F>>,
     ) -> anyhow::Result<()> {
         for (i, asset) in assets.iter().enumerate() {
             // XXX: `merge_key` does not include in leaf data
-            let new_leaf_data = [user_address.elements.to_vec(), encode_asset(asset)].concat();
+            let new_leaf_data = encode_contributed_asset(asset);
 
             self.insert(merge_key, i, new_leaf_data);
         }
@@ -165,16 +161,21 @@ impl<F: RichField, H: Hasher<F>> UserAssetTree<F, H> {
 
     pub fn remove(
         &mut self,
-        merge_key: &HashOut<F>,
-        token_kind: &TokenKind<F>,
-    ) -> anyhow::Result<Asset<F>> {
+        merge_key: HashOut<F>,
+        user_address: Address<F>,
+        token_kind: TokenKind<F>,
+    ) -> anyhow::Result<ContributedAsset<F>> {
+        let mut merge_key_path = merge_key.to_bits();
+        merge_key_path.resize(self.log_max_n_txs, false);
+
         let path = self
             .nodes
             .iter()
             .find(|v| {
-                if let Node::Leaf { data } = v.1 {
-                    merge_key.elements == data[0..4]
-                        && token_kind.contract_address.0.elements == data[4..8]
+                if let (node_path, Node::Leaf { data }) = v {
+                    // node_path.starts_with(&merge_key_path) &&
+                    user_address.elements == data[0..4]
+                        && token_kind.contract_address.to_hash_out().elements == data[4..8]
                         && token_kind.variable_index.to_hash_out().elements == data[8..12]
                 } else {
                     false
@@ -204,7 +205,8 @@ impl<F: RichField, H: Hasher<F>> UserAssetTree<F, H> {
             anyhow::bail!("found unexpected inner node");
         };
 
-        Ok(Asset {
+        Ok(ContributedAsset {
+            receiver_address: user_address,
             kind: TokenKind {
                 contract_address: Address(HashOut::from_partial(&old_leaf_data[4..8])),
                 variable_index: VariableIndex::from_hash_out(HashOut::from_partial(
@@ -320,7 +322,7 @@ fn test_prove_user_asset_tree() {
     use crate::{
         merkle_tree::tree::get_merkle_root,
         sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
-        transaction::asset::{Asset, TokenKind, VariableIndex},
+        transaction::asset::{ContributedAsset, TokenKind, VariableIndex},
         zkdsa::account::{private_key_to_account, Address},
     };
 
@@ -333,21 +335,6 @@ fn test_prove_user_asset_tree() {
     const LOG_MAX_N_CONTRACTS: usize = 3;
     const LOG_MAX_N_VARIABLES: usize = 3;
 
-    let asset1 = Asset {
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 2053,
-    };
-    let asset2 = Asset {
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 1111,
-    };
-
     let private_key = HashOut {
         elements: [
             F::from_canonical_u64(15657143458229430356),
@@ -358,6 +345,23 @@ fn test_prove_user_asset_tree() {
     };
     let user_account = private_key_to_account(private_key);
     let user_address = user_account.address;
+
+    let asset1 = ContributedAsset {
+        receiver_address: user_address,
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 2053,
+    };
+    let asset2 = ContributedAsset {
+        receiver_address: user_address,
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 1111,
+    };
 
     let mut user_asset_tree =
         UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
@@ -372,7 +376,7 @@ fn test_prove_user_asset_tree() {
     };
 
     user_asset_tree
-        .insert_assets(merge_key, user_address, vec![asset1, asset2])
+        .insert_assets(merge_key, vec![asset1, asset2])
         .unwrap();
 
     // let proof = deposit_tree.prove_asset_root(&user_address).unwrap();
@@ -394,7 +398,7 @@ fn test_user_asset_tree_by_plonky2() {
         merkle_tree::tree::get_merkle_root,
         sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
         transaction::{
-            asset::{Asset, TokenKind, VariableIndex},
+            asset::{ContributedAsset, TokenKind, VariableIndex},
             tree::user_asset::UserAssetTree,
         },
         zkdsa::account::{private_key_to_account, Address},
@@ -409,21 +413,6 @@ fn test_user_asset_tree_by_plonky2() {
     const LOG_MAX_N_CONTRACTS: usize = 3;
     const LOG_MAX_N_VARIABLES: usize = 3;
 
-    let asset1 = Asset {
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 2053,
-    };
-    let asset2 = Asset {
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 1111,
-    };
-
     let private_key = HashOut {
         elements: [
             F::from_canonical_u64(15657143458229430356),
@@ -434,6 +423,23 @@ fn test_user_asset_tree_by_plonky2() {
     };
     let user_account = private_key_to_account(private_key);
     let user_address = user_account.address;
+
+    let asset1 = ContributedAsset {
+        receiver_address: user_address,
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 2053,
+    };
+    let asset2 = ContributedAsset {
+        receiver_address: user_address,
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 1111,
+    };
 
     let mut user_asset_tree =
         UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
@@ -449,7 +455,7 @@ fn test_user_asset_tree_by_plonky2() {
 
     // user asset tree に deposit を merge する.
     user_asset_tree
-        .insert_assets(deposit_merge_key, user_address, vec![asset1, asset2])
+        .insert_assets(deposit_merge_key, vec![asset1, asset2])
         .unwrap();
 
     let merge_inclusion_proof = user_asset_tree

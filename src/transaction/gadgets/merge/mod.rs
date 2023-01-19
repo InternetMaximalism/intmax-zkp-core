@@ -27,7 +27,6 @@ use crate::{
     transaction::{
         block_header::{get_block_hash, BlockHeader},
         gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
-        tree::user_asset::UserAssetTree,
     },
 };
 
@@ -552,7 +551,7 @@ fn test_two_tree_compatibility() {
     use crate::{
         sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
         transaction::{
-            asset::{Asset, TokenKind, VariableIndex},
+            asset::{ContributedAsset, TokenKind, VariableIndex},
             tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
         },
         zkdsa::account::{private_key_to_account, Address},
@@ -570,21 +569,6 @@ fn test_two_tree_compatibility() {
     const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
     const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
 
-    let asset1 = Asset {
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 2053,
-    };
-    let asset2 = Asset {
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 1111,
-    };
-
     let private_key = HashOut {
         elements: [
             F::from_canonical_u64(15657143458229430356),
@@ -596,14 +580,31 @@ fn test_two_tree_compatibility() {
     let user_account = private_key_to_account(private_key);
     let user_address = user_account.address;
 
+    let asset1 = ContributedAsset {
+        receiver_address: user_address,
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 2053,
+    };
+    let asset2 = ContributedAsset {
+        receiver_address: user_address,
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 1111,
+    };
+
     let mut user_asset_tree =
         UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
 
     let mut deposit_tree =
         TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
 
-    deposit_tree.insert(user_address, asset1).unwrap();
-    deposit_tree.insert(user_address, asset2).unwrap();
+    deposit_tree.insert(asset1).unwrap();
+    deposit_tree.insert(asset2).unwrap();
 
     let diff_tree_inclusion_value2 = deposit_tree.get_asset_root(&user_address).unwrap();
 
@@ -617,7 +618,7 @@ fn test_two_tree_compatibility() {
     };
 
     user_asset_tree
-        .insert_assets(deposit_merge_key, user_address, vec![asset1, asset2])
+        .insert_assets(deposit_merge_key, vec![asset1, asset2])
         .unwrap();
 
     // let mut user_asset_tree: UserAssetTree<_, _> = user_asset_tree.into();
@@ -647,7 +648,7 @@ fn test_merge_proof_by_plonky2() {
             goldilocks_poseidon::GoldilocksHashOut, proof::SparseMerkleInclusionProof,
         },
         transaction::{
-            asset::{Asset, TokenKind, VariableIndex},
+            asset::{ContributedAsset, TokenKind, VariableIndex},
             block_header::BlockHeader,
             tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
         },
@@ -687,21 +688,6 @@ fn test_merge_proof_by_plonky2() {
     builder.register_public_inputs(&merge_proof_target.new_user_asset_root.elements);
     let data = builder.build::<C>();
 
-    let asset1 = Asset {
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 2053,
-    };
-    let asset2 = Asset {
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 1111,
-    };
-
     let private_key = HashOut {
         elements: [
             F::from_canonical_u64(15657143458229430356),
@@ -713,14 +699,31 @@ fn test_merge_proof_by_plonky2() {
     let user_account = private_key_to_account(private_key);
     let user_address = user_account.address;
 
+    let asset1 = ContributedAsset {
+        receiver_address: user_address,
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 2053,
+    };
+    let asset2 = ContributedAsset {
+        receiver_address: user_address,
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 1111,
+    };
+
     let mut user_asset_tree =
         UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
 
     let mut deposit_tree =
         TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
 
-    deposit_tree.insert(user_address, asset1).unwrap();
-    deposit_tree.insert(user_address, asset2).unwrap();
+    deposit_tree.insert(asset1).unwrap();
+    deposit_tree.insert(asset2).unwrap();
 
     // let deposit_tree: PoseidonSparseMerkleTree<_, _> = deposit_tree.into();
 
@@ -753,7 +756,7 @@ fn test_merge_proof_by_plonky2() {
     let merge_inclusion_old_root = user_asset_tree.get_root().unwrap();
     // user asset tree に deposit を merge する.
     user_asset_tree
-        .insert_assets(deposit_merge_key, user_address, vec![asset1, asset2])
+        .insert_assets(deposit_merge_key, vec![asset1, asset2])
         .unwrap();
 
     // let mut user_asset_tree: UserAssetTree<_, _> = user_asset_tree.into();

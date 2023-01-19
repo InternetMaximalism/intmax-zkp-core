@@ -172,6 +172,15 @@ pub struct Asset<F: RichField> {
     pub amount: u64,
 }
 
+pub fn encode_asset<F: RichField>(asset: &Asset<F>) -> Vec<F> {
+    [
+        asset.kind.contract_address.0.elements.to_vec(),
+        asset.kind.variable_index.to_hash_out().elements.to_vec(),
+        vec![F::from_canonical_u64(asset.amount)],
+    ]
+    .concat()
+}
+
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContributedAsset<F: RichField> {
     #[serde(bound(
@@ -186,6 +195,16 @@ pub struct ContributedAsset<F: RichField> {
     ))]
     pub kind: TokenKind<F>,
     pub amount: u64,
+}
+
+pub fn encode_contributed_asset<F: RichField>(asset: &ContributedAsset<F>) -> Vec<F> {
+    [
+        asset.receiver_address.0.elements.to_vec(),
+        asset.kind.contract_address.0.elements.to_vec(),
+        asset.kind.variable_index.to_hash_out().elements.to_vec(),
+        vec![F::from_canonical_u64(asset.amount)],
+    ]
+    .concat()
 }
 
 impl<F: RichField> FromStr for ContributedAsset<F> {

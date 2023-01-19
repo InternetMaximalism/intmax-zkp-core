@@ -12,52 +12,40 @@ use plonky2::{
 };
 
 use crate::{
-    merkle_tree::sparse_merkle_tree::SparseMerkleTreeMemory,
+    // merkle_tree::sparse_merkle_tree::SparseMerkleTreeMemory,
     poseidon::gadgets::poseidon_two_to_one,
     sparse_merkle_tree::{gadgets::common::conditionally_reverse, tree::KeyLike},
-    transaction::asset::Asset,
+    transaction::asset::{encode_contributed_asset, ContributedAsset},
     zkdsa::{account::Address, gadgets::account::AddressTarget},
 };
 
-use super::asset_mess::{verify_equal_assets, AssetTarget};
-
-pub fn encode_asset<F: RichField>(asset: &Asset<F>) -> Vec<F> {
-    [
-        asset.kind.contract_address.0.elements.to_vec(),
-        asset.kind.variable_index.to_hash_out().elements.to_vec(),
-        vec![F::from_canonical_u64(asset.amount)],
-    ]
-    .concat()
-}
+use super::asset_mess::{verify_equal_assets, ContributedAssetTarget};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PurgeInputProcessProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     siblings: Vec<H::Hash>,
     index: K,
-    old_leaf_data: Asset<F>,
+    old_leaf_data: ContributedAsset<F>,
 }
 
 #[derive(Clone, Debug)]
 pub struct PurgeInputProcessProofTarget {
     siblings: Vec<HashOutTarget>,
     index: Vec<BoolTarget>,
-    old_leaf_data: AssetTarget,
+    old_leaf_data: ContributedAssetTarget,
 }
 
 impl PurgeInputProcessProofTarget {
     pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
+        log_max_n_txs: usize,
         log_max_n_kinds: usize,
     ) -> Self {
-        let siblings = builder.add_virtual_hashes(log_max_n_kinds);
-        let index = (0..log_max_n_kinds)
+        let siblings = builder.add_virtual_hashes(log_max_n_txs + log_max_n_kinds);
+        let index = (0..log_max_n_txs + log_max_n_kinds)
             .map(|_| builder.add_virtual_bool_target_safe())
             .collect::<Vec<_>>();
-        let old_leaf_data = AssetTarget {
-            contract_address: builder.add_virtual_hash(),
-            token_id: builder.add_virtual_hash(),
-            amount: builder.add_virtual_target(),
-        };
+        let old_leaf_data = ContributedAssetTarget::add_virtual_to(builder);
 
         Self {
             siblings,
@@ -75,9 +63,12 @@ impl PurgeInputProcessProofTarget {
         // assert_eq!(w0.old_root, prev_user_asset_root);
         // prev_user_asset_root = w0.new_root;
 
-        let index = witness.index.to_bits();
-        let mut w1_old_root = H::hash_or_noop(&encode_asset(&witness.old_leaf_data));
-        let mut w1_new_root = H::hash_or_noop(&encode_asset(&Asset::default()));
+        let mut index = witness.index.to_bits();
+        index.resize(self.index.len(), false);
+
+        let mut w1_old_root = H::hash_or_noop(&encode_contributed_asset(&witness.old_leaf_data));
+        let mut w1_new_root =
+            H::hash_or_noop(&encode_contributed_asset(&ContributedAsset::default()));
         assert_eq!(index.len(), witness.siblings.len());
         for (lr_bit, sibling) in index.iter().zip(witness.siblings.iter()) {
             if *lr_bit {
@@ -131,6 +122,7 @@ impl PurgeInputProcessProofTarget {
         assert!(witness.old_leaf_data.amount < 1u64 << 56);
 
         // p0_t.set_witness(pw, w0);
+        assert_eq!(self.siblings.len(), witness.siblings.len());
         for (ht, value) in self.siblings.iter().zip(witness.siblings.iter()) {
             pw.set_hash_target(*ht, *value);
         }
@@ -145,30 +137,27 @@ impl PurgeInputProcessProofTarget {
 pub struct PurgeOutputProcessProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     siblings: Vec<H::Hash>,
     index: K,
-    new_leaf_data: Asset<F>,
+    new_leaf_data: ContributedAsset<F>,
 }
 
 #[derive(Clone, Debug)]
 pub struct PurgeOutputProcessProofTarget {
     siblings: Vec<HashOutTarget>,
     index: Vec<BoolTarget>,
-    new_leaf_data: AssetTarget,
+    new_leaf_data: ContributedAssetTarget,
 }
 
 impl PurgeOutputProcessProofTarget {
     pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
+        log_n_recipients: usize,
         log_n_kinds: usize,
     ) -> Self {
-        let siblings = builder.add_virtual_hashes(log_n_kinds);
-        let index = (0..log_n_kinds)
+        let siblings = builder.add_virtual_hashes(log_n_recipients + log_n_kinds);
+        let index = (0..log_n_recipients + log_n_kinds)
             .map(|_| builder.add_virtual_bool_target_safe())
             .collect::<Vec<_>>();
-        let new_leaf_data = AssetTarget {
-            contract_address: builder.add_virtual_hash(),
-            token_id: builder.add_virtual_hash(),
-            amount: builder.add_virtual_target(),
-        };
+        let new_leaf_data = ContributedAssetTarget::add_virtual_to(builder);
 
         Self {
             siblings,
@@ -191,9 +180,12 @@ impl PurgeOutputProcessProofTarget {
         //         || w0.fnc == ProcessMerkleProofRole::ProcessInsert
         // );
 
-        let index = witness.index.to_bits();
-        let mut w1_old_root = H::hash_or_noop(&encode_asset(&Asset::default()));
-        let mut w1_new_root = H::hash_or_noop(&encode_asset(&witness.new_leaf_data));
+        let mut index = witness.index.to_bits();
+        index.resize(self.index.len(), false);
+
+        let mut w1_old_root =
+            H::hash_or_noop(&encode_contributed_asset(&ContributedAsset::default()));
+        let mut w1_new_root = H::hash_or_noop(&encode_contributed_asset(&witness.new_leaf_data));
         assert_eq!(index.len(), witness.siblings.len());
         for (lr_bit, sibling) in index.iter().zip(witness.siblings.iter()) {
             if *lr_bit {
@@ -243,6 +235,7 @@ impl PurgeOutputProcessProofTarget {
         assert!(witness.new_leaf_data.amount < 1u64 << 56);
 
         // p0_t.set_witness(pw, w0);
+        assert_eq!(self.siblings.len(), witness.siblings.len());
         for (ht, value) in self.siblings.iter().zip(witness.siblings.iter()) {
             pw.set_hash_target(*ht, *value);
         }
@@ -296,6 +289,7 @@ impl PurgeTransitionTarget {
             .map(|_| {
                 PurgeInputProcessProofTarget::add_virtual_to::<F, H, D>(
                     builder,
+                    log_max_n_txs,
                     log_max_n_contracts + log_max_n_variables,
                 )
             })
@@ -305,6 +299,7 @@ impl PurgeTransitionTarget {
             .map(|_| {
                 PurgeOutputProcessProofTarget::add_virtual_to::<F, H, D>(
                     builder,
+                    log_n_recipients,
                     log_n_contracts + log_n_variables,
                 )
             })
@@ -356,22 +351,28 @@ impl PurgeTransitionTarget {
         }
         let new_user_asset_root = prev_user_asset_root;
 
-        let default_asset_tree = SparseMerkleTreeMemory::<F, H>::new(
-            self.log_max_n_contracts + self.log_max_n_variables,
-            HashOut::ZERO.elements.to_vec(),
-        );
-        let default_merkle_proof = default_asset_tree.prove(&vec![
-            false;
-            self.log_max_n_contracts
-                + self.log_max_n_variables
-        ]);
-        let default_leaf_data = Asset::default();
+        // let default_asset_tree = SparseMerkleTreeMemory::<F, H>::new(
+        //     self.log_max_n_txs + self.log_max_n_contracts + self.log_max_n_variables,
+        //     HashOut::ZERO.elements.to_vec(),
+        // ); // XXX
+        // let default_merkle_proof = default_asset_tree.prove(&vec![
+        //     false;
+        //     self.log_max_n_txs
+        //         + self.log_max_n_contracts
+        //         + self.log_max_n_variables
+        // ]);
+        let default_leaf_data = ContributedAsset::default();
 
         for input_proof_t in self.input_proofs.iter().skip(input_witness.len()) {
             input_proof_t.set_witness::<F, H, Vec<bool>>(
                 pw,
                 &PurgeInputProcessProof {
-                    siblings: default_merkle_proof.siblings.clone(),
+                    // siblings: default_merkle_proof.siblings.clone(),
+                    siblings: input_proof_t
+                        .siblings
+                        .iter()
+                        .map(|_| HashOut::ZERO)
+                        .collect::<Vec<_>>(),
                     index: input_proof_t
                         .index
                         .iter()
@@ -389,11 +390,28 @@ impl PurgeTransitionTarget {
         }
         let diff_root = prev_diff_root;
 
+        // let default_asset_tree = SparseMerkleTreeMemory::<F, H>::new(
+        //     self.log_n_recipients + self.log_n_contracts + self.log_n_variables,
+        //     HashOut::ZERO.elements.to_vec(),
+        // );
+        // let default_merkle_proof = default_asset_tree.prove(&vec![
+        //     false;
+        //     self.log_n_recipients
+        //         + self.log_n_contracts
+        //         + self.log_n_variables
+        // ]);
+        let default_leaf_data = ContributedAsset::default();
+
         for output_proof_t in self.output_proofs.iter().skip(output_witness.len()) {
             output_proof_t.set_witness::<F, H, Vec<bool>>(
                 pw,
                 &PurgeOutputProcessProof {
-                    siblings: default_merkle_proof.siblings.clone(),
+                    // siblings: default_merkle_proof.siblings.clone(),
+                    siblings: output_proof_t
+                        .siblings
+                        .iter()
+                        .map(|_| HashOut::ZERO)
+                        .collect::<Vec<_>>(),
                     index: output_proof_t
                         .index
                         .iter()
@@ -429,7 +447,7 @@ pub fn verify_user_asset_purge_proof<
         elements: [zero; 4],
     };
 
-    let default_asset_target = AssetTarget::add_constant_default(builder);
+    let default_asset_target = ContributedAssetTarget::constant_default(builder);
     let default_leaf_hash = builder.hash_n_to_hash_no_pad::<H>(default_asset_target.encode());
     assert_eq!(input_proofs_t.len(), output_proofs_t.len());
     let mut input_assets_t = Vec::with_capacity(input_proofs_t.len());
@@ -578,7 +596,7 @@ fn test_purge_proof_by_plonky2() {
             GoldilocksHashOut, NodeDataMemory, PoseidonSparseMerkleTree, RootDataTmp,
         },
         transaction::{
-            asset::{Asset, TokenKind},
+            asset::TokenKind,
             tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
         },
         zkdsa::account::{private_key_to_account, Address},
@@ -616,40 +634,6 @@ fn test_purge_proof_by_plonky2() {
 
     // dbg!(&data.common);
 
-    let merge_key1 = GoldilocksHashOut::from_u128(1);
-    let asset1 = Asset {
-        kind: TokenKind {
-            contract_address: Address(GoldilocksHashOut::from_u128(3).0),
-            variable_index: 8u8.into(),
-        },
-        amount: 2,
-    };
-    let merge_key2 = GoldilocksHashOut::from_u128(12);
-    let asset2 = Asset {
-        kind: TokenKind {
-            contract_address: Address(GoldilocksHashOut::from_u128(4).0),
-            variable_index: 8u8.into(),
-        },
-        amount: 1,
-    };
-
-    let recipient3 = Address(GoldilocksHashOut::from_u128(407).0);
-    let asset3 = Asset {
-        kind: TokenKind {
-            contract_address: Address(GoldilocksHashOut::from_u128(3).0),
-            variable_index: 8u8.into(),
-        },
-        amount: 2,
-    };
-    let recipient4 = Address(GoldilocksHashOut::from_u128(832).0);
-    let asset4 = Asset {
-        kind: TokenKind {
-            contract_address: Address(GoldilocksHashOut::from_u128(4).0),
-            variable_index: 8u8.into(),
-        },
-        amount: 1,
-    };
-
     let private_key = HashOut {
         elements: [
             F::from_canonical_u64(15657143458229430356),
@@ -661,6 +645,42 @@ fn test_purge_proof_by_plonky2() {
     let user_account = private_key_to_account(private_key);
     let user_address = user_account.address;
 
+    let merge_key1 = GoldilocksHashOut::from_u128(1);
+    let asset1 = ContributedAsset {
+        receiver_address: user_address,
+        kind: TokenKind {
+            contract_address: Address(GoldilocksHashOut::from_u128(3).0),
+            variable_index: 8u8.into(),
+        },
+        amount: 2,
+    };
+    let merge_key2 = GoldilocksHashOut::from_u128(12);
+    let asset2 = ContributedAsset {
+        receiver_address: user_address,
+        kind: TokenKind {
+            contract_address: Address(GoldilocksHashOut::from_u128(4).0),
+            variable_index: 8u8.into(),
+        },
+        amount: 1,
+    };
+
+    let asset3 = ContributedAsset {
+        receiver_address: Address(GoldilocksHashOut::from_u128(407).0),
+        kind: TokenKind {
+            contract_address: Address(GoldilocksHashOut::from_u128(3).0),
+            variable_index: 8u8.into(),
+        },
+        amount: 2,
+    };
+    let asset4 = ContributedAsset {
+        receiver_address: Address(GoldilocksHashOut::from_u128(832).0),
+        kind: TokenKind {
+            contract_address: Address(GoldilocksHashOut::from_u128(4).0),
+            variable_index: 8u8.into(),
+        },
+        amount: 1,
+    };
+
     let mut world_state_tree =
         PoseidonSparseMerkleTree::new(NodeDataMemory::default(), RootDataTmp::default());
 
@@ -670,10 +690,10 @@ fn test_purge_proof_by_plonky2() {
         TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
 
     user_asset_tree
-        .insert_assets(*merge_key1, user_address, vec![asset1])
+        .insert_assets(*merge_key1, vec![asset1])
         .unwrap();
     user_asset_tree
-        .insert_assets(*merge_key2, user_address, vec![asset2])
+        .insert_assets(*merge_key2, vec![asset2])
         .unwrap();
 
     world_state_tree
@@ -684,22 +704,27 @@ fn test_purge_proof_by_plonky2() {
         .unwrap();
 
     let old_user_asset_root = user_asset_tree.get_root().unwrap();
-    let old_leaf_data1 = user_asset_tree.remove(&merge_key2, &asset2.kind).unwrap();
     let proof1 = user_asset_tree
         .prove_leaf_node(&merge_key2, &user_address, &asset2.kind)
         .unwrap();
-    let old_leaf_data2 = user_asset_tree.remove(&merge_key1, &asset1.kind).unwrap();
+    let old_leaf_data1 = user_asset_tree
+        .remove(*merge_key2, user_address, asset2.kind)
+        .unwrap();
+
     let proof2 = user_asset_tree
         .prove_leaf_node(&merge_key1, &user_address, &asset1.kind)
         .unwrap();
-
-    tx_diff_tree.insert(recipient3, asset3).unwrap();
-    let proof3 = tx_diff_tree
-        .prove_leaf_node(&recipient3, &asset3.kind)
+    let old_leaf_data2 = user_asset_tree
+        .remove(*merge_key1, user_address, asset1.kind)
         .unwrap();
-    tx_diff_tree.insert(recipient4, asset4).unwrap();
+
+    tx_diff_tree.insert(asset3).unwrap();
+    let proof3 = tx_diff_tree
+        .prove_leaf_node(&asset3.receiver_address, &asset3.kind)
+        .unwrap();
+    tx_diff_tree.insert(asset4).unwrap();
     let proof4 = tx_diff_tree
-        .prove_leaf_node(&recipient4, &asset3.kind)
+        .prove_leaf_node(&asset4.receiver_address, &asset4.kind)
         .unwrap();
 
     let input_witness = vec![
@@ -741,7 +766,7 @@ fn test_purge_proof_by_plonky2() {
         user_address,
         &input_witness,
         &output_witness,
-        old_user_asset_root.into(),
+        old_user_asset_root,
         nonce,
     );
 

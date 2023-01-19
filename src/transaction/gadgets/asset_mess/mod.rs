@@ -1,43 +1,47 @@
 use plonky2::{
     field::extension::Extendable,
-    hash::hash_types::{HashOutTarget, RichField},
+    hash::hash_types::{HashOut, HashOutTarget, RichField},
     iop::{target::Target, witness::Witness},
     plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
 };
 
-use crate::transaction::asset::Asset;
+use crate::{transaction::asset::ContributedAsset, zkdsa::gadgets::account::AddressTarget};
 
 use super::utils::is_non_zero;
 
 #[derive(Copy, Clone, Debug)]
-pub struct AssetTarget {
+pub struct ContributedAssetTarget {
+    pub recipient: AddressTarget,
     pub contract_address: HashOutTarget,
     pub token_id: HashOutTarget,
     pub amount: Target,
 }
 
-impl AssetTarget {
+impl ContributedAssetTarget {
     pub fn add_virtual_to<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
         Self {
+            recipient: AddressTarget::add_virtual_to(builder),
             contract_address: builder.add_virtual_hash(),
             token_id: builder.add_virtual_hash(),
             amount: builder.add_virtual_target(),
         }
     }
 
-    pub fn add_constant_default<F: RichField + Extendable<D>, const D: usize>(
+    pub fn constant_default<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
         Self {
-            contract_address: builder.add_virtual_hash(),
-            token_id: builder.add_virtual_hash(),
-            amount: builder.add_virtual_target(),
+            recipient: AddressTarget::constant_default(builder),
+            contract_address: builder.constant_hash(HashOut::ZERO),
+            token_id: builder.constant_hash(HashOut::ZERO),
+            amount: builder.constant(F::ZERO),
         }
     }
 
-    pub fn set_witness<F: RichField>(&self, pw: &mut impl Witness<F>, value: Asset<F>) {
+    pub fn set_witness<F: RichField>(&self, pw: &mut impl Witness<F>, value: ContributedAsset<F>) {
+        self.recipient.set_witness(pw, value.receiver_address);
         pw.set_hash_target(
             self.contract_address,
             value.kind.contract_address.to_hash_out(),
@@ -48,6 +52,7 @@ impl AssetTarget {
 
     pub fn encode(&self) -> Vec<Target> {
         [
+            self.recipient.0.elements.to_vec(),
             self.contract_address.elements.to_vec(),
             self.token_id.elements.to_vec(),
             vec![self.amount],
@@ -62,7 +67,7 @@ impl AssetTarget {
 ///  例えば, 1 種類の NFT を mess にすると, その asset_id がそのまま現れるため容易に推測される.
 pub fn assets_into_mess<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
-    assets_t: &[AssetTarget],
+    assets_t: &[ContributedAssetTarget],
 ) -> (HashOutTarget, Target) {
     let mut total_amount_t = builder.zero();
     let mut mess_t = HashOutTarget {
@@ -126,8 +131,8 @@ pub fn calc_asset_id<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const 
 ///  一定値 (例えば 2^56) 未満であることを事前に検証すると, より安全である.
 pub fn verify_equal_assets<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
-    input_assets_t: &[AssetTarget],
-    output_assets_t: &[AssetTarget],
+    input_assets_t: &[ContributedAssetTarget],
+    output_assets_t: &[ContributedAssetTarget],
 ) {
     let (input_mess_t, total_inputs_t) = assets_into_mess::<F, H, D>(builder, input_assets_t);
     let (output_mess_t, total_outputs_t) = assets_into_mess::<F, H, D>(builder, output_assets_t);

@@ -11,10 +11,7 @@ use crate::{
         tree::MerkleProof,
     },
     sparse_merkle_tree::goldilocks_poseidon::le_bytes_to_bits,
-    transaction::{
-        asset::{Asset, TokenKind},
-        gadgets::purge::encode_asset,
-    },
+    transaction::asset::{encode_contributed_asset, ContributedAsset, TokenKind},
     zkdsa::account::Address,
 };
 
@@ -115,8 +112,8 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
         }
     }
 
-    pub fn insert(&mut self, recipient: Address<F>, asset: Asset<F>) -> anyhow::Result<()> {
-        let mut recipient_path = le_bytes_to_bits(&recipient.to_bytes());
+    pub fn insert(&mut self, asset: ContributedAsset<F>) -> anyhow::Result<()> {
+        let mut recipient_path = le_bytes_to_bits(&asset.receiver_address.to_bytes());
         recipient_path.resize(self.log_n_recipients, false);
         recipient_path.reverse(); // BE
 
@@ -142,7 +139,7 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
         let mut path = recipient_path;
         path.append(&mut kind_path);
 
-        let leaf_data = [recipient.elements.to_vec(), encode_asset(&asset)].concat();
+        let leaf_data = encode_contributed_asset(&asset);
         debug_assert_eq!(leaf_data.len(), 13);
         self.nodes
             .insert(path.clone(), Node::Leaf { data: leaf_data }); // path: BE
@@ -266,7 +263,7 @@ fn test_prove_tx_diff_tree() {
         merkle_tree::tree::get_merkle_root,
         sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
         transaction::{
-            asset::{Asset, TokenKind, VariableIndex},
+            asset::{TokenKind, VariableIndex},
             tree::tx_diff::TxDiffTree,
         },
         zkdsa::account::{private_key_to_account, Address},
@@ -281,21 +278,6 @@ fn test_prove_tx_diff_tree() {
     const LOG_N_CONTRACTS: usize = 3;
     const LOG_N_VARIABLES: usize = 3;
 
-    let asset1 = Asset {
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 2053,
-    };
-    let asset2 = Asset {
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 1111,
-    };
-
     let private_key = HashOut {
         elements: [
             F::from_canonical_u64(15657143458229430356),
@@ -307,11 +289,28 @@ fn test_prove_tx_diff_tree() {
     let user_account = private_key_to_account(private_key);
     let user_address = user_account.address;
 
+    let asset1 = ContributedAsset {
+        receiver_address: user_address,
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 2053,
+    };
+    let asset2 = ContributedAsset {
+        receiver_address: user_address,
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 1111,
+    };
+
     let mut deposit_tree =
         TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
 
-    deposit_tree.insert(user_address, asset1).unwrap();
-    deposit_tree.insert(user_address, asset2).unwrap();
+    deposit_tree.insert(asset1).unwrap();
+    deposit_tree.insert(asset2).unwrap();
 
     // let proof = deposit_tree.prove_asset_root(&user_address).unwrap();
     let proof = deposit_tree
@@ -333,7 +332,7 @@ fn test_tx_diff_tree_by_plonky2() {
         merkle_tree::tree::{get_merkle_proof, get_merkle_root},
         sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
         transaction::{
-            asset::{Asset, TokenKind, VariableIndex},
+            asset::{TokenKind, VariableIndex},
             tree::tx_diff::TxDiffTree,
         },
         zkdsa::account::{private_key_to_account, Address},
@@ -351,21 +350,6 @@ fn test_tx_diff_tree_by_plonky2() {
     const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
     const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
 
-    let asset1 = Asset {
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 2053,
-    };
-    let asset2 = Asset {
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 1111,
-    };
-
     let private_key = HashOut {
         elements: [
             F::from_canonical_u64(15657143458229430356),
@@ -377,11 +361,28 @@ fn test_tx_diff_tree_by_plonky2() {
     let user_account = private_key_to_account(private_key);
     let user_address = user_account.address;
 
+    let asset1 = ContributedAsset {
+        receiver_address: user_address,
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 2053,
+    };
+    let asset2 = ContributedAsset {
+        receiver_address: user_address,
+        kind: TokenKind {
+            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+        },
+        amount: 1111,
+    };
+
     let mut deposit_tree =
         TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
 
-    deposit_tree.insert(user_address, asset1).unwrap();
-    deposit_tree.insert(user_address, asset2).unwrap();
+    deposit_tree.insert(asset1).unwrap();
+    deposit_tree.insert(asset2).unwrap();
 
     // let deposit_tree: PoseidonSparseMerkleTree<_, _> = deposit_tree.into();
 

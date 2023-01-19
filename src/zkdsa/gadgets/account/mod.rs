@@ -1,6 +1,6 @@
 use plonky2::{
     field::{extension::Extendable, types::Field},
-    hash::hash_types::{HashOutTarget, RichField},
+    hash::hash_types::{HashOut, HashOutTarget, RichField},
     iop::{target::Target, witness::Witness},
     plonk::circuit_builder::CircuitBuilder,
 };
@@ -16,6 +16,14 @@ impl AddressTarget {
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
         let target = builder.add_virtual_hash();
+
+        Self(target)
+    }
+
+    pub fn constant_default<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+    ) -> Self {
+        let target = builder.constant_hash(HashOut::ZERO);
 
         Self(target)
     }

@@ -167,28 +167,28 @@ impl<F: RichField, H: Hasher<F>> UserAssetTree<F, H> {
     ) -> anyhow::Result<ContributedAsset<F>> {
         let mut merge_key_path = merge_key.to_bits();
         merge_key_path.resize(self.log_max_n_txs, false);
+        merge_key_path.reverse();
 
         let path = self
             .nodes
             .iter()
             .find(|v| {
                 if let (node_path, Node::Leaf { data }) = v {
-                    // node_path.starts_with(&merge_key_path) &&
-                    user_address.elements == data[0..4]
+                    node_path.starts_with(&merge_key_path)
+                        && user_address.elements == data[0..4]
                         && token_kind.contract_address.to_hash_out().elements == data[4..8]
                         && token_kind.variable_index.to_hash_out().elements == data[8..12]
                 } else {
                     false
                 }
             })
-            .unwrap()
+            .expect("an empty leaf node was found")
             .0
             .clone();
-        let default_leaf_data = vec![F::ZERO; 16];
         let old_leaf_node = self.nodes.insert(
             path.clone(),
             Node::Leaf {
-                data: default_leaf_data.clone(),
+                data: self.zero.clone(),
             },
         );
 
@@ -200,13 +200,13 @@ impl<F: RichField, H: Hasher<F>> UserAssetTree<F, H> {
         {
             old_leaf_data
         } else if old_leaf_node.is_none() {
-            default_leaf_data
+            self.zero.clone()
         } else {
             anyhow::bail!("found unexpected inner node");
         };
 
         Ok(ContributedAsset {
-            receiver_address: user_address,
+            receiver_address: Address(HashOut::from_partial(&old_leaf_data[0..4])),
             kind: TokenKind {
                 contract_address: Address(HashOut::from_partial(&old_leaf_data[4..8])),
                 variable_index: VariableIndex::from_hash_out(HashOut::from_partial(
@@ -271,7 +271,6 @@ impl<F: RichField, H: Hasher<F>> UserAssetTree<F, H> {
             .unwrap()
             .0
             .clone();
-        dbg!(&path);
 
         assert_eq!(path.len(), self.log_max_n_txs + self.log_max_n_kinds);
 

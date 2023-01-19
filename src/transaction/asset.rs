@@ -172,6 +172,12 @@ pub struct Asset<F: RichField> {
     pub amount: u64,
 }
 
+impl<F: RichField> Asset<F> {
+    pub fn encode(&self) -> Vec<F> {
+        encode_asset(self)
+    }
+}
+
 pub fn encode_asset<F: RichField>(asset: &Asset<F>) -> Vec<F> {
     [
         asset.kind.contract_address.0.elements.to_vec(),
@@ -195,6 +201,12 @@ pub struct ContributedAsset<F: RichField> {
     ))]
     pub kind: TokenKind<F>,
     pub amount: u64,
+}
+
+impl<F: RichField> ContributedAsset<F> {
+    pub fn encode(&self) -> Vec<F> {
+        encode_contributed_asset(self)
+    }
 }
 
 pub fn encode_contributed_asset<F: RichField>(asset: &ContributedAsset<F>) -> Vec<F> {

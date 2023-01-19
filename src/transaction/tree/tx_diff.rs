@@ -196,7 +196,6 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
             .unwrap()
             .0
             .to_vec();
-        dbg!(&path);
 
         assert_eq!(path.len(), self.log_n_recipients + self.log_n_kinds);
 

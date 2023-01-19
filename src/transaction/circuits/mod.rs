@@ -121,11 +121,9 @@ where
         PurgeTransitionTarget::add_virtual_to::<F, C::Hasher, D>(
             &mut builder,
             rollup_constants.log_max_n_txs,
-            rollup_constants.log_max_n_contracts,
-            rollup_constants.log_max_n_variables,
+            rollup_constants.log_max_n_contracts + rollup_constants.log_max_n_variables,
             rollup_constants.log_n_recipients,
-            rollup_constants.log_n_contracts,
-            rollup_constants.log_n_variables,
+            rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
             rollup_constants.n_diffs,
         );
     builder.connect_hashes(

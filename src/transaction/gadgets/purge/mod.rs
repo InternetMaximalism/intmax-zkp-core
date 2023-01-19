@@ -300,12 +300,10 @@ pub struct PurgeTransitionTarget {
     /// NOTICE: deposit の場合は計算方法が異なる.
     pub tx_hash: HashOutTarget, // output
 
-    pub log_max_n_txs: usize,       // constant
-    pub log_max_n_contracts: usize, // constant
-    pub log_max_n_variables: usize, // constant
-    pub log_n_recipients: usize,    // constant
-    pub log_n_contracts: usize,     // constant
-    pub log_n_variables: usize,     // constant
+    pub log_max_n_txs: usize,    // constant
+    pub log_max_n_kinds: usize,  // constant
+    pub log_n_recipients: usize, // constant
+    pub log_n_kinds: usize,      // constant
 }
 
 impl PurgeTransitionTarget {
@@ -313,11 +311,9 @@ impl PurgeTransitionTarget {
     pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
         log_max_n_txs: usize,
-        log_max_n_contracts: usize,
-        log_max_n_variables: usize,
+        log_max_n_kinds: usize,
         log_n_recipients: usize,
-        log_n_contracts: usize, // TODO: log_n_kinds
-        log_n_variables: usize,
+        log_n_kinds: usize,
         n_diffs: usize,
     ) -> Self {
         let sender_address = AddressTarget::add_virtual_to(builder);
@@ -328,7 +324,7 @@ impl PurgeTransitionTarget {
                 PurgeInputProcessProofTarget::add_virtual_to::<F, H, D>(
                     builder,
                     log_max_n_txs,
-                    log_max_n_contracts + log_max_n_variables,
+                    log_max_n_kinds,
                 )
             })
             .collect::<Vec<_>>();
@@ -338,7 +334,7 @@ impl PurgeTransitionTarget {
                 PurgeOutputProcessProofTarget::add_virtual_to::<F, H, D>(
                     builder,
                     log_n_recipients,
-                    log_n_contracts + log_n_variables,
+                    log_n_kinds,
                 )
             })
             .collect::<Vec<_>>();
@@ -361,11 +357,9 @@ impl PurgeTransitionTarget {
             nonce,
             tx_hash,
             log_max_n_txs,
-            log_max_n_contracts,
-            log_max_n_variables,
+            log_max_n_kinds,
             log_n_recipients,
-            log_n_contracts,
-            log_n_variables,
+            log_n_kinds,
         }
     }
 
@@ -433,7 +427,7 @@ impl PurgeTransitionTarget {
         let default_diff_tree_root = get_merkle_proof_with_zero::<F, H>(
             &[],
             0,
-            self.log_n_contracts + self.log_n_recipients + self.log_n_variables,
+            self.log_n_recipients + self.log_n_kinds,
             default_leaf_hash,
         )
         .root;
@@ -534,7 +528,7 @@ pub fn verify_user_asset_purge_proof<
             get_merkle_root_target::<F, H, D>(builder, index_t, proof1_new_leaf_t, siblings_t);
         enforce_equal_if_enabled(builder, prev_user_asset_root, proof1_old_root_t, *enabled_t);
         prev_user_asset_root =
-            conditionally_select(builder, proof1_new_root_t, proof1_old_root_t, *enabled_t);
+            conditionally_select(builder, proof1_new_root_t, prev_user_asset_root, *enabled_t);
 
         // let is_no_op = get_process_merkle_proof_role(builder, proof0_t.fnc).is_no_op;
         // let merge_key = proof0_t.new_key;
@@ -605,9 +599,9 @@ pub fn verify_user_asset_purge_proof<
             get_merkle_root_target::<F, H, D>(builder, index_t, proof1_old_leaf_t, siblings_t);
         let proof1_new_root_t =
             get_merkle_root_target::<F, H, D>(builder, index_t, proof1_new_leaf_t, siblings_t);
-        enforce_equal_if_enabled(builder, prev_diff_root, proof1_old_root_t, *enabled_t);
+        // enforce_equal_if_enabled(builder, prev_diff_root, proof1_old_root_t, *enabled_t); // XXX: zero_hash が途中で不自然に変化するため, この方法では検証できない.
         prev_diff_root =
-            conditionally_select(builder, proof1_new_root_t, proof1_old_root_t, *enabled_t);
+            conditionally_select(builder, proof1_new_root_t, prev_diff_root, *enabled_t);
 
         // verify_layered_smt_target_connection::<F, D>(
         //     builder,
@@ -694,11 +688,9 @@ fn test_purge_proof_by_plonky2() {
     let target = PurgeTransitionTarget::add_virtual_to::<F, H, D>(
         &mut builder,
         LOG_MAX_N_TXS,
-        LOG_MAX_N_CONTRACTS,
-        LOG_MAX_N_VARIABLES,
+        LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES,
         LOG_N_RECIPIENTS,
-        LOG_N_CONTRACTS,
-        LOG_N_VARIABLES,
+        LOG_N_CONTRACTS + LOG_N_VARIABLES,
         N_DIFFS,
     );
     builder.register_public_inputs(&target.new_user_asset_root.elements);

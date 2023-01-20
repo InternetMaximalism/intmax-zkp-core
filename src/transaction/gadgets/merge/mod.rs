@@ -63,7 +63,7 @@ pub struct MergeProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     pub nonce: H::Hash,
 }
 
-impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> MergeProof<F, H, Vec<bool>> {
+impl<F: RichField, H: AlgebraicHasher<F>> MergeProof<F, H, HashOut<F>> {
     pub fn new(
         log_max_n_txs: usize,
         log_n_txs: usize,
@@ -90,7 +90,7 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> MergeProof<F, H, Vec<bool>> 
         let default_merge_inclusion_proof =
             get_merkle_proof_with_zero::<F, H>(&[], 0, log_max_n_txs, zero);
         let default_merge_process_proof = MerkleProcessProof {
-            index: vec![false; log_max_n_txs],
+            index: HashOut::ZERO,
             siblings: default_merge_inclusion_proof.siblings,
             old_value: default_merge_inclusion_proof.value,
             new_value: default_merge_inclusion_proof.value,
@@ -177,10 +177,10 @@ impl MergeProofTarget {
         proof
     }
 
-    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>, K: KeyLike>(
+    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>>(
         &self,
         pw: &mut impl Witness<F>,
-        witness: &MergeProof<F, H, K>,
+        witness: &MergeProof<F, H, HashOut<F>>,
     ) {
         let old_value_is_zero = witness.merge_process_proof.old_value == HashOut::ZERO;
         let new_value_is_zero = witness.merge_process_proof.new_value == HashOut::ZERO;
@@ -229,9 +229,9 @@ impl MergeProofTarget {
             tx_hash
         };
 
-        // if is_not_no_op {
-        //     assert_eq!(witness.merge_process_proof.index, merge_key);
-        // } // XXX
+        if !is_no_op {
+            assert_eq!(witness.merge_process_proof.index, merge_key);
+        } // XXX
         assert_eq!(witness.merge_process_proof.old_value, Default::default());
         let asset_root = witness.diff_tree_inclusion_proof.value2;
         // let asset_root_with_merge_key = H::two_to_one(asset_root, merge_key);
@@ -391,15 +391,29 @@ pub fn verify_user_asset_merge_proof<
         conditionally_select(builder, purge_merge_key, deposit_merge_key, is_not_deposit)
     };
 
-    // let mut merge_process_proof_index = builder.to_le(merge_key.elements[0]);
-    // merge_process_proof_index.resize(log_max_n_txs, false);
-    // let merge_process_proof_index = builder.le_sum(merge_process_proof_index);
-    // enforce_equal_if_enabled(
-    //     builder,
-    //     merge_process_proof.index,
-    //     merge_process_proof_index,
-    //     is_not_no_op,
-    // ); // XXX
+    // merge_key を用いて user asset tree を更新していることを確認.
+    let merge_process_proof_index = merge_key
+        .elements
+        .into_iter()
+        .flat_map(|e| builder.split_le(e, 64))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        merge_process_proof_index.len(),
+        merge_process_proof.1.index.len()
+    );
+    for (a, b) in merge_process_proof
+        .1
+        .index
+        .iter()
+        .zip(merge_process_proof_index.iter())
+    {
+        enforce_equal_if_enabled(
+            builder,
+            HashOutTarget::from_partial(&[a.target], zero),
+            HashOutTarget::from_partial(&[b.target], zero),
+            is_not_no_op,
+        ); // XXX
+    }
 
     let asset_root = diff_tree_inclusion_proof.2.value;
     // let asset_root_with_merge_key = poseidon_two_to_one::<F, H, D>(builder, asset_root, merge_key);
@@ -468,10 +482,10 @@ impl MergeTransitionTarget {
     }
 
     /// Returns new_user_asset_root
-    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>, K: KeyLike>(
+    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>>(
         &self,
         pw: &mut impl Witness<F>,
-        proofs: &[MergeProof<F, H, K>],
+        proofs: &[MergeProof<F, H, HashOut<F>>],
         old_user_asset_root: HashOut<F>,
     ) -> HashOut<F> {
         pw.set_hash_target(self.old_user_asset_root, old_user_asset_root);
@@ -481,7 +495,7 @@ impl MergeTransitionTarget {
         for (target, witness) in self.proofs.iter().zip(proofs.iter()) {
             assert_eq!(witness.merge_process_proof.old_root, new_user_asset_root);
 
-            target.set_witness::<F, H, _>(pw, witness);
+            target.set_witness::<F, H>(pw, witness);
 
             new_user_asset_root = witness.merge_process_proof.new_root
         }
@@ -493,7 +507,7 @@ impl MergeTransitionTarget {
             self.log_n_kinds,
         );
         for target in self.proofs.iter().skip(proofs.len()) {
-            target.set_witness::<F, H, Vec<bool>>(pw, &default_merge_witness);
+            target.set_witness::<F, H>(pw, &default_merge_witness);
         }
 
         new_user_asset_root
@@ -770,8 +784,8 @@ fn test_merge_proof_by_plonky2() {
     let merge_inclusion_proof = user_asset_tree
         .prove_asset_root(&deposit_merge_key)
         .unwrap();
-    let merge_process_proof = MerkleProcessProof::<F, H, Vec<bool>> {
-        index: merge_inclusion_proof.index,
+    let merge_process_proof = MerkleProcessProof::<F, H, HashOut<F>> {
+        index: deposit_merge_key,
         siblings: merge_inclusion_proof.siblings,
         old_value: HashOut::ZERO,
         new_value: asset_root,
@@ -814,7 +828,7 @@ fn test_merge_proof_by_plonky2() {
 
     let mut pw = PartialWitness::new();
 
-    merge_proof_target.set_witness::<F, H, Vec<bool>>(&mut pw, &[], default_hash);
+    merge_proof_target.set_witness::<F, H>(&mut pw, &[], default_hash);
 
     println!("start proving: default proof");
     let start = Instant::now();

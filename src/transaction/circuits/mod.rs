@@ -19,7 +19,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::RollupConstants,
-    merkle_tree::sparse_merkle_tree::MerklePath,
     poseidon::gadgets::poseidon_two_to_one,
     sparse_merkle_tree::{
         gadgets::process::process_smt::SmtProcessProof, goldilocks_poseidon::WrappedHashOut,
@@ -60,17 +59,15 @@ impl MergeAndPurgeTransitionTarget {
         &self,
         pw: &mut impl Witness<F>,
         sender_address: Address<F>,
-        merge_witnesses: &[MergeProof<F, H, Vec<bool>>],
-        purge_input_witnesses: &[PurgeInputProcessProof<F, H, H::Hash>],
-        purge_output_witnesses: &[PurgeOutputProcessProof<F, H, H::Hash>],
+        merge_witnesses: &[MergeProof<F, H, HashOut<F>>],
+        purge_input_witnesses: &[PurgeInputProcessProof<F, H, HashOut<F>>],
+        purge_output_witnesses: &[PurgeOutputProcessProof<F, H, HashOut<F>>],
         nonce: HashOut<F>,
         old_user_asset_root: HashOut<F>,
     ) -> MergeAndPurgeTransitionPublicInputs<F> {
-        let middle_user_asset_root = self.merge_proof_target.set_witness::<F, H, Vec<bool>>(
-            pw,
-            merge_witnesses,
-            old_user_asset_root,
-        );
+        let middle_user_asset_root =
+            self.merge_proof_target
+                .set_witness::<F, H>(pw, merge_witnesses, old_user_asset_root);
         let (new_user_asset_root, diff_root, tx_hash) =
             self.purge_proof_target.set_witness::<F, H, H::Hash>(
                 pw,
@@ -467,7 +464,7 @@ where
     pub fn set_witness_and_prove(
         &self,
         sender_address: Address<F>,
-        merge_witnesses: &[MergeProof<F, C::Hasher, MerklePath>],
+        merge_witnesses: &[MergeProof<F, C::Hasher, HashOut<F>>],
         purge_input_witnesses: &[PurgeInputProcessProof<F, C::Hasher, HashOut<F>>],
         purge_output_witnesses: &[PurgeOutputProcessProof<F, C::Hasher, HashOut<F>>],
         nonce: HashOut<F>,
@@ -505,7 +502,7 @@ pub fn prove_user_transaction<
 >(
     rollup_constants: RollupConstants,
     sender_address: Address<F>,
-    merge_witnesses: &[MergeProof<F, C::Hasher, MerklePath>],
+    merge_witnesses: &[MergeProof<F, C::Hasher, HashOut<F>>],
     purge_input_witnesses: &[PurgeInputProcessProof<F, C::Hasher, HashOut<F>>],
     purge_output_witnesses: &[PurgeOutputProcessProof<F, C::Hasher, HashOut<F>>],
     nonce: HashOut<F>,
@@ -517,6 +514,10 @@ where
     // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
     let config = CircuitConfig::standard_recursion_config();
     let merge_and_purge_circuit = make_user_proof_circuit::<F, C, D>(config, rollup_constants);
+    println!(
+        "degree_bits: {}",
+        merge_and_purge_circuit.data.common.degree_bits()
+    );
 
     let mut pw = PartialWitness::new();
     let _public_inputs = merge_and_purge_circuit.targets.set_witness::<F, C::Hasher>(
@@ -529,9 +530,13 @@ where
         old_user_asset_root,
     );
 
+    println!("start proving");
+    let start = std::time::Instant::now();
     let user_tx_proof = merge_and_purge_circuit
         .prove(pw)
         .map_err(|err| anyhow::anyhow!("fail to prove user transaction: {}", err))?;
+    let end = start.elapsed();
+    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
     Ok(user_tx_proof)
 }
@@ -540,23 +545,37 @@ where
 fn test_prove_user_transaction() {
     use plonky2::plonk::config::PoseidonGoldilocksConfig;
 
+    const LOG_MAX_N_USERS: usize = 16;
+    const LOG_MAX_N_TXS: usize = 24;
+    const LOG_MAX_N_CONTRACTS: usize = LOG_MAX_N_USERS;
+    const LOG_MAX_N_VARIABLES: usize = 8;
+    const LOG_N_TXS: usize = 4;
+    const LOG_N_RECIPIENTS: usize = LOG_MAX_N_USERS;
+    const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
+    const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
+    const N_REGISTRATIONS: usize = 16;
+    const N_DEPOSITS: usize = 16;
+    const N_MERGES: usize = 16;
+    const N_DIFFS: usize = 16;
+    const N_BLOCKS: usize = 4;
+
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = <C as GenericConfig<D>>::F;
     const ROLLUP_CONSTANTS: RollupConstants = RollupConstants {
-        log_max_n_users: 3,
-        log_max_n_txs: 3,
-        log_max_n_contracts: 3,
-        log_max_n_variables: 3,
-        log_n_txs: 2,
-        log_n_recipients: 3,
-        log_n_contracts: 3,
-        log_n_variables: 3,
-        n_registrations: 2,
-        n_diffs: 2,
-        n_merges: 2,
-        n_deposits: 2,
-        n_blocks: 2,
+        log_max_n_users: LOG_MAX_N_USERS,
+        log_max_n_txs: LOG_MAX_N_TXS,
+        log_max_n_contracts: LOG_MAX_N_CONTRACTS,
+        log_max_n_variables: LOG_MAX_N_VARIABLES,
+        log_n_txs: LOG_N_TXS,
+        log_n_recipients: LOG_N_RECIPIENTS,
+        log_n_contracts: LOG_N_CONTRACTS,
+        log_n_variables: LOG_N_VARIABLES,
+        n_registrations: N_REGISTRATIONS,
+        n_diffs: N_DIFFS,
+        n_merges: N_MERGES,
+        n_deposits: N_DEPOSITS,
+        n_blocks: N_BLOCKS,
     };
 
     let _default_user_transaction_proof = prove_user_transaction::<F, C, D>(

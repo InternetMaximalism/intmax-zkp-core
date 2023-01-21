@@ -13,7 +13,7 @@ use plonky2::{
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut;
+use crate::utils::hash::WrappedHashOut;
 
 pub type SecretKey<F> = HashOut<F>;
 pub type PublicKey<F> = HashOut<F>;
@@ -44,7 +44,7 @@ impl<F: RichField> FromStr for Address<F> {
 
 #[test]
 fn test_fmt_address() {
-    use crate::sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut;
+    use crate::utils::hash::GoldilocksHashOut;
 
     let value = Address(*GoldilocksHashOut::from_u32(1));
     let encoded_value = format!("{}", value);
@@ -104,8 +104,9 @@ impl<'de, F: RichField> Deserialize<'de> for Address<F> {
 
 #[test]
 fn test_serialize_address() {
-    use crate::sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut;
     use plonky2::field::goldilocks_field::GoldilocksField;
+
+    use crate::utils::hash::GoldilocksHashOut;
 
     let value = Address(*GoldilocksHashOut::from_u32(1));
     let encoded_value = serde_json::to_string(&value).unwrap();

@@ -17,7 +17,7 @@ use plonky2::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut;
+use crate::utils::hash::WrappedHashOut;
 
 use super::{account::SecretKey, gadgets::signature::SimpleSignatureTarget};
 

@@ -10,9 +10,6 @@ use plonky2::{
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-#[cfg(feature = "ecdsa")]
-pub mod secp256k1;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Wrapper<T>(pub T);

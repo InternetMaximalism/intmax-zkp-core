@@ -4,10 +4,9 @@ use plonky2::field::{
     types::{Field, PrimeField},
 };
 
-use crate::sparse_merkle_tree::root_data::RootData;
+use crate::{sparse_merkle_tree::root_data::RootData, utils::hash::GoldilocksHashOut};
 
 use super::super::{
-    goldilocks_poseidon::{GoldilocksHashOut, Wrapper},
     layered_layered_tree::LayeredLayeredSparseMerkleTree,
     node_data::NodeData,
     node_hash::NodeHash,
@@ -222,7 +221,7 @@ impl<H: NodeHash<K, V, I>, D: NodeData<K, V, I>, R: RootData<I>> StorageLayout
         let mut index_position = *get_index_position(position, 0);
         while remaining_bytes_length == BigUint::from(0u64) {
             let (value, mut proof) =
-                self.read_bytes16((tx_hash, contract_address, Wrapper(index_position)))?;
+                self.read_bytes16((tx_hash, contract_address, index_position.into()))?;
 
             // まだ読んでいない bytes の長さが 16 未満ならば, その長さだけ result に追加する.
             let mut a = if remaining_bytes_length < BigUint::from(16u64) {

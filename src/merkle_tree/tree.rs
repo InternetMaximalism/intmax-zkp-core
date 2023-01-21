@@ -1,26 +1,42 @@
+use num::Integer;
 use plonky2::{
     hash::hash_types::{HashOut, RichField},
-    plonk::config::{AlgebraicHasher, Hasher},
+    plonk::config::{AlgebraicHasher, GenericHashOut, Hasher},
 };
 use serde::{Deserialize, Serialize};
 
-use crate::sparse_merkle_tree::tree::KeyLike;
+use crate::utils::common::log2_ceil;
 
-pub fn log2_ceil(value: usize) -> u32 {
-    assert!(value != 0, "The first argument must be a positive number.");
+pub trait KeyLike: Clone + Eq + std::fmt::Debug + Default + std::hash::Hash {
+    /// little endian
+    fn to_bits(&self) -> Vec<bool>;
+}
 
-    if value == 1 {
-        return 0;
+pub trait ValueLike: Copy + PartialEq + std::fmt::Debug + Default {}
+
+pub trait HashLike: Copy + PartialEq + std::fmt::Debug + Default {}
+
+pub fn le_bytes_to_bits(bytes: &[u8]) -> Vec<bool> {
+    bytes
+        .iter()
+        .flat_map(|byte| {
+            let mut byte = *byte;
+            let mut res = vec![];
+            for _ in 0..8 {
+                res.push(byte.is_odd());
+                byte >>= 1;
+            }
+            res
+        })
+        .collect::<Vec<_>>()
+}
+
+impl<F: RichField> KeyLike for HashOut<F> {
+    fn to_bits(&self) -> Vec<bool> {
+        let bytes = self.to_bytes();
+
+        le_bytes_to_bits(&bytes)
     }
-
-    let mut log_value = 1;
-    let mut tmp_value = value - 1;
-    while tmp_value > 1 {
-        tmp_value /= 2;
-        log_value += 1;
-    }
-
-    log_value
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -12,21 +12,20 @@ use serde::{Deserialize, Serialize};
 use crate::{
     merkle_tree::{
         gadgets::{get_merkle_root_target, MerkleProofTarget},
-        tree::{get_merkle_proof_with_zero, MerkleProcessProof, MerkleProof},
+        tree::{get_merkle_proof_with_zero, KeyLike, MerkleProcessProof, MerkleProof},
     },
-    poseidon::gadgets::poseidon_two_to_one,
-    sparse_merkle_tree::{
-        gadgets::{
-            common::{
-                conditionally_select, enforce_equal_if_enabled, is_equal_hash_out, logical_and_not,
-            },
-            verify::verify_smt::{SmtInclusionProof, SparseMerkleInclusionProofTarget},
-        },
-        tree::KeyLike,
+    sparse_merkle_tree::gadgets::verify::verify_smt::{
+        SmtInclusionProof, SparseMerkleInclusionProofTarget,
     },
     transaction::{
         block_header::{get_block_hash, BlockHeader},
         gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
+    },
+    utils::gadgets::{
+        common::{
+            conditionally_select, enforce_equal_if_enabled, is_equal_hash_out, logical_and_not,
+        },
+        poseidon::poseidon_two_to_one,
     },
 };
 
@@ -397,10 +396,9 @@ pub fn verify_user_asset_merge_proof<
         .into_iter()
         .flat_map(|e| builder.split_le(e, 64))
         .collect::<Vec<_>>();
-    assert_eq!(
-        merge_process_proof_index.len(),
-        merge_process_proof.1.index.len()
-    );
+
+    // key の長さ が SMT の深さと同じかより長ければ良い.
+    assert!(merge_process_proof_index.len() >= merge_process_proof.1.index.len());
     for (a, b) in merge_process_proof
         .1
         .index
@@ -412,7 +410,7 @@ pub fn verify_user_asset_merge_proof<
             HashOutTarget::from_partial(&[a.target], zero),
             HashOutTarget::from_partial(&[b.target], zero),
             is_not_no_op,
-        ); // XXX
+        ); // TODO: もう少し良い書き方があるかもしれない.
     }
 
     let asset_root = diff_tree_inclusion_proof.2.value;
@@ -563,11 +561,11 @@ fn test_two_tree_compatibility() {
     };
 
     use crate::{
-        sparse_merkle_tree::goldilocks_poseidon::GoldilocksHashOut,
         transaction::{
             asset::{ContributedAsset, TokenKind, VariableIndex},
             tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
         },
+        utils::hash::GoldilocksHashOut,
         zkdsa::account::{private_key_to_account, Address},
     };
 
@@ -658,14 +656,13 @@ fn test_merge_proof_by_plonky2() {
 
     use crate::{
         merkle_tree::tree::get_merkle_proof,
-        sparse_merkle_tree::{
-            goldilocks_poseidon::GoldilocksHashOut, proof::SparseMerkleInclusionProof,
-        },
+        sparse_merkle_tree::proof::SparseMerkleInclusionProof,
         transaction::{
             asset::{ContributedAsset, TokenKind, VariableIndex},
             block_header::BlockHeader,
             tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
         },
+        utils::hash::GoldilocksHashOut,
         zkdsa::account::{private_key_to_account, Address},
     };
 

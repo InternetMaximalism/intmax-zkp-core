@@ -16,8 +16,10 @@ fn test_verify_process_proof_by_plonky2() {
 
     use super::super::{
         gadgets::process::process_smt::SparseMerkleProcessProofTarget,
-        goldilocks_poseidon::{GoldilocksHashOut, PoseidonSparseMerkleTreeMemory},
+        goldilocks_poseidon::PoseidonSparseMerkleTreeMemory,
     };
+
+    use crate::utils::hash::GoldilocksHashOut;
 
     const D: usize = 2; // extension degree
     type C = PoseidonGoldilocksConfig;
@@ -103,12 +105,11 @@ fn test_verify_process_proof2_by_plonky2() {
     use crate::sparse_merkle_tree::{
         gadgets::process::process_smt::SparseMerkleProcessProofTarget,
         goldilocks_poseidon::{
-            GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree,
-            LayeredLayeredPoseidonSparseMerkleTreeMemory, NodeDataMemory,
-            PoseidonSparseMerkleTreeMemory,
+            LayeredLayeredPoseidonSparseMerkleTree, LayeredLayeredPoseidonSparseMerkleTreeMemory,
+            NodeDataMemory, PoseidonSparseMerkleTreeMemory,
         },
     };
-    use crate::zkdsa::account::private_key_to_account;
+    use crate::{utils::hash::GoldilocksHashOut, zkdsa::account::private_key_to_account};
 
     const D: usize = 2; // extension degree
     type C = PoseidonGoldilocksConfig;

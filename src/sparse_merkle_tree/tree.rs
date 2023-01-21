@@ -1,11 +1,11 @@
-use std::{fmt::Debug, hash::Hash};
-
 use super::{
     node_data::{Node, NodeData},
     node_hash::NodeHash,
     proof::{ProcessMerkleProofRole, SparseMerkleInclusionProof, SparseMerkleProcessProof},
     root_data::RootData,
 };
+
+use crate::merkle_tree::tree::{HashLike, KeyLike, ValueLike};
 
 #[derive(Debug)]
 pub struct SparseMerkleTree<
@@ -52,15 +52,6 @@ impl<
         Self::new(Default::default(), Default::default())
     }
 }
-
-pub trait KeyLike: Clone + Eq + Debug + Default + Hash {
-    /// little endian
-    fn to_bits(&self) -> Vec<bool>;
-}
-
-pub trait ValueLike: Copy + PartialEq + Debug + Default {}
-
-pub trait HashLike: Copy + PartialEq + Debug + Default {}
 
 impl<
         K: KeyLike,

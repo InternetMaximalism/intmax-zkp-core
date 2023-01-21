@@ -3,15 +3,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow::Ok;
-use num::Integer;
 use plonky2::{
     field::goldilocks_field::GoldilocksField,
     hash::{
         hash_types::{HashOut, RichField},
         poseidon::PoseidonHash,
     },
-    plonk::config::{GenericHashOut, Hasher},
+    plonk::config::Hasher,
 };
 
 use super::{
@@ -21,34 +19,13 @@ use super::{
     node_data::{Node, NodeData},
     node_hash::NodeHash,
     root_data::RootData,
-    tree::{HashLike, KeyLike, SparseMerkleTree, ValueLike},
+    tree::SparseMerkleTree,
 };
 
-mod hash;
-pub use self::hash::{GoldilocksHashOut, SerializableHashOut, WrappedHashOut, Wrapper};
-
-pub fn le_bytes_to_bits(bytes: &[u8]) -> Vec<bool> {
-    bytes
-        .iter()
-        .flat_map(|byte| {
-            let mut byte = *byte;
-            let mut res = vec![];
-            for _ in 0..8 {
-                res.push(byte.is_odd());
-                byte >>= 1;
-            }
-            res
-        })
-        .collect::<Vec<_>>()
-}
-
-impl<F: RichField> KeyLike for HashOut<F> {
-    fn to_bits(&self) -> Vec<bool> {
-        let bytes = self.to_bytes();
-
-        le_bytes_to_bits(&bytes)
-    }
-}
+use crate::{
+    merkle_tree::tree::{HashLike, KeyLike, ValueLike},
+    utils::hash::{GoldilocksHashOut, WrappedHashOut, Wrapper},
+};
 
 impl<F: RichField> KeyLike for WrappedHashOut<F> {
     fn to_bits(&self) -> Vec<bool> {

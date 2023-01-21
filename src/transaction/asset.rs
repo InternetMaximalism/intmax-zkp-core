@@ -8,11 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     merkle_tree::tree::MerkleProof,
-    sparse_merkle_tree::{
-        gadgets::verify::verify_smt::SmtInclusionProof, goldilocks_poseidon::WrappedHashOut,
-    },
-    transaction::block_header::BlockHeader,
-    zkdsa::account::Address,
+    sparse_merkle_tree::gadgets::verify::verify_smt::SmtInclusionProof,
+    transaction::block_header::BlockHeader, utils::hash::WrappedHashOut, zkdsa::account::Address,
 };
 
 use super::gadgets::deposit_info::DepositInfo;

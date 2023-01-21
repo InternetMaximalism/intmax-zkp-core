@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     merkle_tree::tree::{get_merkle_proof, get_merkle_proof_with_zero, get_merkle_root},
-    sparse_merkle_tree::goldilocks_poseidon::{SerializableHashOut, WrappedHashOut},
+    utils::hash::{SerializableHashOut, WrappedHashOut},
 };
 
 use super::circuits::MergeAndPurgeTransitionPublicInputs;

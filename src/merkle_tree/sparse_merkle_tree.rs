@@ -6,7 +6,7 @@ use plonky2::{
 
 use std::collections::HashMap;
 
-use crate::sparse_merkle_tree::tree::KeyLike;
+use crate::merkle_tree::tree::KeyLike;
 
 pub type MerklePath = Vec<bool>;
 

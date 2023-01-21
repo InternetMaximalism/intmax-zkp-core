@@ -6,8 +6,8 @@ use plonky2::{
 };
 
 use crate::{
-    poseidon::gadgets::poseidon_two_to_one,
-    sparse_merkle_tree::{gadgets::common::conditionally_reverse, tree::KeyLike},
+    merkle_tree::tree::KeyLike,
+    utils::gadgets::{common::conditionally_reverse, poseidon::poseidon_two_to_one},
 };
 
 use super::tree::get_merkle_root;

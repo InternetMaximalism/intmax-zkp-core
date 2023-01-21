@@ -14,15 +14,14 @@ use plonky2::{
 use crate::{
     merkle_tree::{
         gadgets::get_merkle_root_target,
-        tree::{get_merkle_proof_with_zero, get_merkle_root},
-    },
-    // merkle_tree::sparse_merkle_tree::SparseMerkleTreeMemory,
-    poseidon::gadgets::poseidon_two_to_one,
-    sparse_merkle_tree::{
-        gadgets::common::{conditionally_select, enforce_equal_if_enabled},
-        tree::KeyLike,
+        tree::{get_merkle_proof_with_zero, get_merkle_root, KeyLike},
     },
     transaction::asset::{encode_contributed_asset, ContributedAsset},
+    // merkle_tree::sparse_merkle_tree::SparseMerkleTreeMemory,
+    utils::gadgets::{
+        common::{conditionally_select, enforce_equal_if_enabled},
+        poseidon::poseidon_two_to_one,
+    },
     zkdsa::{account::Address, gadgets::account::AddressTarget},
 };
 
@@ -134,10 +133,8 @@ impl PurgeInputProcessProofTarget {
         //     )
         // });
         // assert_eq!(old_leaf_data.fnc, ProcessMerkleProofRole::ProcessDelete);
-        // assert!(w2.old_value.elements[0].to_canonical_u64() < 1u64 << 56);
-        // assert_eq!(w2.old_value.elements[1], F::ZERO);
-        // assert_eq!(w2.old_value.elements[2], F::ZERO);
-        // assert_eq!(w2.old_value.elements[3], F::ZERO);
+
+        // 取り除いた asset の amount が 2^56 未満の値であること
         assert!(witness.old_leaf_data.amount < 1u64 << 56);
 
         // p0_t.set_witness(pw, w0);
@@ -262,10 +259,8 @@ impl PurgeOutputProcessProofTarget {
         //     )
         // });
         // assert_eq!(w2.fnc, ProcessMerkleProofRole::ProcessInsert);
-        // assert!(w2.old_value.elements[0].to_canonical_u64() < 1u64 << 56);
-        // assert_eq!(w2.old_value.elements[1], F::ZERO);
-        // assert_eq!(w2.old_value.elements[2], F::ZERO);
-        // assert_eq!(w2.old_value.elements[3], F::ZERO);
+
+        // 移動する asset の amount が 2^56 未満の値であること
         assert!(witness.new_leaf_data.amount < 1u64 << 56);
 
         // p0_t.set_witness(pw, w0);
@@ -564,11 +559,7 @@ pub fn verify_user_asset_purge_proof<
         // //     get_process_merkle_proof_role(builder, proof2_t.fnc).is_insert_or_update_op;
         // // builder.connect(is_not_remove_op.target, constant_false.target); // XXX: row 453
 
-        // // proof2_t.old_value (取り除いた asset) が 2^56 未満の値であること
-        // builder.range_check(proof2_t.old_value.elements[0], 56);
-        // builder.connect(proof2_t.old_value.elements[1], zero);
-        // builder.connect(proof2_t.old_value.elements[2], zero);
-        // builder.connect(proof2_t.old_value.elements[3], zero);
+        // 取り除いた asset が 2^56 未満の値であること
         builder.range_check(old_leaf_data_t.amount, 56);
 
         input_assets_t.push(*old_leaf_data_t);
@@ -625,11 +616,7 @@ pub fn verify_user_asset_purge_proof<
         // let is_insert_op = builder.not(proof2_t.fnc[1]);
         // builder.connect(is_insert_op.target, constant_true.target);
 
-        // // proof2_t.new_value が 2^56 未満の値であること
-        // builder.range_check(proof2_t.new_value.elements[0], 56);
-        // builder.connect(proof2_t.new_value.elements[1], zero);
-        // builder.connect(proof2_t.new_value.elements[2], zero);
-        // builder.connect(proof2_t.new_value.elements[3], zero);
+        // 移動する asset の amount が 2^56 未満の値であること
         builder.range_check(new_leaf_data_t.amount, 56);
 
         output_assets_t.push(*new_leaf_data_t);
@@ -661,12 +648,13 @@ fn test_purge_proof_by_plonky2() {
     use crate::{
         merkle_tree::tree::get_merkle_root,
         sparse_merkle_tree::goldilocks_poseidon::{
-            GoldilocksHashOut, NodeDataMemory, PoseidonSparseMerkleTree, RootDataTmp,
+            NodeDataMemory, PoseidonSparseMerkleTree, RootDataTmp,
         },
         transaction::{
             asset::TokenKind,
             tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
         },
+        utils::hash::GoldilocksHashOut,
         zkdsa::account::{private_key_to_account, Address},
     };
 

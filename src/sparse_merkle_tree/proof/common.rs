@@ -1,5 +1,7 @@
 use plonky2::{hash::hash_types::RichField, plonk::config::GenericHashOut};
 
+use crate::utils::common::to_le_bits;
+
 /// `levIns[i] == 1` if its level and all the descendants have a sibling of 0 and
 /// the parent level has a non-zero sibling. Consider that the root level always has
 /// a parent with a non-zero sibling.
@@ -41,45 +43,6 @@ pub(crate) fn smt_lev_ins<I: Default + Eq>(siblings: &[I], enabled: bool) -> Vec
     }
 
     lev_ins
-}
-
-// convert u8 to little endian bits arrary
-pub fn to_le_bits(x: u8) -> Vec<bool> {
-    let mut x = x;
-    let mut r = vec![];
-    while x > 0 {
-        r.push(x & 1 == 1);
-        x >>= 1;
-    }
-
-    r.resize(8, false);
-
-    r
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_to_le() {
-        assert_eq!(
-            to_le_bits(1),
-            vec![true, false, false, false, false, false, false, false]
-        );
-        assert_eq!(
-            to_le_bits(2),
-            vec![false, true, false, false, false, false, false, false]
-        );
-        assert_eq!(
-            to_le_bits(3),
-            vec![true, true, false, false, false, false, false, false]
-        );
-        assert_eq!(
-            to_le_bits(8),
-            vec![false, false, false, true, false, false, false, false]
-        );
-    }
 }
 
 pub fn first_different_bit_index<F: RichField, H: GenericHashOut<F>>(

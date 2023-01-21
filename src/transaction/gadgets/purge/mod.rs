@@ -19,8 +19,8 @@ use crate::{
     transaction::asset::{encode_contributed_asset, ContributedAsset},
     // merkle_tree::sparse_merkle_tree::SparseMerkleTreeMemory,
     utils::gadgets::{
-        common::{conditionally_select, enforce_equal_if_enabled},
-        poseidon::poseidon_two_to_one,
+        hash::poseidon_two_to_one,
+        logic::{conditionally_select, enforce_equal_if_enabled},
     },
     zkdsa::{account::Address, gadgets::account::AddressTarget},
 };

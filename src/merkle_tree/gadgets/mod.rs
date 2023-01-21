@@ -7,7 +7,7 @@ use plonky2::{
 
 use crate::{
     merkle_tree::tree::KeyLike,
-    utils::gadgets::{common::conditionally_reverse, poseidon::poseidon_two_to_one},
+    utils::gadgets::{hash::poseidon_two_to_one, logic::conditionally_reverse},
 };
 
 use super::tree::get_merkle_root;

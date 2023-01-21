@@ -1,2 +1,3 @@
-pub mod common;
-pub mod poseidon;
+pub mod arithmetic;
+pub mod hash;
+pub mod logic;

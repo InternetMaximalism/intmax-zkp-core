@@ -25,7 +25,7 @@ use crate::{
         merge::{MergeProof, MergeTransitionTarget},
         purge::PurgeTransitionTarget,
     },
-    utils::{gadgets::poseidon::poseidon_two_to_one, hash::WrappedHashOut},
+    utils::{gadgets::hash::poseidon_two_to_one, hash::WrappedHashOut},
     zkdsa::account::Address,
 };
 

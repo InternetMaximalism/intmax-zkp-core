@@ -13,9 +13,12 @@ use super::super::super::proof::SparseMerkleProcessProof;
 use super::super::common::{calc_internal_hash, calc_leaf_hash, smt_lev_ins};
 use super::utils::{get_process_merkle_proof_role, ProcessMerkleProofRoleTarget};
 
-use crate::utils::gadgets::common::{
-    conditionally_reverse, conditionally_select, element_wise_add, enforce_equal_if_enabled,
-    logical_and_not, logical_or, logical_xor,
+use crate::utils::gadgets::{
+    arithmetic::element_wise_add,
+    logic::{
+        conditionally_reverse, conditionally_select, enforce_equal_if_enabled, logical_and_not,
+        logical_or, logical_xor,
+    },
 };
 
 pub type SmtProcessProof<F> =

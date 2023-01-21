@@ -12,7 +12,7 @@ pub fn conditionally_select<F: RichField + Extendable<D>, const D: usize>(
     y: HashOutTarget,
     condition: BoolTarget,
 ) -> HashOutTarget {
-    // NOTICE: new_x は使わないので, 最適化される.
+    // NOTICE: new_x は使わないので, 最適化されるはず.
     let (_, output) = conditionally_reverse::<F, D>(builder, x, y, condition);
 
     output
@@ -46,59 +46,6 @@ pub fn conditionally_reverse<F: RichField + Extendable<D>, const D: usize>(
             elements: out_right.try_into().unwrap(),
         },
     )
-}
-
-pub fn element_wise_arithmetic<F: RichField + Extendable<D>, const D: usize>(
-    builder: &mut CircuitBuilder<F, D>,
-    const_0: F,
-    const_1: F,
-    x: HashOutTarget,
-    y: HashOutTarget,
-    addend: HashOutTarget,
-) -> HashOutTarget {
-    let output = x
-        .elements
-        .into_iter()
-        .zip(y.elements.into_iter())
-        .zip(addend.elements.into_iter())
-        .map(|((x_i, y_i), addend_i)| builder.arithmetic(const_0, const_1, x_i, y_i, addend_i))
-        .collect::<Vec<_>>();
-
-    HashOutTarget {
-        elements: output.try_into().unwrap(),
-    }
-}
-
-pub fn element_wise_add<F: RichField + Extendable<D>, const D: usize>(
-    builder: &mut CircuitBuilder<F, D>,
-    x: HashOutTarget,
-    y: HashOutTarget,
-) -> HashOutTarget {
-    let one = builder.one();
-    let element_wise_one = HashOutTarget { elements: [one; 4] };
-    element_wise_arithmetic(builder, F::ONE, F::ONE, x, element_wise_one, y)
-}
-
-pub fn element_wise_sub<F: RichField + Extendable<D>, const D: usize>(
-    builder: &mut CircuitBuilder<F, D>,
-    x: HashOutTarget,
-    y: HashOutTarget,
-) -> HashOutTarget {
-    let one = builder.one();
-    let element_wise_one = HashOutTarget { elements: [one; 4] };
-    element_wise_arithmetic(builder, F::ONE, F::NEG_ONE, x, element_wise_one, y)
-}
-
-pub fn element_wise_mul<F: RichField + Extendable<D>, const D: usize>(
-    builder: &mut CircuitBuilder<F, D>,
-    x: HashOutTarget,
-    y: HashOutTarget,
-) -> HashOutTarget {
-    let zero = builder.zero();
-    let element_wise_zero = HashOutTarget {
-        elements: [zero; 4],
-    };
-    element_wise_arithmetic(builder, F::ONE, F::ONE, x, y, element_wise_zero)
 }
 
 /// x AND NOT(y)
@@ -140,43 +87,6 @@ pub fn logical_nor<F: RichField + Extendable<D>, const D: usize>(
     logical_and_not(builder, not_x, y)
 }
 
-#[test]
-fn test_logical_nor() {
-    use plonky2::{
-        iop::witness::PartialWitness,
-        plonk::{
-            circuit_builder::CircuitBuilder,
-            circuit_data::CircuitConfig,
-            config::{GenericConfig, PoseidonGoldilocksConfig},
-        },
-    };
-
-    const D: usize = 2; // extension degree
-    type C = PoseidonGoldilocksConfig;
-    type F = <C as GenericConfig<D>>::F;
-
-    let config = CircuitConfig::standard_recursion_config();
-    let mut builder = CircuitBuilder::<F, D>::new(config);
-    let constant_true = builder.constant_bool(true);
-    let constant_false = builder.constant_bool(false);
-    let result1 = logical_nor(&mut builder, constant_true, constant_true);
-    builder.connect(result1.target, constant_false.target);
-    let result2 = logical_nor(&mut builder, constant_true, constant_false);
-    builder.connect(result2.target, constant_false.target);
-    let result3 = logical_nor(&mut builder, constant_false, constant_true);
-    builder.connect(result3.target, constant_false.target);
-    let result4 = logical_nor(&mut builder, constant_false, constant_false);
-    builder.connect(result4.target, constant_true.target);
-    let data = builder.build::<C>();
-
-    // dbg!(&data.common);
-
-    let pw = PartialWitness::new();
-    let proof = data.prove(pw).unwrap();
-
-    data.verify(proof).unwrap();
-}
-
 /// x XOR y
 pub fn logical_xor<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
@@ -209,21 +119,6 @@ pub fn is_equal_hash_out<F: RichField + Extendable<D>, const D: usize>(
     output
 }
 
-pub fn count<F: RichField + Extendable<D>, const D: usize>(
-    builder: &mut CircuitBuilder<F, D>,
-    search_element: HashOutTarget,
-    targets: &[HashOutTarget],
-) -> Target {
-    let one = builder.one();
-    let mut counter = builder.zero();
-    for target in targets {
-        let found = is_equal_hash_out(builder, search_element, *target);
-        counter = builder.mul_add(one, found.target, counter)
-    }
-
-    counter
-}
-
 /// if enabled { assert_eq!(left, right) }
 pub fn enforce_equal_if_enabled<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
@@ -248,4 +143,46 @@ pub fn enforce_not_equal_if_enabled<F: RichField + Extendable<D>, const D: usize
     let output = is_equal_hash_out(builder, left, right);
     let a = builder.and(enabled, output);
     builder.connect(a.target, constant_false.target);
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::utils::gadgets::logic::logical_nor;
+
+    #[test]
+    fn test_logical_nor() {
+        use plonky2::{
+            iop::witness::PartialWitness,
+            plonk::{
+                circuit_builder::CircuitBuilder,
+                circuit_data::CircuitConfig,
+                config::{GenericConfig, PoseidonGoldilocksConfig},
+            },
+        };
+
+        const D: usize = 2; // extension degree
+        type C = PoseidonGoldilocksConfig;
+        type F = <C as GenericConfig<D>>::F;
+
+        let config = CircuitConfig::standard_recursion_config();
+        let mut builder = CircuitBuilder::<F, D>::new(config);
+        let constant_true = builder.constant_bool(true);
+        let constant_false = builder.constant_bool(false);
+        let result1 = logical_nor(&mut builder, constant_true, constant_true);
+        builder.connect(result1.target, constant_false.target);
+        let result2 = logical_nor(&mut builder, constant_true, constant_false);
+        builder.connect(result2.target, constant_false.target);
+        let result3 = logical_nor(&mut builder, constant_false, constant_true);
+        builder.connect(result3.target, constant_false.target);
+        let result4 = logical_nor(&mut builder, constant_false, constant_false);
+        builder.connect(result4.target, constant_true.target);
+        let data = builder.build::<C>();
+
+        // dbg!(&data.common);
+
+        let pw = PartialWitness::new();
+        let proof = data.prove(pw).unwrap();
+
+        data.verify(proof).unwrap();
+    }
 }

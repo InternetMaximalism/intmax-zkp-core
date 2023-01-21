@@ -178,8 +178,9 @@ impl ProposalBlockProductionTarget {
 
         let default_tx_hash = MergeAndPurgeTransitionPublicInputs::default().tx_hash;
 
-        let log_n_txs = log2_ceil(n_txs);
-        assert_eq!(2usize.pow(log_n_txs), n_txs);
+        let log_n_txs = log2_strict(n_txs);
+        // let log_n_txs = log2_ceil(n_txs);
+        // assert_eq!(2usize.pow(log_n_txs), n_txs);
         let transactions_digest =
             get_merkle_proof_with_zero(&transaction_hashes, 0, log_n_txs as usize, default_tx_hash)
                 .root;

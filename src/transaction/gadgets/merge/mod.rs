@@ -22,10 +22,10 @@ use crate::{
         gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
     },
     utils::gadgets::{
-        common::{
+        hash::poseidon_two_to_one,
+        logic::{
             conditionally_select, enforce_equal_if_enabled, is_equal_hash_out, logical_and_not,
         },
-        poseidon::poseidon_two_to_one,
     },
 };
 

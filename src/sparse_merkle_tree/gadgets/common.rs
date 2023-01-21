@@ -9,8 +9,8 @@ use plonky2::{
 };
 
 use crate::utils::gadgets::{
-    common::{conditionally_reverse, is_equal_hash_out, logical_and_not},
-    poseidon::poseidon_two_to_one,
+    hash::poseidon_two_to_one,
+    logic::{conditionally_reverse, is_equal_hash_out, logical_and_not},
 };
 
 #[test]

@@ -14,7 +14,7 @@ use plonky2::{
         config::{AlgebraicHasher, GenericConfig, Hasher},
         proof::{Proof, ProofWithPublicInputs},
     },
-    util::log2_ceil,
+    util::log2_strict,
 };
 use serde::{Deserialize, Serialize};
 
@@ -279,8 +279,9 @@ impl<const D: usize> BlockProductionTarget<D> {
             block_headers_proof_siblings,
         );
 
-        let log_n_txs = log2_ceil(n_txs);
-        assert_eq!(2usize.pow(log_n_txs as u32), n_txs);
+        let log_n_txs = log2_strict(n_txs);
+        // let log_n_txs = log2_ceil(n_txs);
+        // assert_eq!(2usize.pow(log_n_txs as u32), n_txs);
         let deposit_digest = get_merkle_proof(&[interior_deposit_digest], 0, log_n_txs).root;
 
         let block_header = BlockHeader {

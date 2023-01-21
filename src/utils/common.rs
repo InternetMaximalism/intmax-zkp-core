@@ -37,19 +37,19 @@ mod tests {
     }
 }
 
-pub fn log2_ceil(value: usize) -> u32 {
-    assert!(value != 0, "The first argument must be a positive number.");
+// pub fn log2_ceil(value: usize) -> u32 {
+//     assert!(value != 0, "The first argument must be a positive number.");
 
-    if value == 1 {
-        return 0;
-    }
+//     if value == 1 {
+//         return 0;
+//     }
 
-    let mut log_value = 1;
-    let mut tmp_value = value - 1;
-    while tmp_value > 1 {
-        tmp_value /= 2;
-        log_value += 1;
-    }
+//     let mut log_value = 1;
+//     let mut tmp_value = value - 1;
+//     while tmp_value > 1 {
+//         tmp_value /= 2;
+//         log_value += 1;
+//     }
 
-    log_value
-}
+//     log_value
+// }

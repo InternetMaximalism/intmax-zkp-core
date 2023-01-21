@@ -2,10 +2,9 @@ use num::Integer;
 use plonky2::{
     hash::hash_types::{HashOut, RichField},
     plonk::config::{AlgebraicHasher, GenericHashOut, Hasher},
+    util::log2_ceil,
 };
 use serde::{Deserialize, Serialize};
-
-use crate::utils::common::log2_ceil;
 
 pub trait KeyLike: Clone + Eq + std::fmt::Debug + Default + std::hash::Hash {
     /// little endian
@@ -77,7 +76,7 @@ pub fn get_merkle_proof_with_zero<F: RichField, H: Hasher<F>>(
     assert!(index < nodes.len());
     assert!(nodes.len() <= 1usize << depth);
     let num_leaves = nodes.len().next_power_of_two();
-    let log_num_leaves = log2_ceil(num_leaves) as usize;
+    let log_num_leaves = log2_ceil(num_leaves);
     let value = nodes[index];
     nodes.resize(num_leaves, zero);
 

@@ -11,7 +11,7 @@ use super::super::super::{
 };
 
 use crate::utils::{
-    gadgets::common::{enforce_equal_if_enabled, is_equal_hash_out, logical_and_not},
+    gadgets::logic::{enforce_equal_if_enabled, is_equal_hash_out, logical_and_not},
     hash::WrappedHashOut,
 };
 

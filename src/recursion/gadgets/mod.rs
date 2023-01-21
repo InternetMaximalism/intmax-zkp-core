@@ -185,10 +185,7 @@ fn test_recursion_simple_signature() {
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-    match circuit_data.verify(proof) {
-        Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
-    }
+    circuit_data.verify(proof).unwrap();
 }
 
 #[test]
@@ -244,8 +241,5 @@ fn test_recursion_default_simple_signature() {
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-    match circuit_data.verify(proof) {
-        Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
-    }
+    circuit_data.verify(proof).unwrap();
 }

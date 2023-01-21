@@ -129,17 +129,6 @@ pub fn logical_or<F: RichField + Extendable<D>, const D: usize>(
     BoolTarget::new_unsafe(builder.add(x_and_not_y.target, y.target))
 }
 
-/// x implies y
-pub fn material_implication<F: RichField + Extendable<D>, const D: usize>(
-    builder: &mut CircuitBuilder<F, D>,
-    x: BoolTarget,
-    y: BoolTarget,
-) -> BoolTarget {
-    let x_and_not_y = logical_and_not(builder, x, y);
-
-    builder.not(x_and_not_y)
-}
-
 /// NOT(x OR y)
 pub fn logical_nor<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
@@ -185,10 +174,7 @@ fn test_logical_nor() {
     let pw = PartialWitness::new();
     let proof = data.prove(pw).unwrap();
 
-    match data.verify(proof) {
-        Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
-    }
+    data.verify(proof).unwrap();
 }
 
 /// x XOR y

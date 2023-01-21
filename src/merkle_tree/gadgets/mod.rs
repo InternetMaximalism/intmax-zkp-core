@@ -160,8 +160,5 @@ fn test_verify_merkle_proof_by_plonky2() {
 
     assert_eq!(proof.public_inputs[0..4], root.elements[0..4]);
 
-    match data.verify(proof) {
-        Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
-    }
+    data.verify(proof).unwrap();
 }

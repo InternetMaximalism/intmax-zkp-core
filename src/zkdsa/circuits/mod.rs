@@ -384,10 +384,7 @@ fn test_verify_simple_signature_by_plonky2() {
 
     assert_eq!(account.public_key, proof.public_inputs.public_key);
 
-    match simple_signature_circuit.verify(proof) {
-        Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
-    }
+    simple_signature_circuit.verify(proof).unwrap();
 }
 
 /// witness を入力にとり、 simple_signature を返す関数

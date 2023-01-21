@@ -402,38 +402,6 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     }
 }
 
-// pub fn parse_merge_and_purge_public_inputs(
-//     public_inputs_t: &[Target],
-// ) -> MergeAndPurgeTransitionPublicInputsTarget {
-//     let old_user_asset_root = HashOutTarget {
-//         elements: public_inputs_t[0..4].try_into().unwrap(),
-//     };
-//     let middle_user_asset_root = HashOutTarget {
-//         elements: public_inputs_t[4..8].try_into().unwrap(),
-//     };
-//     let new_user_asset_root = HashOutTarget {
-//         elements: public_inputs_t[8..12].try_into().unwrap(),
-//     };
-//     let diff_root = HashOutTarget {
-//         elements: public_inputs_t[12..16].try_into().unwrap(),
-//     };
-//     let sender_address = HashOutTarget {
-//         elements: public_inputs_t[16..20].try_into().unwrap(),
-//     };
-//     let tx_hash = HashOutTarget {
-//         elements: public_inputs_t[20..24].try_into().unwrap(),
-//     };
-
-//     MergeAndPurgeTransitionPublicInputsTarget {
-//         sender_address,
-//         old_user_asset_root,
-//         middle_user_asset_root,
-//         new_user_asset_root,
-//         diff_root,
-//         tx_hash,
-//     }
-// }
-
 impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     MergeAndPurgeTransitionCircuit<F, C, D>
 where

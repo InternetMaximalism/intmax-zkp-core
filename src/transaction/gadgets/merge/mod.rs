@@ -818,10 +818,7 @@ fn test_merge_proof_by_plonky2() {
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-    match data.verify(proof) {
-        Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
-    }
+    data.verify(proof).unwrap();
 
     let mut pw = PartialWitness::new();
 
@@ -833,8 +830,5 @@ fn test_merge_proof_by_plonky2() {
     let end = start.elapsed();
     println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-    match data.verify(default_proof) {
-        Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
-    }
+    data.verify(default_proof).unwrap();
 }

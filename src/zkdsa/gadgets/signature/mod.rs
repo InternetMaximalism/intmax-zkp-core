@@ -56,6 +56,8 @@ pub fn verify_simple_signature<
     private_key: HashOutTarget,
     message: HashOutTarget,
 ) -> (HashOutTarget, HashOutTarget) {
+    // private_key を 2 つ並べているのは特に意味はない.
+    // XXX: signature とは異なる hash 関数を用いる方が無難.
     let public_key = poseidon_two_to_one::<F, H, D>(builder, private_key, private_key);
     let signature = poseidon_two_to_one::<F, H, D>(builder, private_key, message);
 
@@ -107,8 +109,5 @@ fn test_verify_simple_signature_by_plonky2() {
 
     // dbg!(&proof.public_inputs);
 
-    match data.verify(proof) {
-        Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
-    }
+    data.verify(proof).unwrap();
 }

@@ -2,6 +2,7 @@
   "recommendations": [
     "rust-lang.rust-analyzer",
     "jscearcy.rust-doc-viewer",
-    "streetsidesoftware.code-spell-checker"
+    "streetsidesoftware.code-spell-checker",
+    "ryanluker.vscode-coverage-gutters"
   ]
 }

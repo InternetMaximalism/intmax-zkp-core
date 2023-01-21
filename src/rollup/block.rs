@@ -2,12 +2,13 @@ use plonky2::hash::hash_types::RichField;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    rollup::{address_list::TransactionSenderWithValidity, gadgets::deposit_block::DepositInfo},
-    sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut,
-    transaction::block_header::BlockHeader,
+    rollup::address_list::TransactionSenderWithValidity,
+    transaction::{block_header::BlockHeader, gadgets::deposit_info::DepositInfo},
+    utils::hash::WrappedHashOut,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(bound = "F: RichField")]
 pub struct BlockInfo<F: RichField> {
     #[serde(bound(
         serialize = "BlockHeader<F>: Serialize",

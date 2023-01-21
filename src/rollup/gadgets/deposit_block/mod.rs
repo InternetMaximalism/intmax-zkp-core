@@ -17,10 +17,11 @@ use crate::{
                 ProcessMerkleProofRoleTarget,
             },
         },
-        goldilocks_poseidon::WrappedHashOut,
         layered_tree::verify_layered_smt_connection,
         proof::ProcessMerkleProofRole,
     },
+    transaction::gadgets::deposit_info::DepositInfo,
+    utils::hash::WrappedHashOut,
     zkdsa::{account::Address, gadgets::account::AddressTarget},
 };
 
@@ -78,7 +79,7 @@ impl DepositBlockProductionTarget {
         &self,
         pw: &mut impl Witness<F>,
         deposit_process_proofs: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
-    ) -> WrappedHashOut<F> {
+    ) -> HashOut<F> {
         let mut prev_interior_deposit_digest = WrappedHashOut::default();
         assert!(deposit_process_proofs.len() <= self.deposit_process_proofs.len());
         for (proof_t, proof) in self
@@ -125,7 +126,7 @@ impl DepositBlockProductionTarget {
             proof_t.2.set_witness(pw, &default_proof);
         }
 
-        interior_deposit_digest
+        *interior_deposit_digest
     }
 }
 
@@ -177,10 +178,7 @@ fn test_deposit_block() {
     use std::time::Instant;
 
     use plonky2::{
-        field::{
-            goldilocks_field::GoldilocksField,
-            types::{Field, Field64},
-        },
+        field::types::{Field, Field64},
         hash::hash_types::HashOut,
         iop::witness::PartialWitness,
         plonk::{
@@ -191,9 +189,8 @@ fn test_deposit_block() {
     };
 
     use crate::{
-        rollup::gadgets::deposit_block::DepositInfo,
         sparse_merkle_tree::goldilocks_poseidon::{
-            GoldilocksHashOut, LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory, RootDataTmp,
+            LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory, RootDataTmp,
         },
         zkdsa::account::{private_key_to_account, Address},
     };
@@ -233,11 +230,11 @@ fn test_deposit_block() {
     builder.register_public_inputs(&deposit_block_target.interior_deposit_digest.elements);
     let circuit_data = builder.build::<C>();
 
-    let deposit_list: Vec<DepositInfo<F>> = vec![DepositInfo {
+    let deposit_list = vec![DepositInfo {
         receiver_address: Address(sender2_address),
-        contract_address: Address(*GoldilocksHashOut::from_u128(1)),
+        contract_address: Address(*WrappedHashOut::from_u128(1)),
         variable_index: 0u8.into(),
-        amount: GoldilocksField::from_noncanonical_u64(1),
+        amount: F::from_noncanonical_u64(1),
     }];
 
     let mut deposit_tree = LayeredLayeredPoseidonSparseMerkleTree::new(

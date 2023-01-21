@@ -27,24 +27,24 @@ use crate::{
     recursion::gadgets::RecursiveProofTarget,
     rollup::gadgets::{
         approval_block::ApprovalBlockProductionTarget,
-        block_headers_tree::calc_block_headers_proof,
-        deposit_block::{
-            DepositBlockProductionTarget, DepositInfo, DepositInfoTarget, VariableIndex,
-        },
+        block_headers_tree::calc_block_headers_proof, deposit_block::DepositBlockProductionTarget,
         proposal_block::ProposalBlockProductionTarget,
     },
-    sparse_merkle_tree::{
-        gadgets::process::process_smt::SmtProcessProof, goldilocks_poseidon::WrappedHashOut,
-    },
+    sparse_merkle_tree::gadgets::process::process_smt::SmtProcessProof,
     transaction::{
+        asset::VariableIndex,
         block_header::{get_block_hash, BlockHeader},
         circuits::{
             make_user_proof_circuit, MergeAndPurgeTransition, MergeAndPurgeTransitionCircuit,
             MergeAndPurgeTransitionProofWithPublicInputs,
             MergeAndPurgeTransitionPublicInputsTarget,
         },
-        gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
+        gadgets::{
+            block_header::{get_block_hash_target, BlockHeaderTarget},
+            deposit_info::{DepositInfo, DepositInfoTarget},
+        },
     },
+    utils::hash::WrappedHashOut,
     zkdsa::{
         account::Address,
         circuits::{
@@ -59,6 +59,8 @@ use super::{
     address_list::TransactionSenderWithValidity,
     gadgets::address_list::TransactionSenderWithValidityTarget,
 };
+
+use crate::utils::hash::SerializableHashOut;
 
 // type C = PoseidonGoldilocksConfig;
 // type H = <C as GenericConfig<D>>::InnerHasher;
@@ -76,7 +78,8 @@ pub struct BlockDetail<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>,
     pub world_state_revert_proofs: Vec<SmtProcessProof<F>>,
     pub received_signature_proofs: Vec<Option<SimpleSignatureProofWithPublicInputs<F, C, D>>>,
     pub latest_account_process_proofs: Vec<SmtProcessProof<F>>,
-    pub block_headers_proof_siblings: Vec<WrappedHashOut<F>>,
+    #[serde(with = "Vec<SerializableHashOut>")]
+    pub block_headers_proof_siblings: Vec<HashOut<F>>,
     pub prev_block_header: BlockHeader<F>,
 }
 
@@ -111,8 +114,7 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
         let prev_block_header = BlockHeader::new(log_num_txs_in_block);
         let prev_block_hash = get_block_hash(&prev_block_header);
         let prev_block_number = prev_block_header.block_number;
-        let mut block_headers: Vec<WrappedHashOut<F>> =
-            vec![WrappedHashOut::ZERO; prev_block_number as usize];
+        let mut block_headers: Vec<HashOut<F>> = vec![HashOut::ZERO; prev_block_number as usize];
         block_headers.push(prev_block_hash.into());
         let block_number = prev_block_number + 1;
         let user_tx_proofs = vec![];
@@ -120,8 +122,12 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
         let world_state_process_proofs = vec![];
         let world_state_revert_proofs = vec![];
         let latest_account_process_proofs = vec![];
-        let block_headers_proof_siblings =
-            get_merkle_proof(&block_headers, prev_block_number as usize, LOG_MAX_N_BLOCKS).siblings;
+        let block_headers_proof_siblings = get_merkle_proof::<F, C::InnerHasher>(
+            &block_headers,
+            prev_block_number as usize,
+            LOG_MAX_N_BLOCKS,
+        )
+        .siblings;
 
         let deposit_process_proofs = vec![];
 
@@ -204,7 +210,7 @@ impl<const D: usize> BlockProductionTarget<D> {
                 &user_transactions,
                 &received_signatures,
                 latest_account_process_proofs,
-                proposed_world_state_digest,
+                proposed_world_state_digest.into(),
                 old_latest_account_root,
             );
 
@@ -261,20 +267,20 @@ impl<const D: usize> BlockProductionTarget<D> {
 
         // `block_number - 2` までの block header で作られた block headers tree の `block_number - 1` 番目の proof
         // この時点では, leaf の値は 0 である.
-        let prev_block_headers_digest = get_merkle_root(
-            prev_block_number as usize,
-            WrappedHashOut::ZERO,
+        let prev_block_headers_digest = get_merkle_root::<_, PoseidonHash, _>(
+            &(prev_block_number as usize),
+            HashOut::ZERO,
             block_headers_proof_siblings,
         );
         assert_eq!(
-            *prev_block_headers_digest,
+            prev_block_headers_digest,
             prev_block_header.block_headers_digest,
         );
         // `block_number - 1` の block hash
         let prev_block_hash = get_block_hash(&prev_block_header);
         // `block_number - 1` までの block header で作られた block headers tree の `block_number - 1` 番目の proof
-        let block_headers_digest = get_merkle_root(
-            prev_block_number as usize,
+        let block_headers_digest = get_merkle_root::<_, PoseidonHash, _>(
+            &(prev_block_number as usize),
             prev_block_hash.into(),
             block_headers_proof_siblings,
         );
@@ -282,7 +288,8 @@ impl<const D: usize> BlockProductionTarget<D> {
         let log_n_txs = log2_strict(n_txs);
         // let log_n_txs = log2_ceil(n_txs);
         // assert_eq!(2usize.pow(log_n_txs as u32), n_txs);
-        let deposit_digest = get_merkle_proof(&[interior_deposit_digest], 0, log_n_txs).root;
+        let deposit_digest =
+            get_merkle_proof::<_, PoseidonHash, _>(&[interior_deposit_digest], 0, log_n_txs).root;
 
         let block_header = BlockHeader {
             block_number,

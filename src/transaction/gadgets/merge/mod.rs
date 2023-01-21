@@ -12,7 +12,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     merkle_tree::{
         gadgets::{get_merkle_root_target, MerkleProofTarget},
-        tree::{get_merkle_proof_with_zero, KeyLike, MerkleProcessProof, MerkleProof},
+        tree::{
+            get_merkle_proof_with_zero, get_merkle_root, KeyLike, MerkleProcessProof, MerkleProof,
+        },
     },
     sparse_merkle_tree::gadgets::verify::verify_smt::{
         SmtInclusionProof, SparseMerkleInclusionProofTarget,
@@ -60,6 +62,95 @@ pub struct MergeProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     /// is_deposit が false のとき, 送信者から nonce の値を教えてもらう必要がある
     #[serde(bound(deserialize = "H::Hash: Deserialize<'de>"))]
     pub nonce: H::Hash,
+}
+
+impl<F: RichField, H: AlgebraicHasher<F>> MergeProof<F, H, HashOut<F>> {
+    pub fn calculate(&self) {
+        let old_value_is_zero = self.merge_process_proof.old_value == HashOut::ZERO;
+        let new_value_is_zero = self.merge_process_proof.new_value == HashOut::ZERO;
+        let is_insert_op = old_value_is_zero && !new_value_is_zero;
+        let is_no_op = old_value_is_zero && new_value_is_zero;
+        // let is_not_no_op = !is_no_op;
+
+        // noop でないならば insert である
+        assert_eq!(!is_no_op, is_insert_op);
+
+        let block_header = &self.diff_tree_inclusion_proof.block_header;
+        let root = if self.is_deposit {
+            block_header.deposit_digest
+        } else {
+            block_header.transactions_digest
+        };
+        if !is_no_op {
+            assert_eq!(root, self.diff_tree_inclusion_proof.root1);
+        }
+
+        // deposit でないとき, latest_account_tree (active_account_tree) に正しい値が入っていることの検証
+        if !is_no_op && !self.is_deposit {
+            let receiving_block_number = block_header.block_number;
+            let confirmed_block_number = self.latest_account_tree_inclusion_proof.value; // 最後に成功した block number
+            assert_eq!(
+                *confirmed_block_number,
+                HashOut::from_partial(&[F::from_canonical_u32(receiving_block_number)]),
+            );
+        }
+
+        // deposit のとき nonce は 0
+        if self.is_deposit {
+            assert_eq!(self.nonce, Default::default());
+        };
+
+        // diff_tree_inclusion_proof.2.root と diff_tree_inclusion_proof.1.value の関係を拘束する
+        let diff_root = self.diff_tree_inclusion_proof.root2;
+        let tx_hash = H::two_to_one(diff_root, self.nonce);
+        assert_eq!(self.diff_tree_inclusion_proof.value1, tx_hash);
+
+        // deposit と purge の場合で merge の計算方法が異なる.
+        let block_hash = get_block_hash(block_header);
+        let merge_key = if self.is_deposit {
+            H::two_to_one(tx_hash, block_hash)
+        } else {
+            tx_hash
+        };
+
+        if !is_no_op {
+            assert_eq!(self.merge_process_proof.index, merge_key);
+        } // XXX
+        assert_eq!(self.merge_process_proof.old_value, Default::default());
+        let asset_root = self.diff_tree_inclusion_proof.value2;
+        // let asset_root_with_merge_key = H::two_to_one(asset_root, merge_key);
+        if !is_no_op {
+            assert_eq!(
+                self.merge_process_proof.new_value,
+                asset_root // asset_root_with_merge_key
+            );
+
+            assert_eq!(
+                block_header.latest_account_digest,
+                *self.latest_account_tree_inclusion_proof.root,
+            );
+        }
+
+        let diff_tree_inclusion_root2 = get_merkle_root::<F, H, Vec<bool>>(
+            &self.diff_tree_inclusion_proof.index2,
+            self.diff_tree_inclusion_proof.value2,
+            &self.diff_tree_inclusion_proof.siblings2,
+        );
+        if !is_no_op {
+            assert_eq!(
+                diff_tree_inclusion_root2,
+                self.diff_tree_inclusion_proof.root2
+            );
+        }
+        let diff_tree_root = get_merkle_root::<F, H, Vec<bool>>(
+            &self.diff_tree_inclusion_proof.index1.to_bits(),
+            self.diff_tree_inclusion_proof.value1,
+            &self.diff_tree_inclusion_proof.siblings1,
+        );
+        if !is_no_op {
+            assert_eq!(diff_tree_root, self.diff_tree_inclusion_proof.root1);
+        }
+    }
 }
 
 impl<F: RichField, H: AlgebraicHasher<F>> MergeProof<F, H, HashOut<F>> {
@@ -181,99 +272,22 @@ impl MergeProofTarget {
         pw: &mut impl Witness<F>,
         witness: &MergeProof<F, H, HashOut<F>>,
     ) {
-        let old_value_is_zero = witness.merge_process_proof.old_value == HashOut::ZERO;
-        let new_value_is_zero = witness.merge_process_proof.new_value == HashOut::ZERO;
-        let is_insert_op = old_value_is_zero && !new_value_is_zero;
-        let is_no_op = old_value_is_zero && new_value_is_zero;
-        // let is_not_no_op = !is_no_op;
-
-        // noop でないならば insert である
-        assert_eq!(!is_no_op, is_insert_op);
-
-        let block_header = &witness.diff_tree_inclusion_proof.block_header;
-        let root = if witness.is_deposit {
-            block_header.deposit_digest
-        } else {
-            block_header.transactions_digest
-        };
-        if !is_no_op {
-            assert_eq!(root, witness.diff_tree_inclusion_proof.root1);
-        }
-
-        // deposit でないとき, latest_account_tree (active_account_tree) に正しい値が入っていることの検証
-        if !is_no_op && !witness.is_deposit {
-            let receiving_block_number = block_header.block_number;
-            let confirmed_block_number = witness.latest_account_tree_inclusion_proof.value; // 最後に成功した block number
-            assert_eq!(
-                *confirmed_block_number,
-                HashOut::from_partial(&[F::from_canonical_u32(receiving_block_number)]),
-            );
-        }
-
-        // deposit のとき nonce は 0
-        if witness.is_deposit {
-            assert_eq!(witness.nonce, Default::default());
-        };
-
-        // diff_tree_inclusion_proof.2.root と diff_tree_inclusion_proof.1.value の関係を拘束する
-        let diff_root = witness.diff_tree_inclusion_proof.root2;
-        let tx_hash = H::two_to_one(diff_root, witness.nonce);
-        assert_eq!(witness.diff_tree_inclusion_proof.value1, tx_hash);
-
-        // deposit と purge の場合で merge の計算方法が異なる.
-        let block_hash = get_block_hash(block_header);
-        let merge_key = if witness.is_deposit {
-            H::two_to_one(tx_hash, block_hash)
-        } else {
-            tx_hash
-        };
-
-        if !is_no_op {
-            assert_eq!(witness.merge_process_proof.index, merge_key);
-        } // XXX
-        assert_eq!(witness.merge_process_proof.old_value, Default::default());
-        let asset_root = witness.diff_tree_inclusion_proof.value2;
-        // let asset_root_with_merge_key = H::two_to_one(asset_root, merge_key);
-        if !is_no_op {
-            assert_eq!(
-                witness.merge_process_proof.new_value,
-                asset_root // asset_root_with_merge_key
-            );
-
-            assert_eq!(
-                block_header.latest_account_digest,
-                *witness.latest_account_tree_inclusion_proof.root,
-            );
-        }
+        witness.calculate();
 
         // pw.set_bool_target(target.is_deposit, witness.is_deposit);
-        {
-            let diff_tree_inclusion_root2 =
-                self.diff_tree_inclusion_proof.2.set_witness::<_, H, _>(
-                    pw,
-                    &witness.diff_tree_inclusion_proof.index2,
-                    witness.diff_tree_inclusion_proof.value2,
-                    &witness.diff_tree_inclusion_proof.siblings2,
-                );
-            if !is_no_op {
-                assert_eq!(
-                    diff_tree_inclusion_root2,
-                    witness.diff_tree_inclusion_proof.root2
-                );
-            }
-        }
 
-        {
-            let diff_tree_root = self.diff_tree_inclusion_proof.1.set_witness::<_, H, _>(
-                pw,
-                &witness.diff_tree_inclusion_proof.index1,
-                witness.diff_tree_inclusion_proof.value1,
-                &witness.diff_tree_inclusion_proof.siblings1,
-            );
-            if !is_no_op {
-                assert_eq!(diff_tree_root, witness.diff_tree_inclusion_proof.root1);
-            }
-        }
+        self.diff_tree_inclusion_proof.2.set_witness::<_, H, _>(
+            pw,
+            &witness.diff_tree_inclusion_proof.index2,
+            witness.diff_tree_inclusion_proof.value2,
+            &witness.diff_tree_inclusion_proof.siblings2,
+        );
+        self.diff_tree_inclusion_proof.1.set_witness::<_, H, _>(
+            pw,
+            &witness.diff_tree_inclusion_proof.index1,
+            witness.diff_tree_inclusion_proof.value1,
+            &witness.diff_tree_inclusion_proof.siblings1,
+        );
 
         self.diff_tree_inclusion_proof
             .0
@@ -430,6 +444,23 @@ pub fn verify_user_asset_merge_proof<
     );
 }
 
+pub struct MergeTransition<F: RichField, H: AlgebraicHasher<F>> {
+    pub proofs: Vec<MergeProof<F, H, HashOut<F>>>,
+    pub old_user_asset_root: HashOut<F>,
+}
+
+impl<F: RichField, H: AlgebraicHasher<F>> MergeTransition<F, H> {
+    pub fn calculate(&self) -> HashOut<F> {
+        let mut new_user_asset_root = self.old_user_asset_root;
+        for proof in self.proofs.iter() {
+            assert_eq!(proof.merge_process_proof.old_root, new_user_asset_root);
+
+            new_user_asset_root = proof.merge_process_proof.new_root;
+        }
+
+        new_user_asset_root
+    }
+}
 #[derive(Clone, Debug)]
 pub struct MergeTransitionTarget {
     pub proofs: Vec<MergeProofTarget>,      // input
@@ -483,19 +514,13 @@ impl MergeTransitionTarget {
     pub fn set_witness<F: RichField, H: AlgebraicHasher<F>>(
         &self,
         pw: &mut impl Witness<F>,
-        proofs: &[MergeProof<F, H, HashOut<F>>],
-        old_user_asset_root: HashOut<F>,
+        witness: &MergeTransition<F, H>,
     ) -> HashOut<F> {
-        pw.set_hash_target(self.old_user_asset_root, old_user_asset_root);
+        pw.set_hash_target(self.old_user_asset_root, witness.old_user_asset_root);
 
-        let mut new_user_asset_root = old_user_asset_root;
-        assert!(proofs.len() <= self.proofs.len());
-        for (target, witness) in self.proofs.iter().zip(proofs.iter()) {
-            assert_eq!(witness.merge_process_proof.old_root, new_user_asset_root);
-
-            target.set_witness::<F, H>(pw, witness);
-
-            new_user_asset_root = witness.merge_process_proof.new_root
+        assert!(witness.proofs.len() <= self.proofs.len());
+        for (target, proof) in self.proofs.iter().zip(witness.proofs.iter()) {
+            target.set_witness::<F, H>(pw, proof);
         }
 
         let default_merge_witness = MergeProof::new(
@@ -504,11 +529,11 @@ impl MergeTransitionTarget {
             self.log_n_recipients,
             self.log_n_kinds,
         );
-        for target in self.proofs.iter().skip(proofs.len()) {
+        for target in self.proofs.iter().skip(witness.proofs.len()) {
             target.set_witness::<F, H>(pw, &default_merge_witness);
         }
 
-        new_user_asset_root
+        witness.calculate()
     }
 }
 
@@ -810,7 +835,13 @@ fn test_merge_proof_by_plonky2() {
 
     let mut pw = PartialWitness::new();
 
-    merge_proof_target.set_witness(&mut pw, &[merge_proof], merge_inclusion_old_root);
+    merge_proof_target.set_witness(
+        &mut pw,
+        &MergeTransition {
+            proofs: vec![merge_proof],
+            old_user_asset_root: merge_inclusion_old_root,
+        },
+    );
 
     println!("start proving: proof");
     let start = Instant::now();
@@ -822,7 +853,13 @@ fn test_merge_proof_by_plonky2() {
 
     let mut pw = PartialWitness::new();
 
-    merge_proof_target.set_witness::<F, H>(&mut pw, &[], default_hash);
+    merge_proof_target.set_witness::<F, H>(
+        &mut pw,
+        &MergeTransition {
+            proofs: vec![],
+            old_user_asset_root: default_hash,
+        },
+    );
 
     println!("start proving: default proof");
     let start = Instant::now();

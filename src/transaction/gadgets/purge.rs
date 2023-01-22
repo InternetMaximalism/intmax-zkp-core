@@ -190,9 +190,8 @@ impl PurgeOutputProcessProofTarget {
 }
 
 /*
-* Assetの消去と、追加をbatchして行うメソッド
+* Assetの消去と、追加をbatchして行う処理
 */
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PurgeTransition<F: RichField, H: AlgebraicHasher<F>, K: KeyLike> {
     pub sender_address: Address<F>,
@@ -403,7 +402,7 @@ impl PurgeTransitionTarget {
 }
 
 // Returns (`new_user_asset_root`, `tx_hash`)
-pub fn verify_user_asset_purge_proof<
+fn verify_user_asset_purge_proof<
     F: RichField + Extendable<D>,
     H: AlgebraicHasher<F>,
     const D: usize,

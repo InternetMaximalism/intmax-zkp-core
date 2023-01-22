@@ -12,6 +12,8 @@ use plonky2::{
     },
 };
 
+use crate::zkdsa::gadgets::signature::SimpleSignature;
+
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Wrapper<T>(pub T);
 
@@ -155,9 +157,13 @@ fn test_recursion_simple_signature() {
     let zkdsa_circuit = make_simple_signature_circuit::<F, C, D>(config);
 
     let mut pw = PartialWitness::new();
-    zkdsa_circuit
-        .targets
-        .set_witness(&mut pw, private_key, message);
+    zkdsa_circuit.targets.set_witness(
+        &mut pw,
+        &SimpleSignature {
+            private_key,
+            message,
+        },
+    );
 
     println!("start proving: sender2_received_signature");
     let start = Instant::now();
@@ -211,9 +217,13 @@ fn test_recursion_default_simple_signature() {
     let zkdsa_circuit = make_simple_signature_circuit::<F, C, D>(config);
 
     let mut pw = PartialWitness::new();
-    zkdsa_circuit
-        .targets
-        .set_witness(&mut pw, Default::default(), Default::default());
+    zkdsa_circuit.targets.set_witness(
+        &mut pw,
+        &SimpleSignature {
+            private_key: Default::default(),
+            message: Default::default(),
+        },
+    );
 
     println!("start proving: sender2_received_signature");
     let start = Instant::now();

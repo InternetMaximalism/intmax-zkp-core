@@ -34,15 +34,15 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(bound(deserialize = "H::Hash: KeyLike, BlockHeader<F>: Deserialize<'de>"))]
 pub struct DiffTreeInclusionProof<F: RichField, H: Hasher<F>> {
-    block_header: BlockHeader<F>,
-    siblings1: Vec<H::Hash>,
-    siblings2: Vec<H::Hash>,
-    root1: H::Hash,
-    index1: usize,
-    value1: H::Hash,
-    root2: H::Hash,
-    index2: Vec<bool>,
-    value2: H::Hash,
+    pub block_header: BlockHeader<F>,
+    pub siblings1: Vec<H::Hash>,
+    pub siblings2: Vec<H::Hash>,
+    pub root1: H::Hash,
+    pub index1: usize,
+    pub value1: H::Hash,
+    pub root2: H::Hash,
+    pub index2: Vec<bool>,
+    pub value2: H::Hash,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -64,7 +64,7 @@ pub struct MergeProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     pub nonce: H::Hash,
 }
 
-impl<F: RichField, H: AlgebraicHasher<F>> MergeProof<F, H, HashOut<F>> {
+impl<F: RichField, H: AlgebraicHasher<F>, K: KeyLike> MergeProof<F, H, K> {
     pub fn calculate(&self) {
         let old_value_is_zero = self.merge_process_proof.old_value == HashOut::ZERO;
         let new_value_is_zero = self.merge_process_proof.new_value == HashOut::ZERO;
@@ -114,7 +114,9 @@ impl<F: RichField, H: AlgebraicHasher<F>> MergeProof<F, H, HashOut<F>> {
         };
 
         if !is_no_op {
-            assert_eq!(self.merge_process_proof.index, merge_key);
+            assert!(merge_key
+                .to_bits()
+                .starts_with(&self.merge_process_proof.index.to_bits()));
         } // XXX
         assert_eq!(self.merge_process_proof.old_value, Default::default());
         let asset_root = self.diff_tree_inclusion_proof.value2;
@@ -267,10 +269,10 @@ impl MergeProofTarget {
         proof
     }
 
-    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>>(
+    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>, K: KeyLike>(
         &self,
         pw: &mut impl Witness<F>,
-        witness: &MergeProof<F, H, HashOut<F>>,
+        witness: &MergeProof<F, H, K>,
     ) {
         witness.calculate();
 
@@ -444,12 +446,12 @@ pub fn verify_user_asset_merge_proof<
     );
 }
 
-pub struct MergeTransition<F: RichField, H: AlgebraicHasher<F>> {
-    pub proofs: Vec<MergeProof<F, H, HashOut<F>>>,
+pub struct MergeTransition<F: RichField, H: AlgebraicHasher<F>, K: KeyLike> {
+    pub proofs: Vec<MergeProof<F, H, K>>,
     pub old_user_asset_root: HashOut<F>,
 }
 
-impl<F: RichField, H: AlgebraicHasher<F>> MergeTransition<F, H> {
+impl<F: RichField, H: AlgebraicHasher<F>, K: KeyLike> MergeTransition<F, H, K> {
     pub fn calculate(&self) -> HashOut<F> {
         let mut new_user_asset_root = self.old_user_asset_root;
         for proof in self.proofs.iter() {
@@ -511,16 +513,16 @@ impl MergeTransitionTarget {
     }
 
     /// Returns new_user_asset_root
-    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>>(
+    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>, K: KeyLike>(
         &self,
         pw: &mut impl Witness<F>,
-        witness: &MergeTransition<F, H>,
+        witness: &MergeTransition<F, H, K>,
     ) -> HashOut<F> {
         pw.set_hash_target(self.old_user_asset_root, witness.old_user_asset_root);
 
         assert!(witness.proofs.len() <= self.proofs.len());
         for (target, proof) in self.proofs.iter().zip(witness.proofs.iter()) {
-            target.set_witness::<F, H>(pw, proof);
+            target.set_witness::<F, H, K>(pw, proof);
         }
 
         let default_merge_witness = MergeProof::new(
@@ -530,7 +532,7 @@ impl MergeTransitionTarget {
             self.log_n_kinds,
         );
         for target in self.proofs.iter().skip(witness.proofs.len()) {
-            target.set_witness::<F, H>(pw, &default_merge_witness);
+            target.set_witness::<F, H, _>(pw, &default_merge_witness);
         }
 
         witness.calculate()
@@ -853,7 +855,7 @@ fn test_merge_proof_by_plonky2() {
 
     let mut pw = PartialWitness::new();
 
-    merge_proof_target.set_witness::<F, H>(
+    merge_proof_target.set_witness::<F, H, Vec<bool>>(
         &mut pw,
         &MergeTransition {
             proofs: vec![],

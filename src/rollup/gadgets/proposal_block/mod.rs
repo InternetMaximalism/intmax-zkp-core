@@ -18,6 +18,7 @@ use crate::{
         gadgets::get_merkle_root_target_from_leaves,
         tree::{get_merkle_proof_with_zero, MerkleProcessProof},
     },
+    rollup::gadgets::approval_block::make_sample_circuit_inputs,
     sparse_merkle_tree::{
         gadgets::process::{
             process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
@@ -587,9 +588,10 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
     let proof4 = sender2_tx_diff_tree
         .prove_leaf_node(&asset4.receiver_address, &asset4.kind)
         .unwrap();
+    let sender2_diff_root = sender2_tx_diff_tree.get_root().unwrap();
 
-    let sender2_input_witness = vec![proof1, proof2];
-    let sender2_output_witness = vec![proof3, proof4];
+    // let sender2_input_witness = vec![proof1, proof2];
+    // let sender2_output_witness = vec![proof3, proof4];
     // dbg!(
     //     serde_json::to_string(&sender2_input_witness).unwrap(),
     //     serde_json::to_string(&sender2_output_witness).unwrap()
@@ -636,15 +638,14 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
         let old_user_asset_root = merge_proof.merge_process_proof.old_root.into();
         let middle_user_asset_root = merge_proof.merge_process_proof.new_root.into();
         let new_user_asset_root = new_sender2_asset_root.into();
-        let diff_root = sender2_output_witness.last().unwrap().root;
-        let tx_hash = PoseidonHash::two_to_one(diff_root, *sender2_nonce);
+        let tx_hash = PoseidonHash::two_to_one(sender2_diff_root, *sender2_nonce);
 
         MergeAndPurgeTransitionPublicInputs {
             sender_address: sender2_address,
             old_user_asset_root,
             middle_user_asset_root,
             new_user_asset_root,
-            diff_root: diff_root.into(),
+            diff_root: sender2_diff_root.into(),
             tx_hash: tx_hash.into(),
         }
     };
@@ -681,9 +682,9 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
 }
 
 pub struct BlockExamples<F: RichField> {
-    world_state_process_proofs:
+    pub world_state_process_proofs:
         Vec<SparseMerkleProcessProof<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>>>,
-    user_transactions: Vec<MergeAndPurgeTransitionPublicInputs<F>>,
+    pub user_transactions: Vec<MergeAndPurgeTransitionPublicInputs<F>>,
 }
 
 #[test]
@@ -720,7 +721,7 @@ fn test_proposal_block() {
         n_blocks: 2,
     };
     let n_txs = 2usize.pow(ROLLUP_CONSTANTS.log_n_txs as u32);
-    let examples = make_sample_block::<C, D>(ROLLUP_CONSTANTS);
+    let examples = make_sample_circuit_inputs::<C, D>(ROLLUP_CONSTANTS);
 
     // proposal block
     let config = CircuitConfig::standard_recursion_config();
@@ -737,14 +738,9 @@ fn test_proposal_block() {
     let mut pw = PartialWitness::new();
     let (transactions_digest, new_world_state_root) = proposal_block_target.set_witness::<F, D>(
         &mut pw,
-        &examples.world_state_process_proofs,
-        &examples.user_transactions,
-        examples
-            .world_state_process_proofs
-            .first()
-            .unwrap()
-            .old_root,
-        // prev_block_header.approved_world_state_digest.into(),
+        &examples[0].world_state_process_proofs,
+        &examples[0].approval_block.user_transactions,
+        examples[0].old_world_state_root.into(),
     );
 
     println!("start proving: block_proof");

@@ -186,7 +186,7 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
             .find(|v| {
                 if let Node::Leaf { data } = v.1 {
                     recipient.0.elements == data[0..4]
-                        && token_kind.contract_address.0.elements == data[4..8]
+                        && token_kind.contract_address.to_hash_out().elements == data[4..8]
                         && token_kind.variable_index.to_hash_out().elements == data[8..12]
                 } else {
                     false

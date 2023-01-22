@@ -261,7 +261,7 @@ impl<F: RichField, H: Hasher<F>> UserAssetTree<F, H> {
                 if let (node_path, Node::Leaf { data }) = v {
                     node_path.starts_with(&merge_key_path)
                         && user_address.to_hash_out().elements == data[0..4]
-                        && token_kind.contract_address.0.elements == data[4..8]
+                        && token_kind.contract_address.to_hash_out().elements == data[4..8]
                         && token_kind.variable_index.to_hash_out().elements == data[8..12]
                 } else {
                     false

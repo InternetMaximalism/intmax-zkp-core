@@ -17,9 +17,9 @@ use plonky2::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::utils::hash::WrappedHashOut;
+use crate::utils::hash::{SerializableHashOut, WrappedHashOut};
 
-use super::{account::SecretKey, gadgets::signature::SimpleSignatureTarget};
+use super::gadgets::signature::{SimpleSignature, SimpleSignatureTarget};
 
 pub fn make_simple_signature_circuit<
     F: RichField + Extendable<D>,
@@ -52,10 +52,13 @@ pub struct SimpleSignatureCircuit<
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound = "")]
+#[serde(bound = "F: RichField")]
 pub struct SimpleSignaturePublicInputs<F: Field> {
+    #[serde(with = "SerializableHashOut")]
     pub message: HashOut<F>,
+    #[serde(with = "SerializableHashOut")]
     pub public_key: HashOut<F>,
+    #[serde(with = "SerializableHashOut")]
     pub signature: HashOut<F>,
 }
 
@@ -330,11 +333,10 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
 
     pub fn set_witness_and_prove(
         &self,
-        private_key: SecretKey<F>,
-        message: HashOut<F>,
+        witness: &SimpleSignature<F>,
     ) -> anyhow::Result<SimpleSignatureProofWithPublicInputs<F, C, D>> {
         let mut pw = PartialWitness::new();
-        self.targets.set_witness(&mut pw, private_key, message);
+        self.targets.set_witness(&mut pw, witness);
         self.prove(pw)
     }
 
@@ -370,11 +372,15 @@ fn test_verify_simple_signature_by_plonky2() {
     let private_key = HashOut::<F>::rand();
     let account = private_key_to_account(private_key);
     let message = HashOut::<F>::rand();
+    let witness = SimpleSignature {
+        private_key,
+        message,
+    };
 
     let mut pw = PartialWitness::new();
     simple_signature_circuit
         .targets
-        .set_witness(&mut pw, private_key, message);
+        .set_witness(&mut pw, &witness);
 
     println!("start proving");
     let start = Instant::now();
@@ -403,8 +409,7 @@ pub fn prove_simple_signature<
     const N_DIFFS: usize,
     const N_MERGES: usize,
 >(
-    private_key: WrappedHashOut<F>,
-    message: WrappedHashOut<F>,
+    witness: &SimpleSignature<F>,
 ) -> anyhow::Result<SimpleSignatureProofWithPublicInputs<F, C, D>> {
     // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
     let config = CircuitConfig::standard_recursion_config();
@@ -413,7 +418,7 @@ pub fn prove_simple_signature<
     let mut pw = PartialWitness::new();
     simple_signature_circuit
         .targets
-        .set_witness(&mut pw, *private_key, *message);
+        .set_witness(&mut pw, witness);
 
     let simple_signature_proof = simple_signature_circuit.prove(pw).unwrap();
 

@@ -1,13 +1,41 @@
 use plonky2::{
     field::extension::Extendable,
-    hash::hash_types::{HashOut, HashOutTarget, RichField},
+    hash::{
+        hash_types::{HashOut, HashOutTarget, RichField},
+        poseidon::PoseidonHash,
+    },
     iop::witness::Witness,
-    plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
+    plonk::{
+        circuit_builder::CircuitBuilder,
+        config::{AlgebraicHasher, Hasher},
+    },
 };
 
-use crate::utils::gadgets::hash::poseidon_two_to_one;
+use crate::{
+    utils::gadgets::hash::poseidon_two_to_one,
+    zkdsa::{account::private_key_to_public_key, circuits::SimpleSignaturePublicInputs},
+};
 
 use super::super::account::SecretKey;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SimpleSignature<F: RichField> {
+    pub private_key: SecretKey<F>,
+    pub message: HashOut<F>,
+}
+
+impl<F: RichField> SimpleSignature<F> {
+    pub fn calculate(&self) -> SimpleSignaturePublicInputs<F> {
+        let public_key = private_key_to_public_key(self.private_key);
+        let signature = PoseidonHash::two_to_one(self.private_key, self.message);
+
+        SimpleSignaturePublicInputs {
+            message: self.message,
+            public_key,
+            signature,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct SimpleSignatureTarget {
@@ -38,11 +66,12 @@ impl SimpleSignatureTarget {
     pub fn set_witness<F: RichField>(
         &self,
         pw: &mut impl Witness<F>,
-        private_key: SecretKey<F>,
-        message: HashOut<F>,
-    ) {
-        pw.set_hash_target(self.private_key, private_key);
-        pw.set_hash_target(self.message, message);
+        witness: &SimpleSignature<F>,
+    ) -> SimpleSignaturePublicInputs<F> {
+        pw.set_hash_target(self.private_key, witness.private_key);
+        pw.set_hash_target(self.message, witness.message);
+
+        witness.calculate()
     }
 }
 
@@ -99,7 +128,13 @@ fn test_verify_simple_signature_by_plonky2() {
     let message = HashOut::<F>::rand();
 
     let mut pw = PartialWitness::new();
-    target.set_witness(&mut pw, private_key, message);
+    target.set_witness(
+        &mut pw,
+        &SimpleSignature {
+            private_key,
+            message,
+        },
+    );
 
     println!("start proving");
     let start = Instant::now();

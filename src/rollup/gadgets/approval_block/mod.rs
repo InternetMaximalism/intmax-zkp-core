@@ -13,17 +13,21 @@ use plonky2::{
 
 use crate::{
     config::RollupConstants,
-    merkle_tree::tree::MerkleProcessProof,
-    sparse_merkle_tree::gadgets::process::process_smt::{
-        SmtProcessProof, SparseMerkleProcessProofTarget,
+    merkle_tree::tree::{get_merkle_root, MerkleProcessProof},
+    sparse_merkle_tree::{
+        gadgets::process::process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
+        proof::SparseMerkleProcessProof,
     },
     transaction::{
         asset::{ContributedAsset, TokenKind},
         circuits::{
-            make_user_proof_circuit, MergeAndPurgeTransition, MergeAndPurgeTransitionPublicInputs,
+            MergeAndPurgeTransition, MergeAndPurgeTransitionPublicInputs,
             MergeAndPurgeTransitionPublicInputsTarget,
         },
-        gadgets::merge::DiffTreeInclusionProof,
+        gadgets::{
+            merge::DiffTreeInclusionProof,
+            purge::{PurgeInputProcessProof, PurgeOutputProcessProof},
+        },
         tree::tx_diff::TxDiffTree,
     },
     utils::{
@@ -32,10 +36,8 @@ use crate::{
     },
     zkdsa::{
         account::Address,
-        circuits::{
-            make_simple_signature_circuit, SimpleSignaturePublicInputs,
-            SimpleSignaturePublicInputsTarget,
-        },
+        circuits::{SimpleSignaturePublicInputs, SimpleSignaturePublicInputsTarget},
+        gadgets::signature::SimpleSignature,
     },
 };
 
@@ -71,6 +73,7 @@ pub struct ApprovalBlockProduction<F: RichField> {
 }
 
 impl<F: RichField> ApprovalBlockProduction<F> {
+    /// Returns `(new_world_state_root, new_latest_account_root)`
     pub fn calculate(&self) -> (WrappedHashOut<F>, WrappedHashOut<F>) {
         let mut prev_world_state_root = self.old_world_state_root;
         let mut prev_latest_account_root = self.old_latest_account_root;
@@ -94,9 +97,9 @@ impl<F: RichField> ApprovalBlockProduction<F> {
         for (((w, u), r), a) in self
             .world_state_revert_proofs
             .iter()
-            .zip(self.user_transactions)
-            .zip(self.received_signatures)
-            .zip(self.latest_account_tree_process_proofs)
+            .zip(self.user_transactions.iter())
+            .zip(self.received_signatures.iter())
+            .zip(self.latest_account_tree_process_proofs.iter())
         {
             // proposed block では, user asset root は `u.new_user_asset_root` と同じであった.
             assert_eq!(w.old_value, u.new_user_asset_root);
@@ -386,9 +389,19 @@ pub fn verify_valid_approval_block<
     (new_world_state_root, new_latest_account_root)
 }
 
-pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usize>(
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SampleBlock<F: RichField, H: AlgebraicHasher<F>> {
+    pub transactions: Vec<(MergeAndPurgeTransition<F, H>, Option<SimpleSignature<F>>)>,
+    pub old_world_state_root: HashOut<F>,
+    pub world_state_process_proofs:
+        Vec<SparseMerkleProcessProof<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>>>,
+    pub approval_block: ApprovalBlockProduction<F>,
+}
+
+/// Returns `(stored_transactions, approval_block, new_world_root)`
+pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, const D: usize>(
     rollup_constants: RollupConstants,
-) {
+) -> Vec<SampleBlock<GoldilocksField, C::InnerHasher>> {
     use plonky2::{field::types::Field, hash::poseidon::PoseidonHash, plonk::config::Hasher};
 
     use crate::{
@@ -410,11 +423,6 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
     let mut world_state_tree =
         PoseidonSparseMerkleTree::new(aggregator_nodes_db.clone(), RootDataTmp::default());
 
-    // let config = CircuitConfig::standard_recursion_config();
-    // let merge_and_purge_circuit = make_user_proof_circuit::<F, C, D>(config, rollup_constants);
-
-    // dbg!(&purge_proof_circuit_data.common);
-
     let sender1_private_key = HashOut {
         elements: [
             C::F::from_canonical_u64(17426287337377512978),
@@ -426,7 +434,6 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
     let sender1_account = private_key_to_account(sender1_private_key);
     let sender1_address = sender1_account.address;
 
-    let sender1_nodes_db = NodeDataMemory::default();
     let mut sender1_user_asset_tree = UserAssetTree::<_, C::InnerHasher>::new(
         rollup_constants.log_max_n_txs,
         rollup_constants.log_max_n_contracts + rollup_constants.log_max_n_variables,
@@ -437,7 +444,7 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
         rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
     );
 
-    let merge_key1 = GoldilocksHashOut::from_u128(12);
+    let merge_key1 = GoldilocksHashOut::from_u128(1);
     let merge_key2 = GoldilocksHashOut::from_u128(12);
     let asset1 = ContributedAsset {
         receiver_address: sender1_address,
@@ -457,7 +464,7 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
     };
 
     let asset3 = ContributedAsset {
-        receiver_address: Address(GoldilocksHashOut::from_u128(407).0),
+        receiver_address: sender1_address,
         kind: TokenKind {
             contract_address: Address(GoldilocksHashOut::from_u128(305).0),
             variable_index: 8u8.into(),
@@ -465,7 +472,7 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
         amount: 2,
     };
     let asset4 = ContributedAsset {
-        receiver_address: Address(GoldilocksHashOut::from_u128(832).0),
+        receiver_address: sender1_address,
         kind: TokenKind {
             contract_address: Address(GoldilocksHashOut::from_u128(471).0),
             variable_index: 8u8.into(),
@@ -473,10 +480,10 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
         amount: 1111,
     };
 
-    let zero = GoldilocksHashOut::from_u128(0);
     sender1_user_asset_tree
         .insert_assets(*merge_key1, vec![asset1])
         .unwrap();
+
     sender1_user_asset_tree
         .insert_assets(*merge_key2, vec![asset2])
         .unwrap();
@@ -487,30 +494,54 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
             sender1_user_asset_tree.get_root().unwrap().into(),
         )
         .unwrap();
+    let old_sender1_asset_root = sender1_user_asset_tree.get_root().unwrap();
 
-    let proof1 = sender1_user_asset_tree
+    let proof2 = sender1_user_asset_tree
         .prove_leaf_node(&merge_key2, &asset2.receiver_address, &asset2.kind)
         .unwrap();
+    let proof2 = PurgeInputProcessProof {
+        siblings: proof2.siblings,
+        index: proof2.index,
+        old_leaf_data: asset2,
+    };
     sender1_user_asset_tree
         .remove(*merge_key2, asset2.receiver_address, asset2.kind)
         .unwrap();
-    let proof2 = sender1_user_asset_tree
+    let proof1 = sender1_user_asset_tree
         .prove_leaf_node(&merge_key1, &asset1.receiver_address, &asset1.kind)
         .unwrap();
+    let proof1 = PurgeInputProcessProof {
+        siblings: proof1.siblings,
+        index: proof1.index,
+        old_leaf_data: asset1,
+    };
     sender1_user_asset_tree
         .remove(*merge_key1, asset1.receiver_address, asset1.kind)
         .unwrap();
+
+    let new_sender1_asset_root = sender1_user_asset_tree.get_root().unwrap();
+    dbg!(&new_sender1_asset_root);
 
     sender1_tx_diff_tree.insert(asset3).unwrap();
     let proof3 = sender1_tx_diff_tree
         .prove_leaf_node(&sender1_address, &asset3.kind)
         .unwrap();
+    let proof3 = PurgeOutputProcessProof {
+        siblings: proof3.siblings,
+        index: proof3.index,
+        new_leaf_data: asset3,
+    };
     sender1_tx_diff_tree.insert(asset4).unwrap();
     let proof4 = sender1_tx_diff_tree
         .prove_leaf_node(&sender1_address, &asset4.kind)
         .unwrap();
+    let proof4 = PurgeOutputProcessProof {
+        siblings: proof4.siblings,
+        index: proof4.index,
+        new_leaf_data: asset4,
+    };
 
-    let sender1_input_witness = vec![proof1, proof2];
+    let sender1_input_witness = vec![proof2, proof1];
     let sender1_output_witness = vec![proof3, proof4];
 
     let sender2_private_key = HashOut {
@@ -524,7 +555,6 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
     let sender2_account = private_key_to_account(sender2_private_key);
     let sender2_address = sender2_account.address;
 
-    let sender2_nodes_db = NodeDataMemory::default();
     let mut sender2_user_asset_tree = UserAssetTree::<_, C::InnerHasher>::new(
         rollup_constants.log_max_n_txs,
         rollup_constants.log_max_n_contracts + rollup_constants.log_max_n_variables,
@@ -557,6 +587,23 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
         amount: 1111,
     };
 
+    let asset3 = ContributedAsset {
+        receiver_address: sender2_address,
+        kind: TokenKind {
+            contract_address: Address(GoldilocksHashOut::from_u128(305).0),
+            variable_index: 8u8.into(),
+        },
+        amount: 2,
+    };
+    let asset4 = ContributedAsset {
+        receiver_address: sender2_address,
+        kind: TokenKind {
+            contract_address: Address(GoldilocksHashOut::from_u128(471).0),
+            variable_index: 8u8.into(),
+        },
+        amount: 1111,
+    };
+
     block0_deposit_tree.insert(asset1).unwrap();
     block0_deposit_tree.insert(asset2).unwrap();
 
@@ -572,28 +619,17 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
     let deposit_tx_hash = PoseidonHash::two_to_one(deposit_diff_root, deposit_nonce).into();
 
     let diff_tree_inclusion_proof1 =
-        get_merkle_proof(&[deposit_tx_hash], 0, rollup_constants.log_n_txs);
+        get_merkle_proof::<_, C::InnerHasher>(&[deposit_tx_hash], 0, rollup_constants.log_n_txs);
 
     let diff_tree_inclusion_proof2 = block0_deposit_tree
         .prove_asset_root(&sender2_address)
         .unwrap();
 
-    let default_hash = HashOut::ZERO;
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
     // let default_merkle_root = get_merkle_proof(&[], 0, LOG_N_TXS).root;
     let mut prev_block_header = BlockHeader::new(rollup_constants.log_n_txs);
     prev_block_header.block_number = 1;
     prev_block_header.deposit_digest = diff_tree_inclusion_proof1.root;
-    // let prev_block_header = BlockHeader {
-    //     block_number: 1,
-    //     prev_block_hash: default_hash,
-    //     block_headers_digest: default_hash,
-    //     transactions_digest: *default_merkle_root,
-    //     deposit_digest: *merge_inclusion_proof1.root,
-    //     proposed_world_state_digest: default_hash,
-    //     approved_world_state_digest: default_hash,
-    //     latest_account_digest: default_hash,
-    // };
 
     let block_hash = get_block_hash(&prev_block_header);
 
@@ -601,9 +637,9 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
     let deposit_merge_key = PoseidonHash::two_to_one(deposit_tx_hash, block_hash).into();
 
     // user_asset_tree に deposit を merge する.
-    let sender2_user_asset_old_root = sender2_user_asset_tree.get_root().unwrap();
-    let sender2_user_asset_old_value = sender2_user_asset_tree
-        .prove_asset_root(&deposit_merge_key)
+    let old_sender2_asset_root = sender2_user_asset_tree.get_root().unwrap();
+    let old_sender2_asset_value = sender2_user_asset_tree
+        .get_asset_root(&deposit_merge_key)
         .unwrap();
     sender2_user_asset_tree
         .insert_assets(deposit_merge_key, vec![asset1, asset2])
@@ -614,9 +650,9 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
     let merge_process_proof = MerkleProcessProof {
         index: merge_inclusion_proof.index,
         siblings: merge_inclusion_proof.siblings,
-        old_value: sender2_user_asset_old_value,
+        old_value: old_sender2_asset_value,
         new_value: merge_inclusion_proof.value,
-        old_root: sender2_user_asset_old_root,
+        old_root: old_sender2_asset_root,
         new_root: merge_inclusion_proof.root,
     };
 
@@ -647,34 +683,55 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
         )
         .unwrap();
 
-    let proof1 = sender2_user_asset_tree
-        .prove_leaf_node(&merge_key2, &asset2.receiver_address, &asset2.kind)
+    let middle_sender2_asset_root = sender2_user_asset_tree.get_root().unwrap();
+    dbg!(middle_sender2_asset_root);
+
+    let proof2 = sender2_user_asset_tree
+        .prove_leaf_node(&deposit_merge_key, &asset2.receiver_address, &asset2.kind)
         .unwrap();
+    let proof2 = PurgeInputProcessProof {
+        siblings: proof2.siblings,
+        index: proof2.index,
+        old_leaf_data: asset2,
+    };
     sender2_user_asset_tree
         .remove(deposit_merge_key, sender2_address, asset2.kind)
         .unwrap();
-    let proof2 = sender2_user_asset_tree
-        .prove_leaf_node(&merge_key1, &asset1.receiver_address, &asset1.kind)
+    let proof1 = sender2_user_asset_tree
+        .prove_leaf_node(&deposit_merge_key, &asset1.receiver_address, &asset1.kind)
         .unwrap();
+    let proof1 = PurgeInputProcessProof {
+        siblings: proof1.siblings,
+        index: proof1.index,
+        old_leaf_data: asset1,
+    };
     sender2_user_asset_tree
         .remove(deposit_merge_key, sender2_address, asset1.kind)
         .unwrap();
+    let new_sender2_asset_root = sender2_user_asset_tree.get_root().unwrap();
+    dbg!(new_sender2_asset_root);
 
     sender2_tx_diff_tree.insert(asset3).unwrap();
     let proof3 = sender2_tx_diff_tree
         .prove_leaf_node(&asset3.receiver_address, &asset3.kind)
         .unwrap();
+    let proof3 = PurgeOutputProcessProof {
+        siblings: proof3.siblings,
+        index: proof3.index,
+        new_leaf_data: asset3,
+    };
     sender2_tx_diff_tree.insert(asset4).unwrap();
     let proof4 = sender2_tx_diff_tree
         .prove_leaf_node(&asset4.receiver_address, &asset4.kind)
         .unwrap();
+    let proof4 = PurgeOutputProcessProof {
+        siblings: proof4.siblings,
+        index: proof4.index,
+        new_leaf_data: asset4,
+    };
 
-    let sender2_input_witness = vec![proof1, proof2];
+    let sender2_input_witness = vec![proof2, proof1];
     let sender2_output_witness = vec![proof3, proof4];
-    // dbg!(
-    //     serde_json::to_string(&sender2_input_witness).unwrap(),
-    //     serde_json::to_string(&sender2_output_witness).unwrap()
-    // );
 
     let sender1_nonce = WrappedHashOut::from(HashOut {
         elements: [
@@ -685,47 +742,41 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
         ],
     });
 
+    let sender1_merge_and_purge_transition = MergeAndPurgeTransition {
+        sender_address: sender1_account.address,
+        merge_witnesses: vec![],
+        purge_input_witnesses: sender1_input_witness,
+        purge_output_witnesses: sender1_output_witness,
+        nonce: *sender1_nonce,
+        old_user_asset_root: old_sender1_asset_root,
+    };
+    let actual_old_root = get_merkle_root::<_, PoseidonHash, _>(
+        &sender1_merge_and_purge_transition.purge_input_witnesses[0].index,
+        PoseidonHash::hash_or_noop(&ContributedAsset::default().encode()),
+        &sender1_merge_and_purge_transition.purge_input_witnesses[0].siblings,
+    );
+    dbg!(
+        &sender1_merge_and_purge_transition.old_user_asset_root,
+        actual_old_root
+    );
     let sender1_tx_pis = {
-        let merge_and_purge_transition = MergeAndPurgeTransition {
-            sender_address: sender1_account.address,
-            merge_witnesses: vec![],
-            purge_input_witnesses: sender1_input_witness,
-            purge_output_witnesses: sender1_output_witness,
-            nonce: *sender1_nonce,
-            old_user_asset_root: *sender1_input_witness.first().unwrap().0.old_root,
-        };
-
         let (middle_user_asset_root, new_user_asset_root, diff_root, tx_hash) =
-            merge_and_purge_transition.calculate(
+            sender1_merge_and_purge_transition.calculate(
                 rollup_constants.log_n_recipients,
                 rollup_constants.log_n_contracts + rollup_constants.log_max_n_variables,
             );
 
         MergeAndPurgeTransitionPublicInputs {
-            sender_address: merge_and_purge_transition.sender_address,
-            old_user_asset_root: merge_and_purge_transition.old_user_asset_root.into(),
+            sender_address: sender1_merge_and_purge_transition.sender_address,
+            old_user_asset_root: sender1_merge_and_purge_transition
+                .old_user_asset_root
+                .into(),
             middle_user_asset_root: middle_user_asset_root.into(),
             new_user_asset_root: new_user_asset_root.into(),
             diff_root: diff_root.into(),
             tx_hash: tx_hash.into(),
         }
     };
-
-    // let mut pw = PartialWitness::new();
-    // merge_and_purge_circuit.targets.set_witness(
-    //     &mut pw,
-    //     &merge_and_purge_transition
-    // );
-
-    // println!("start proving: sender1_tx_proof");
-    // let start = Instant::now();
-    // let sender1_tx_proof = merge_and_purge_circuit.prove(pw).unwrap();
-    // let end = start.elapsed();
-    // println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
-
-    // merge_and_purge_circuit
-    //     .verify(sender1_tx_proof.clone())
-    //     .unwrap();
 
     let sender2_nonce = WrappedHashOut::from(HashOut {
         elements: [
@@ -736,25 +787,26 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
         ],
     });
 
+    let sender2_merge_and_purge_transition = MergeAndPurgeTransition {
+        sender_address: sender2_account.address,
+        merge_witnesses: vec![merge_proof],
+        purge_input_witnesses: sender2_input_witness,
+        purge_output_witnesses: sender2_output_witness,
+        nonce: *sender2_nonce,
+        old_user_asset_root: old_sender2_asset_root,
+    };
     let sender2_tx_pis = {
-        let merge_and_purge_transition = MergeAndPurgeTransition {
-            sender_address: sender2_account.address,
-            merge_witnesses: vec![merge_proof],
-            purge_input_witnesses: sender2_input_witness,
-            purge_output_witnesses: sender2_output_witness,
-            nonce: *sender2_nonce,
-            old_user_asset_root: *sender2_input_witness.first().unwrap().0.old_root,
-        };
-
         let (middle_user_asset_root, new_user_asset_root, diff_root, tx_hash) =
-            merge_and_purge_transition.calculate(
+            sender2_merge_and_purge_transition.calculate(
                 rollup_constants.log_n_recipients,
                 rollup_constants.log_n_contracts + rollup_constants.log_max_n_variables,
             );
 
         MergeAndPurgeTransitionPublicInputs {
-            sender_address: merge_and_purge_transition.sender_address,
-            old_user_asset_root: merge_and_purge_transition.old_user_asset_root.into(),
+            sender_address: sender2_merge_and_purge_transition.sender_address,
+            old_user_asset_root: sender2_merge_and_purge_transition
+                .old_user_asset_root
+                .into(),
             middle_user_asset_root: middle_user_asset_root.into(),
             new_user_asset_root: new_user_asset_root.into(),
             diff_root: diff_root.into(),
@@ -762,29 +814,10 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
         }
     };
 
-    // let mut pw = PartialWitness::new();
-    // merge_and_purge_circuit.targets.set_witness(
-    //     &mut pw,
-    //     sender2_account.address,
-    //     &[merge_proof],
-    //     &sender2_input_witness,
-    //     &sender2_output_witness,
-    //     *sender2_nonce,
-    //     sender2_input_witness.first().unwrap().0.old_root,
-    // );
-
-    // println!("start proving: sender2_tx_proof");
-    // let start = Instant::now();
-    // let sender2_tx_proof = merge_and_purge_circuit.prove(pw).unwrap();
-    // let end = start.elapsed();
-    // println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
-
-    // merge_and_purge_circuit
-    //     .verify(sender2_tx_proof.clone())
-    //     .unwrap();
+    let old_world_state_root = *world_state_tree.get_root().unwrap();
 
     let mut world_state_process_proofs = vec![];
-    let mut user_tx_proofs = vec![];
+    let mut user_transactions = vec![];
 
     let sender1_world_state_process_proof = world_state_tree
         .set(
@@ -800,28 +833,12 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
         )
         .unwrap();
 
+    let proposed_world_state_root = *world_state_tree.get_root().unwrap();
+
     world_state_process_proofs.push(sender1_world_state_process_proof);
-    user_tx_proofs.push(sender1_tx_pis.clone());
+    user_transactions.push(sender1_tx_pis.clone());
     world_state_process_proofs.push(sender2_world_state_process_proof);
-    user_tx_proofs.push(sender2_tx_pis.clone());
-
-    // let config = CircuitConfig::standard_recursion_config();
-    // let zkdsa_circuit = make_simple_signature_circuit::<C::F, C, D>(config);
-
-    // let mut pw = PartialWitness::new();
-    // zkdsa_circuit.targets.set_witness(
-    //     &mut pw,
-    //     sender2_account.private_key,
-    //     *world_state_tree.get_root().unwrap(),
-    // );
-
-    // println!("start proving: sender2_received_signature");
-    // let start = Instant::now();
-    // let sender2_received_signature = zkdsa_circuit.prove(pw).unwrap();
-    // let end = start.elapsed();
-    // println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
-
-    // dbg!(&sender2_received_signature.public_inputs);
+    user_transactions.push(sender2_tx_pis.clone());
 
     let block_number = prev_block_header.block_number + 1;
 
@@ -835,7 +852,6 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
     // u.enabled かつ w.fnc == NoOp だが revert ではない.
     let mut world_state_revert_proofs = vec![];
     let mut latest_account_tree_process_proofs = vec![];
-    let mut received_signatures = vec![];
     for (opt_received_signature, user_tx_pis) in stored_transactions {
         let user_address = user_tx_pis.sender_address;
         let (last_block_number, confirmed_user_asset_root) = if !opt_received_signature {
@@ -861,6 +877,37 @@ pub fn make_sample_block<C: GenericConfig<D, F = GoldilocksField>, const D: usiz
             .unwrap();
         world_state_revert_proofs.push(proof);
     }
+
+    // let approved_world_state_root = *world_state_tree.get_root().unwrap();
+
+    let sender2_received_signatures = SimpleSignature {
+        private_key: sender2_account.private_key,
+        message: proposed_world_state_root,
+    };
+    let received_signatures = vec![None, Some(sender2_received_signatures.calculate())];
+    let old_latest_account_root = latest_account_tree_process_proofs.first().unwrap().old_root;
+    let approval_block = ApprovalBlockProduction {
+        current_block_number: block_number,
+        world_state_revert_proofs: world_state_revert_proofs.clone(),
+        user_transactions,
+        received_signatures,
+        latest_account_tree_process_proofs: latest_account_tree_process_proofs.clone(),
+        old_world_state_root: proposed_world_state_root.into(),
+        old_latest_account_root,
+    };
+
+    vec![SampleBlock {
+        transactions: vec![
+            (sender1_merge_and_purge_transition, None),
+            (
+                sender2_merge_and_purge_transition,
+                Some(sender2_received_signatures),
+            ),
+        ],
+        old_world_state_root,
+        world_state_process_proofs,
+        approval_block,
+    }]
 }
 
 #[test]
@@ -896,71 +943,7 @@ fn test_approval_block() {
         n_blocks: 2,
     };
     let n_txs = 1 << rollup_constants.log_n_txs;
-    let examples = make_sample_block(rollup_constants);
-
-    let config = CircuitConfig::standard_recursion_config();
-    let merge_and_purge_circuit = make_user_proof_circuit::<F, C, D>(config, rollup_constants);
-
-    let old_user_asset_root = *sender1_input_witness.first().unwrap().0.old_root;
-    let mut pw = PartialWitness::new();
-    merge_and_purge_circuit.targets.set_witness(
-        &mut pw,
-        sender1_account.address,
-        &[],
-        &sender1_input_witness,
-        &sender1_output_witness,
-        *sender1_nonce,
-        old_user_asset_root,
-    );
-
-    println!("start proving: sender1_tx_proof");
-    let start = Instant::now();
-    let sender1_tx_proof = merge_and_purge_circuit.prove(pw).unwrap();
-    let end = start.elapsed();
-    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
-
-    // dbg!(&sender1_tx_proof.public_inputs);
-
-    merge_and_purge_circuit
-        .verify(sender1_tx_proof.clone())
-        .unwrap();
-
-    let mut pw = PartialWitness::new();
-    merge_and_purge_circuit.targets.set_witness(
-        &mut pw,
-        sender2_account.address,
-        &[merge_proof],
-        &sender2_input_witness,
-        &sender2_output_witness,
-        *sender2_nonce,
-        sender2_input_witness.first().unwrap().0.old_root,
-    );
-
-    println!("start proving: sender2_tx_proof");
-    let start = Instant::now();
-    let sender2_tx_proof = merge_and_purge_circuit.prove(pw).unwrap();
-    let end = start.elapsed();
-    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
-
-    merge_and_purge_circuit
-        .verify(sender2_tx_proof.clone())
-        .unwrap();
-
-    let config = CircuitConfig::standard_recursion_config();
-    let zkdsa_circuit = make_simple_signature_circuit::<F, C, D>(config);
-
-    let mut pw = PartialWitness::new();
-    zkdsa_circuit.targets.set_witness(
-        &mut pw,
-        sender2_account.private_key,
-        *world_state_tree.get_root().unwrap(),
-    );
-
-    println!("start proving: sender2_received_signature");
-    let start = Instant::now();
-    let sender2_received_signature = zkdsa_circuit.prove(pw).unwrap();
-    let end = start.elapsed();
-    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+    let examples = make_sample_circuit_inputs::<C, D>(rollup_constants);
 
     let config = CircuitConfig::standard_recursion_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
@@ -972,23 +955,7 @@ fn test_approval_block() {
     let circuit_data = builder.build::<C>();
 
     let mut pw = PartialWitness::new();
-    approval_block_target.set_witness::<F, D>(
-        &mut pw,
-        block_number,
-        &world_state_revert_proofs,
-        &user_tx_proofs
-            .iter()
-            .map(|p| p.public_inputs.clone())
-            .collect::<Vec<_>>(),
-        &received_signatures
-            .iter()
-            .cloned()
-            .map(|p| p.map(|p| p.public_inputs))
-            .collect::<Vec<_>>(),
-        &latest_account_tree_process_proofs,
-        world_state_revert_proofs.first().unwrap().old_root,
-        latest_account_tree_process_proofs.first().unwrap().old_root,
-    );
+    approval_block_target.set_witness::<F, D>(&mut pw, &examples[0].approval_block);
 
     println!("start proving: block_proof");
     let start = Instant::now();

@@ -11,4 +11,6 @@
 
 ## transaction
 
-`circuit`と`gadgets`、その他名前がついているディレクトリ(`tree`や`utils`の使い分けは？)
+- `circuit`と`gadgets`、その他名前がついているディレクトリ(`tree`や`utils`の使い分けは？)
+
+- `witness`を proof の意味で使っているが、両者は区別したほうが良いのではないか

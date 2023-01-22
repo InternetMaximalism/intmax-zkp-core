@@ -496,10 +496,15 @@ where
 
 #[cfg(test)]
 mod tests {
-    use plonky2::{plonk::config::GenericConfig, hash::hash_types::HashOut};
+    use plonky2::{hash::hash_types::HashOut, plonk::config::GenericConfig};
 
-    use crate::{config::RollupConstants, transaction::circuits::{MergeAndPurgeTransition, prove_user_transaction, MergeAndPurgeTransitionPublicInputs}, utils::hash::WrappedHashOut};
-
+    use crate::{
+        config::RollupConstants,
+        transaction::circuits::{
+            prove_user_transaction, MergeAndPurgeTransition, MergeAndPurgeTransitionPublicInputs,
+        },
+        utils::hash::WrappedHashOut,
+    };
 
     #[test]
     fn test_prove_user_transaction() {

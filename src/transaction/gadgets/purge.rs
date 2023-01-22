@@ -36,60 +36,6 @@ pub struct PurgeInputProcessProof<F: RichField, H: Hasher<F>, K: KeyLike> {
 
 impl<F: RichField, H: Hasher<F>, K: KeyLike> PurgeInputProcessProof<F, H, K> {
     pub fn calculate(&self) -> (H::Hash, H::Hash) {
-        // let (w1, index, old_leaf_data) = witness;
-        // assert_eq!(w0.old_root, prev_user_asset_root);
-        // prev_user_asset_root = w0.new_root;
-
-        // let mut w1_old_root = H::hash_or_noop(&encode_contributed_asset(&self.old_leaf_data));
-        // let mut w1_new_root =
-        //     H::hash_or_noop(&encode_contributed_asset(&ContributedAsset::default()));
-        // assert_eq!(index.len(), self.siblings.len());
-        // for (lr_bit, sibling) in index.iter().zip(self.siblings.iter()) {
-        //     if *lr_bit {
-        //         w1_old_root = H::two_to_one(*sibling, w1_old_root);
-        //         w1_new_root = H::two_to_one(*sibling, w1_new_root);
-        //     } else {
-        //         w1_old_root = H::two_to_one(w1_old_root, *sibling);
-        //         w1_new_root = H::two_to_one(w1_new_root, *sibling);
-        //     }
-        // }
-
-        // let merge_key = w0.new_key;
-        // let old_root_with_nonce = PoseidonHash::two_to_one(w1_old_root, *merge_key).into();
-        // let new_root_with_nonce = PoseidonHash::two_to_one(w1_new_root, *merge_key).into();
-        // assert_eq!(w0.fnc, ProcessMerkleProofRole::ProcessUpdate);
-        // verify_layered_smt_connection(
-        //     w0.fnc,
-        //     w0.old_value,
-        //     w0.new_value,
-        //     old_root_with_nonce,
-        //     new_root_with_nonce,
-        // )
-        // .unwrap_or_else(|_| {
-        //     panic!(
-        //         "invalid connection between first and second SMT proof of index {} in input witnesses",
-        //         i
-        //     )
-        // }); // XXX
-        // assert!(
-        //     w1.fnc == ProcessMerkleProofRole::ProcessUpdate
-        //         || w1.fnc == ProcessMerkleProofRole::ProcessDelete
-        // );
-        // verify_layered_smt_connection(
-        //     w1.fnc,
-        //     w1.old_value,
-        //     w1.new_value,
-        //     w2.old_root,
-        //     w2.new_root,
-        // )
-        // .unwrap_or_else(|_| {
-        //     panic!(
-        //         "invalid connection between second and third SMT proof of index {} in input witnesses",
-        //         i
-        //     )
-        // });
-        // assert_eq!(old_leaf_data.fnc, ProcessMerkleProofRole::ProcessDelete);
-
         // 取り除いた asset の amount が 2^56 未満の値であること
         assert!(self.old_leaf_data.amount < 1u64 << 56);
 

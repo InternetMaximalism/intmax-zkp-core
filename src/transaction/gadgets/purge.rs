@@ -548,8 +548,6 @@ mod tests {
         builder.register_public_inputs(&target.tx_hash.elements);
         let data = builder.build::<C>();
 
-        // dbg!(&data.common);
-
         let private_key = HashOut {
             elements: [
                 F::from_canonical_u64(15657143458229430356),

@@ -492,34 +492,34 @@ mod tests {
     use crate::transaction::gadgets::purge::PurgeTransition;
     use crate::transaction::gadgets::purge::PurgeTransitionTarget;
 
+    use std::time::Instant;
+
+    use plonky2::{
+        field::types::Field,
+        hash::hash_types::HashOut,
+        iop::witness::PartialWitness,
+        plonk::{
+            circuit_builder::CircuitBuilder,
+            circuit_data::CircuitConfig,
+            config::{GenericConfig, PoseidonGoldilocksConfig},
+        },
+    };
+
+    use crate::{
+        merkle_tree::tree::get_merkle_root,
+        sparse_merkle_tree::goldilocks_poseidon::{
+            NodeDataMemory, PoseidonSparseMerkleTree, RootDataTmp,
+        },
+        transaction::{
+            asset::TokenKind,
+            tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
+        },
+        utils::hash::GoldilocksHashOut,
+        zkdsa::account::{private_key_to_account, Address},
+    };
+
     #[test]
-    fn test_purge_proof_by_plonky2() {
-        use std::time::Instant;
-
-        use plonky2::{
-            field::types::Field,
-            hash::hash_types::HashOut,
-            iop::witness::PartialWitness,
-            plonk::{
-                circuit_builder::CircuitBuilder,
-                circuit_data::CircuitConfig,
-                config::{GenericConfig, PoseidonGoldilocksConfig},
-            },
-        };
-
-        use crate::{
-            merkle_tree::tree::get_merkle_root,
-            sparse_merkle_tree::goldilocks_poseidon::{
-                NodeDataMemory, PoseidonSparseMerkleTree, RootDataTmp,
-            },
-            transaction::{
-                asset::TokenKind,
-                tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
-            },
-            utils::hash::GoldilocksHashOut,
-            zkdsa::account::{private_key_to_account, Address},
-        };
-
+    fn test_purge_proof() {
         const D: usize = 2;
         type C = PoseidonGoldilocksConfig;
         type H = <C as GenericConfig<D>>::InnerHasher;
@@ -620,13 +620,6 @@ mod tests {
             .unwrap();
 
         let default_leaf_hash = H::hash_or_noop(&ContributedAsset::default().encode());
-
-        // let default_user_asset_leaf_hash = get_merkle_proof_with_zero(
-        //     &[],
-        //     0,
-        //     LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES,
-        //     default_leaf_hash,
-        // );
 
         let old_user_asset_root = user_asset_tree.get_root().unwrap();
         let proof1 = user_asset_tree

@@ -327,11 +327,6 @@ impl PurgeTransitionTarget {
         &self,
         pw: &mut impl Witness<F>,
         witness: &PurgeTransition<F, H, K>,
-        // sender_address: Address<F>,
-        // input_witness: &[PurgeInputProcessProof<F, H, K>],
-        // output_witness: &[PurgeOutputProcessProof<F, H, K>],
-        // old_user_asset_root: HashOut<F>,
-        // nonce: HashOut<F>,
     ) -> (HashOut<F>, HashOut<F>, HashOut<F>) {
         let default_leaf_data = ContributedAsset::default();
 
@@ -349,22 +344,10 @@ impl PurgeTransitionTarget {
             input_witness_t.set_witness(pw, input_witness, true);
         }
 
-        // let default_asset_tree = SparseMerkleTreeMemory::<F, H>::new(
-        //     self.log_max_n_txs + self.log_max_n_contracts + self.log_max_n_variables,
-        //     HashOut::ZERO.elements.to_vec(),
-        // ); // XXX
-        // let default_merkle_proof = default_asset_tree.prove(&vec![
-        //     false;
-        //     self.log_max_n_txs
-        //         + self.log_max_n_contracts
-        //         + self.log_max_n_variables
-        // ]);
-
         for input_proof_t in self.input_proofs.iter().skip(witness.input_witnesses.len()) {
             input_proof_t.set_witness::<F, H, Vec<bool>>(
                 pw,
                 &PurgeInputProcessProof {
-                    // siblings: default_merkle_proof.siblings.clone(),
                     siblings: input_proof_t
                         .siblings
                         .iter()
@@ -389,17 +372,6 @@ impl PurgeTransitionTarget {
         {
             output_proof_t.set_witness(pw, output_proof, true);
         }
-
-        // let default_asset_tree = SparseMerkleTreeMemory::<F, H>::new(
-        //     self.log_n_recipients + self.log_n_contracts + self.log_n_variables,
-        //     HashOut::ZERO.elements.to_vec(),
-        // );
-        // let default_merkle_proof = default_asset_tree.prove(&vec![
-        //     false;
-        //     self.log_n_recipients
-        //         + self.log_n_contracts
-        //         + self.log_n_variables
-        // ]);
 
         for output_proof_t in self
             .output_proofs
@@ -461,14 +433,6 @@ pub fn verify_user_asset_purge_proof<
     {
         let proof1_old_leaf_t = builder.hash_n_to_hash_no_pad::<H>(old_leaf_data_t.encode());
         let proof1_new_leaf_t = default_leaf_hash;
-        // for (lr_bit, sibling) in index_t.iter().zip(siblings_t) {
-        //     let (l, r) = conditionally_reverse(builder, proof1_old_root_t, *sibling, *lr_bit);
-        //     proof1_old_root_t = poseidon_two_to_one::<F, H, D>(builder, l, r);
-        //     let (l, r) = conditionally_reverse(builder, proof1_new_root_t, *sibling, *lr_bit);
-        //     proof1_new_root_t = poseidon_two_to_one::<F, H, D>(builder, l, r);
-        // }
-        // builder.connect_hashes(prev_user_asset_root, proof1_old_root_t);
-        // prev_user_asset_root = proof1_new_root_t;
 
         let proof1_old_root_t =
             get_merkle_root_target::<F, H, D>(builder, index_t, proof1_old_leaf_t, siblings_t);
@@ -477,40 +441,6 @@ pub fn verify_user_asset_purge_proof<
         enforce_equal_if_enabled(builder, prev_user_asset_root, proof1_old_root_t, *enabled_t);
         prev_user_asset_root =
             conditionally_select(builder, proof1_new_root_t, prev_user_asset_root, *enabled_t);
-
-        // let is_no_op = get_process_merkle_proof_role(builder, proof0_t.fnc).is_no_op;
-        // let merge_key = proof0_t.new_key;
-        // let old_root_with_nonce =
-        //     poseidon_two_to_one::<F, H, D>(builder, proof1_old_root_t, merge_key);
-        // let old_root_with_nonce =
-        //     conditionally_select(builder, default_hash, old_root_with_nonce, is_no_op);
-        // let new_root_with_nonce =
-        //     poseidon_two_to_one::<F, H, D>(builder, proof1_new_root_t, merge_key);
-        // let new_root_with_nonce =
-        //     conditionally_select(builder, default_hash, new_root_with_nonce, is_no_op);
-        // verify_layered_smt_target_connection::<F, D>(
-        //     builder,
-        //     proof0_t.fnc,
-        //     proof0_t.old_value,
-        //     proof0_t.new_value,
-        //     old_root_with_nonce,
-        //     new_root_with_nonce,
-        // );
-
-        // verify_layered_smt_target_connection::<F, D>(
-        //     builder,
-        //     proof1_t.fnc,
-        //     proof1_t.old_value,
-        //     proof1_t.new_value,
-        //     proof2_t.old_root,
-        //     proof2_t.new_root,
-        // );
-
-        // // proof2_t.fnc が ProcessDeleteOp または ProcessNoOp であること
-        // let is_not_remove_op = logical_xor(builder, proof2_t.fnc[0], proof2_t.fnc[1]);
-        // // let is_not_remove_op =
-        // //     get_process_merkle_proof_role(builder, proof2_t.fnc).is_insert_or_update_op;
-        // // builder.connect(is_not_remove_op.target, constant_false.target); // XXX: row 453
 
         // 取り除いた asset が 2^56 未満の値であること
         builder.range_check(old_leaf_data_t.amount, 56);
@@ -530,14 +460,6 @@ pub fn verify_user_asset_purge_proof<
     {
         let proof1_old_leaf_t = default_leaf_hash;
         let proof1_new_leaf_t = builder.hash_n_to_hash_no_pad::<H>(new_leaf_data_t.encode());
-        // for (lr_bit, sibling) in index_t.iter().zip(siblings_t) {
-        //     let (l, r) = conditionally_reverse(builder, proof1_old_root_t, *sibling, *lr_bit);
-        //     proof1_old_root_t = poseidon_two_to_one::<F, H, D>(builder, l, r);
-        //     let (l, r) = conditionally_reverse(builder, proof1_new_root_t, *sibling, *lr_bit);
-        //     proof1_new_root_t = poseidon_two_to_one::<F, H, D>(builder, l, r);
-        // }
-        // builder.connect_hashes(prev_diff_root, proof1_old_root_t);
-        // prev_diff_root = proof1_new_root_t;
 
         let _proof1_old_root_t =
             get_merkle_root_target::<F, H, D>(builder, index_t, proof1_old_leaf_t, siblings_t);
@@ -546,28 +468,6 @@ pub fn verify_user_asset_purge_proof<
         // enforce_equal_if_enabled(builder, prev_diff_root, proof1_old_root_t, *enabled_t); // XXX: zero_hash が途中で不自然に変化するため, この方法では検証できない.
         prev_diff_root =
             conditionally_select(builder, proof1_new_root_t, prev_diff_root, *enabled_t);
-
-        // verify_layered_smt_target_connection::<F, D>(
-        //     builder,
-        //     proof0_t.fnc,
-        //     proof0_t.old_value,
-        //     proof0_t.new_value,
-        //     proof1_old_root_t,
-        //     proof1_new_root_t,
-        // );
-
-        // verify_layered_smt_target_connection::<F, D>(
-        //     builder,
-        //     proof1_t.fnc,
-        //     proof1_t.old_value,
-        //     proof1_t.new_value,
-        //     proof2_t.old_root,
-        //     proof2_t.new_root,
-        // );
-
-        // // proof2_t.fnc が ProcessInsertOp または ProcessNoOp であること
-        // let is_insert_op = builder.not(proof2_t.fnc[1]);
-        // builder.connect(is_insert_op.target, constant_true.target);
 
         // 移動する asset の amount が 2^56 未満の値であること
         builder.range_check(new_leaf_data_t.amount, 56);

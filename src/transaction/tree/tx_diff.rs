@@ -10,7 +10,7 @@ use crate::{
         sparse_merkle_tree::{MerklePath, Node},
         tree::{le_bytes_to_bits, MerkleProof},
     },
-    transaction::asset::{encode_contributed_asset, ContributedAsset, TokenKind},
+    transaction::asset::{ContributedAsset, TokenKind},
     zkdsa::account::Address,
 };
 
@@ -138,7 +138,7 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
         let mut path = recipient_path;
         path.append(&mut kind_path);
 
-        let leaf_data = encode_contributed_asset(&asset);
+        let leaf_data = asset.encode();
         debug_assert_eq!(leaf_data.len(), 13);
         self.nodes
             .insert(path.clone(), Node::Leaf { data: leaf_data }); // path: BE

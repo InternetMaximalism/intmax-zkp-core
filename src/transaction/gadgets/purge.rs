@@ -16,7 +16,7 @@ use crate::{
         gadgets::get_merkle_root_target,
         tree::{get_merkle_proof_with_zero, get_merkle_root, KeyLike},
     },
-    transaction::asset::{encode_contributed_asset, ContributedAsset},
+    transaction::asset::ContributedAsset,
     // merkle_tree::sparse_merkle_tree::SparseMerkleTreeMemory,
     utils::gadgets::{
         hash::poseidon_two_to_one,
@@ -44,8 +44,7 @@ impl<F: RichField, H: Hasher<F>, K: KeyLike> PurgeInputProcessProof<F, H, K> {
         assert!(self.old_leaf_data.amount < 1u64 << 56);
 
         let old_leaf_hash = H::hash_or_noop(&self.old_leaf_data.encode());
-        let new_leaf_hash =
-            H::hash_or_noop(&encode_contributed_asset(&ContributedAsset::default()));
+        let new_leaf_hash = H::hash_or_noop(&ContributedAsset::default().encode());
         let old_user_asset_root =
             get_merkle_root::<F, H, _>(&self.index, old_leaf_hash, &self.siblings);
         let new_user_asset_root =
@@ -117,9 +116,8 @@ pub struct PurgeOutputProcessProof<F: RichField, H: Hasher<F>, K: KeyLike> {
 
 impl<F: RichField, H: Hasher<F>, K: KeyLike> PurgeOutputProcessProof<F, H, K> {
     pub fn calculate(&self) -> (H::Hash, H::Hash) {
-        let old_leaf_hash =
-            H::hash_or_noop(&encode_contributed_asset(&ContributedAsset::default()));
-        let new_leaf_hash = H::hash_or_noop(&encode_contributed_asset(&self.new_leaf_data));
+        let old_leaf_hash = H::hash_or_noop(&ContributedAsset::default().encode());
+        let new_leaf_hash = H::hash_or_noop(&self.new_leaf_data.encode());
         let old_tx_diff_root =
             get_merkle_root::<F, H, _>(&self.index, old_leaf_hash, &self.siblings);
         let new_tx_diff_root =
@@ -613,7 +611,6 @@ pub fn verify_user_asset_purge_proof<
 mod tests {
 
     use crate::plonky2::plonk::config::Hasher;
-    use crate::transaction::gadgets::purge::encode_contributed_asset;
     use crate::transaction::gadgets::purge::ContributedAsset;
     use crate::transaction::gadgets::purge::PurgeInputProcessProof;
     use crate::transaction::gadgets::purge::PurgeOutputProcessProof;
@@ -747,8 +744,7 @@ mod tests {
             )
             .unwrap();
 
-        let default_leaf_hash =
-            H::hash_or_noop(&encode_contributed_asset(&ContributedAsset::default()));
+        let default_leaf_hash = H::hash_or_noop(&ContributedAsset::default().encode());
 
         // let default_user_asset_leaf_hash = get_merkle_proof_with_zero(
         //     &[],

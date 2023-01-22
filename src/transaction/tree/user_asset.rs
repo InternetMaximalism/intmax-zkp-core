@@ -10,7 +10,7 @@ use crate::{
         sparse_merkle_tree::{MerklePath, Node},
         tree::{le_bytes_to_bits, KeyLike, MerkleProof},
     },
-    transaction::asset::{encode_contributed_asset, ContributedAsset, TokenKind, VariableIndex},
+    transaction::asset::{ContributedAsset, TokenKind, VariableIndex},
     zkdsa::account::Address,
 };
 
@@ -150,7 +150,7 @@ impl<F: RichField, H: Hasher<F>> UserAssetTree<F, H> {
     ) -> anyhow::Result<()> {
         for (i, asset) in assets.iter().enumerate() {
             // XXX: `merge_key` does not include in leaf data
-            let new_leaf_data = encode_contributed_asset(asset);
+            let new_leaf_data = asset.encode();
 
             self.insert(merge_key, i, new_leaf_data);
         }

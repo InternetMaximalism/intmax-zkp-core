@@ -122,18 +122,14 @@ pub struct ContributedAsset<F: RichField> {
 
 impl<F: RichField> ContributedAsset<F> {
     pub fn encode(&self) -> Vec<F> {
-        encode_contributed_asset(self)
+        [
+            self.receiver_address.0.elements.to_vec(),
+            self.kind.contract_address.0.elements.to_vec(),
+            self.kind.variable_index.to_hash_out().elements.to_vec(),
+            vec![F::from_canonical_u64(self.amount)],
+        ]
+        .concat()
     }
-}
-
-pub fn encode_contributed_asset<F: RichField>(asset: &ContributedAsset<F>) -> Vec<F> {
-    [
-        asset.receiver_address.0.elements.to_vec(),
-        asset.kind.contract_address.0.elements.to_vec(),
-        asset.kind.variable_index.to_hash_out().elements.to_vec(),
-        vec![F::from_canonical_u64(asset.amount)],
-    ]
-    .concat()
 }
 
 impl<F: RichField> FromStr for ContributedAsset<F> {

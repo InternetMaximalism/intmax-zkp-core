@@ -578,294 +578,308 @@ pub fn verify_user_asset_merge_transitions<
     new_user_asset_root
 }
 
-#[test]
-fn test_two_tree_compatibility() {
-    use plonky2::{
-        field::types::Field,
-        plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
-    };
+#[cfg(test)]
+mod tests {
+    use crate::plonky2::plonk::config::Hasher;
+    use crate::transaction::gadgets::merge::get_block_hash;
+    use crate::transaction::gadgets::merge::DiffTreeInclusionProof;
+    use crate::transaction::gadgets::merge::MergeProof;
+    use crate::transaction::gadgets::merge::MergeTransition;
+    use crate::transaction::gadgets::merge::MerkleProcessProof;
+    use plonky2::hash::hash_types::HashOut;
 
-    use crate::{
-        transaction::{
-            asset::{ContributedAsset, TokenKind, VariableIndex},
-            tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
-        },
-        utils::hash::GoldilocksHashOut,
-        zkdsa::account::{private_key_to_account, Address},
-    };
+    use crate::transaction::gadgets::merge::MergeTransitionTarget;
 
-    type C = PoseidonGoldilocksConfig;
-    type H = <C as GenericConfig<D>>::InnerHasher;
-    type F = <C as GenericConfig<D>>::F;
-    const D: usize = 2;
+    #[test]
+    fn test_two_tree_compatibility() {
+        use plonky2::{
+            field::types::Field,
+            plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
+        };
 
-    const LOG_MAX_N_TXS: usize = 3;
-    const LOG_MAX_N_CONTRACTS: usize = 3;
-    const LOG_MAX_N_VARIABLES: usize = 3;
-    const LOG_N_RECIPIENTS: usize = 3;
-    const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
-    const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
+        use crate::{
+            transaction::{
+                asset::{ContributedAsset, TokenKind, VariableIndex},
+                tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
+            },
+            utils::hash::GoldilocksHashOut,
+            zkdsa::account::{private_key_to_account, Address},
+        };
 
-    let private_key = HashOut {
-        elements: [
-            F::from_canonical_u64(15657143458229430356),
-            F::from_canonical_u64(6012455030006979790),
-            F::from_canonical_u64(4280058849535143691),
-            F::from_canonical_u64(5153662694263190591),
-        ],
-    };
-    let user_account = private_key_to_account(private_key);
-    let user_address = user_account.address;
+        type C = PoseidonGoldilocksConfig;
+        type H = <C as GenericConfig<D>>::InnerHasher;
+        type F = <C as GenericConfig<D>>::F;
+        const D: usize = 2;
 
-    let asset1 = ContributedAsset {
-        receiver_address: user_address,
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 2053,
-    };
-    let asset2 = ContributedAsset {
-        receiver_address: user_address,
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 1111,
-    };
+        const LOG_MAX_N_TXS: usize = 3;
+        const LOG_MAX_N_CONTRACTS: usize = 3;
+        const LOG_MAX_N_VARIABLES: usize = 3;
+        const LOG_N_RECIPIENTS: usize = 3;
+        const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
+        const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
 
-    let mut user_asset_tree =
-        UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
+        let private_key = HashOut {
+            elements: [
+                F::from_canonical_u64(15657143458229430356),
+                F::from_canonical_u64(6012455030006979790),
+                F::from_canonical_u64(4280058849535143691),
+                F::from_canonical_u64(5153662694263190591),
+            ],
+        };
+        let user_account = private_key_to_account(private_key);
+        let user_address = user_account.address;
 
-    let mut deposit_tree =
-        TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
+        let asset1 = ContributedAsset {
+            receiver_address: user_address,
+            kind: TokenKind {
+                contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+                variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+            },
+            amount: 2053,
+        };
+        let asset2 = ContributedAsset {
+            receiver_address: user_address,
+            kind: TokenKind {
+                contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+                variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+            },
+            amount: 1111,
+        };
 
-    deposit_tree.insert(asset1).unwrap();
-    deposit_tree.insert(asset2).unwrap();
+        let mut user_asset_tree =
+            UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
 
-    let diff_tree_inclusion_value2 = deposit_tree.get_asset_root(&user_address).unwrap();
+        let mut deposit_tree =
+            TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
 
-    let deposit_merge_key = HashOut {
-        elements: [
-            F::from_canonical_u64(10129591887907959457),
-            F::from_canonical_u64(12952496368791909874),
-            F::from_canonical_u64(5623826813413271961),
-            F::from_canonical_u64(13962620032426109816),
-        ],
-    };
+        deposit_tree.insert(asset1).unwrap();
+        deposit_tree.insert(asset2).unwrap();
 
-    user_asset_tree
-        .insert_assets(deposit_merge_key, vec![asset1, asset2])
-        .unwrap();
+        let diff_tree_inclusion_value2 = deposit_tree.get_asset_root(&user_address).unwrap();
 
-    // let mut user_asset_tree: UserAssetTree<_, _> = user_asset_tree.into();
-    let asset_root = user_asset_tree.get_asset_root(&deposit_merge_key).unwrap();
-    {
-        assert_eq!(asset_root, diff_tree_inclusion_value2);
-    }
-}
+        let deposit_merge_key = HashOut {
+            elements: [
+                F::from_canonical_u64(10129591887907959457),
+                F::from_canonical_u64(12952496368791909874),
+                F::from_canonical_u64(5623826813413271961),
+                F::from_canonical_u64(13962620032426109816),
+            ],
+        };
 
-#[test]
-fn test_merge_proof_by_plonky2() {
-    use std::time::Instant;
+        user_asset_tree
+            .insert_assets(deposit_merge_key, vec![asset1, asset2])
+            .unwrap();
 
-    use plonky2::{
-        field::types::Field,
-        iop::witness::PartialWitness,
-        plonk::{
-            circuit_builder::CircuitBuilder,
-            circuit_data::CircuitConfig,
-            config::{GenericConfig, PoseidonGoldilocksConfig},
-        },
-    };
-
-    use crate::{
-        merkle_tree::tree::get_merkle_proof,
-        sparse_merkle_tree::proof::SparseMerkleInclusionProof,
-        transaction::{
-            asset::{ContributedAsset, TokenKind, VariableIndex},
-            block_header::BlockHeader,
-            tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
-        },
-        utils::hash::GoldilocksHashOut,
-        zkdsa::account::{private_key_to_account, Address},
-    };
-
-    type C = PoseidonGoldilocksConfig;
-    type H = <C as GenericConfig<D>>::InnerHasher;
-    type F = <C as GenericConfig<D>>::F;
-    const D: usize = 2;
-
-    const LOG_MAX_N_USERS: usize = 3;
-    const LOG_MAX_N_TXS: usize = 3;
-    const LOG_MAX_N_CONTRACTS: usize = 3;
-    const LOG_MAX_N_VARIABLES: usize = 3;
-    const LOG_N_TXS: usize = 3;
-    const LOG_N_RECIPIENTS: usize = 3;
-    const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
-    const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
-    const N_MERGES: usize = 3;
-
-    let config = CircuitConfig::standard_recursion_config();
-
-    let mut builder = CircuitBuilder::<F, D>::new(config);
-    // builder.debug_target_index = Some(36);
-
-    let merge_proof_target: MergeTransitionTarget = MergeTransitionTarget::add_virtual_to::<F, H, D>(
-        &mut builder,
-        LOG_MAX_N_USERS,
-        LOG_MAX_N_TXS,
-        LOG_N_TXS,
-        LOG_N_RECIPIENTS,
-        LOG_N_CONTRACTS + LOG_N_VARIABLES,
-        N_MERGES,
-    );
-    builder.register_public_inputs(&merge_proof_target.old_user_asset_root.elements);
-    builder.register_public_inputs(&merge_proof_target.new_user_asset_root.elements);
-    let data = builder.build::<C>();
-
-    let private_key = HashOut {
-        elements: [
-            F::from_canonical_u64(15657143458229430356),
-            F::from_canonical_u64(6012455030006979790),
-            F::from_canonical_u64(4280058849535143691),
-            F::from_canonical_u64(5153662694263190591),
-        ],
-    };
-    let user_account = private_key_to_account(private_key);
-    let user_address = user_account.address;
-
-    let asset1 = ContributedAsset {
-        receiver_address: user_address,
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 2053,
-    };
-    let asset2 = ContributedAsset {
-        receiver_address: user_address,
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 1111,
-    };
-
-    let mut user_asset_tree =
-        UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
-
-    let mut deposit_tree =
-        TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
-
-    deposit_tree.insert(asset1).unwrap();
-    deposit_tree.insert(asset2).unwrap();
-
-    // let deposit_tree: PoseidonSparseMerkleTree<_, _> = deposit_tree.into();
-
-    let diff_tree_inclusion_proof2 = deposit_tree.prove_asset_root(&user_address).unwrap();
-    let interior_deposit_root = deposit_tree.get_root().unwrap();
-
-    let deposit_nonce = HashOut::ZERO;
-    let deposit_tx_hash = H::two_to_one(interior_deposit_root, deposit_nonce);
-
-    // let diff_tree = TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
-    let diff_tree_inclusion_proof1 = get_merkle_proof::<F, H>(&[deposit_tx_hash], 0, LOG_N_TXS);
-
-    let default_hash = HashOut::ZERO;
-    let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
-    let default_merkle_root = get_merkle_proof::<F, H>(&[], 0, LOG_N_TXS).root;
-    let prev_block_header = BlockHeader {
-        block_number: 1,
-        prev_block_hash: default_hash,
-        block_headers_digest: default_hash,
-        transactions_digest: default_merkle_root,
-        deposit_digest: diff_tree_inclusion_proof1.root,
-        proposed_world_state_digest: default_hash,
-        approved_world_state_digest: default_hash,
-        latest_account_digest: default_hash,
-    };
-    let block_hash = get_block_hash(&prev_block_header);
-
-    let deposit_merge_key = H::two_to_one(deposit_tx_hash, block_hash);
-
-    let merge_inclusion_old_root = user_asset_tree.get_root().unwrap();
-    // user asset tree に deposit を merge する.
-    user_asset_tree
-        .insert_assets(deposit_merge_key, vec![asset1, asset2])
-        .unwrap();
-
-    // let mut user_asset_tree: UserAssetTree<_, _> = user_asset_tree.into();
-    let asset_root = user_asset_tree.get_asset_root(&deposit_merge_key).unwrap();
-    {
-        assert_eq!(asset_root, diff_tree_inclusion_proof2.value);
+        // let mut user_asset_tree: UserAssetTree<_, _> = user_asset_tree.into();
+        let asset_root = user_asset_tree.get_asset_root(&deposit_merge_key).unwrap();
+        {
+            assert_eq!(asset_root, diff_tree_inclusion_value2);
+        }
     }
 
-    let merge_inclusion_new_root = user_asset_tree.get_root().unwrap();
+    #[test]
+    fn test_merge_proof_by_plonky2() {
+        use std::time::Instant;
 
-    let merge_inclusion_proof = user_asset_tree
-        .prove_asset_root(&deposit_merge_key)
-        .unwrap();
-    let merge_process_proof = MerkleProcessProof::<F, H, HashOut<F>> {
-        index: deposit_merge_key,
-        siblings: merge_inclusion_proof.siblings,
-        old_value: HashOut::ZERO,
-        new_value: asset_root,
-        old_root: merge_inclusion_old_root,
-        new_root: merge_inclusion_new_root,
-    };
+        use plonky2::{
+            field::types::Field,
+            iop::witness::PartialWitness,
+            plonk::{
+                circuit_builder::CircuitBuilder,
+                circuit_data::CircuitConfig,
+                config::{GenericConfig, PoseidonGoldilocksConfig},
+            },
+        };
 
-    let merge_proof = MergeProof::<F, H, _> {
-        is_deposit: true,
-        diff_tree_inclusion_proof: DiffTreeInclusionProof {
-            block_header: prev_block_header,
-            siblings1: diff_tree_inclusion_proof1.siblings,
-            siblings2: diff_tree_inclusion_proof2.siblings,
-            root1: diff_tree_inclusion_proof1.root,
-            index1: diff_tree_inclusion_proof1.index,
-            value1: diff_tree_inclusion_proof1.value,
-            root2: diff_tree_inclusion_proof2.root,
-            index2: diff_tree_inclusion_proof2.index,
-            value2: diff_tree_inclusion_proof2.value,
-        },
-        merge_process_proof,
-        latest_account_tree_inclusion_proof: default_inclusion_proof,
-        nonce: deposit_nonce,
-    };
+        use crate::{
+            merkle_tree::tree::get_merkle_proof,
+            sparse_merkle_tree::proof::SparseMerkleInclusionProof,
+            transaction::{
+                asset::{ContributedAsset, TokenKind, VariableIndex},
+                block_header::BlockHeader,
+                tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
+            },
+            utils::hash::GoldilocksHashOut,
+            zkdsa::account::{private_key_to_account, Address},
+        };
 
-    let mut pw = PartialWitness::new();
+        type C = PoseidonGoldilocksConfig;
+        type H = <C as GenericConfig<D>>::InnerHasher;
+        type F = <C as GenericConfig<D>>::F;
+        const D: usize = 2;
 
-    merge_proof_target.set_witness(
-        &mut pw,
-        &MergeTransition {
-            proofs: vec![merge_proof],
-            old_user_asset_root: merge_inclusion_old_root,
-        },
-    );
+        const LOG_MAX_N_USERS: usize = 3;
+        const LOG_MAX_N_TXS: usize = 3;
+        const LOG_MAX_N_CONTRACTS: usize = 3;
+        const LOG_MAX_N_VARIABLES: usize = 3;
+        const LOG_N_TXS: usize = 3;
+        const LOG_N_RECIPIENTS: usize = 3;
+        const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
+        const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
+        const N_MERGES: usize = 3;
 
-    println!("start proving: proof");
-    let start = Instant::now();
-    let proof = data.prove(pw).unwrap();
-    let end = start.elapsed();
-    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        let config = CircuitConfig::standard_recursion_config();
 
-    data.verify(proof).unwrap();
+        let mut builder = CircuitBuilder::<F, D>::new(config);
+        // builder.debug_target_index = Some(36);
 
-    let mut pw = PartialWitness::new();
+        let merge_proof_target: MergeTransitionTarget =
+            MergeTransitionTarget::add_virtual_to::<F, H, D>(
+                &mut builder,
+                LOG_MAX_N_USERS,
+                LOG_MAX_N_TXS,
+                LOG_N_TXS,
+                LOG_N_RECIPIENTS,
+                LOG_N_CONTRACTS + LOG_N_VARIABLES,
+                N_MERGES,
+            );
+        builder.register_public_inputs(&merge_proof_target.old_user_asset_root.elements);
+        builder.register_public_inputs(&merge_proof_target.new_user_asset_root.elements);
+        let data = builder.build::<C>();
 
-    merge_proof_target.set_witness::<F, H>(
-        &mut pw,
-        &MergeTransition {
-            proofs: vec![],
-            old_user_asset_root: default_hash,
-        },
-    );
+        let private_key = HashOut {
+            elements: [
+                F::from_canonical_u64(15657143458229430356),
+                F::from_canonical_u64(6012455030006979790),
+                F::from_canonical_u64(4280058849535143691),
+                F::from_canonical_u64(5153662694263190591),
+            ],
+        };
+        let user_account = private_key_to_account(private_key);
+        let user_address = user_account.address;
 
-    println!("start proving: default proof");
-    let start = Instant::now();
-    let default_proof = data.prove(pw).unwrap();
-    let end = start.elapsed();
-    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        let asset1 = ContributedAsset {
+            receiver_address: user_address,
+            kind: TokenKind {
+                contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+                variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+            },
+            amount: 2053,
+        };
+        let asset2 = ContributedAsset {
+            receiver_address: user_address,
+            kind: TokenKind {
+                contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+                variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+            },
+            amount: 1111,
+        };
 
-    data.verify(default_proof).unwrap();
+        let mut user_asset_tree =
+            UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
+
+        let mut deposit_tree =
+            TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
+
+        deposit_tree.insert(asset1).unwrap();
+        deposit_tree.insert(asset2).unwrap();
+
+        // let deposit_tree: PoseidonSparseMerkleTree<_, _> = deposit_tree.into();
+
+        let diff_tree_inclusion_proof2 = deposit_tree.prove_asset_root(&user_address).unwrap();
+        let interior_deposit_root = deposit_tree.get_root().unwrap();
+
+        let deposit_nonce = HashOut::ZERO;
+        let deposit_tx_hash = H::two_to_one(interior_deposit_root, deposit_nonce);
+
+        // let diff_tree = TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
+        let diff_tree_inclusion_proof1 = get_merkle_proof::<F, H>(&[deposit_tx_hash], 0, LOG_N_TXS);
+
+        let default_hash = HashOut::ZERO;
+        let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
+        let default_merkle_root = get_merkle_proof::<F, H>(&[], 0, LOG_N_TXS).root;
+        let prev_block_header = BlockHeader {
+            block_number: 1,
+            prev_block_hash: default_hash,
+            block_headers_digest: default_hash,
+            transactions_digest: default_merkle_root,
+            deposit_digest: diff_tree_inclusion_proof1.root,
+            proposed_world_state_digest: default_hash,
+            approved_world_state_digest: default_hash,
+            latest_account_digest: default_hash,
+        };
+        let block_hash = get_block_hash(&prev_block_header);
+
+        let deposit_merge_key = H::two_to_one(deposit_tx_hash, block_hash);
+
+        let merge_inclusion_old_root = user_asset_tree.get_root().unwrap();
+        // user asset tree に deposit を merge する.
+        user_asset_tree
+            .insert_assets(deposit_merge_key, vec![asset1, asset2])
+            .unwrap();
+
+        // let mut user_asset_tree: UserAssetTree<_, _> = user_asset_tree.into();
+        let asset_root = user_asset_tree.get_asset_root(&deposit_merge_key).unwrap();
+        {
+            assert_eq!(asset_root, diff_tree_inclusion_proof2.value);
+        }
+
+        let merge_inclusion_new_root = user_asset_tree.get_root().unwrap();
+
+        let merge_inclusion_proof = user_asset_tree
+            .prove_asset_root(&deposit_merge_key)
+            .unwrap();
+        let merge_process_proof = MerkleProcessProof::<F, H, HashOut<F>> {
+            index: deposit_merge_key,
+            siblings: merge_inclusion_proof.siblings,
+            old_value: HashOut::ZERO,
+            new_value: asset_root,
+            old_root: merge_inclusion_old_root,
+            new_root: merge_inclusion_new_root,
+        };
+
+        let merge_proof = MergeProof::<F, H, _> {
+            is_deposit: true,
+            diff_tree_inclusion_proof: DiffTreeInclusionProof {
+                block_header: prev_block_header,
+                siblings1: diff_tree_inclusion_proof1.siblings,
+                siblings2: diff_tree_inclusion_proof2.siblings,
+                root1: diff_tree_inclusion_proof1.root,
+                index1: diff_tree_inclusion_proof1.index,
+                value1: diff_tree_inclusion_proof1.value,
+                root2: diff_tree_inclusion_proof2.root,
+                index2: diff_tree_inclusion_proof2.index,
+                value2: diff_tree_inclusion_proof2.value,
+            },
+            merge_process_proof,
+            latest_account_tree_inclusion_proof: default_inclusion_proof,
+            nonce: deposit_nonce,
+        };
+
+        let mut pw = PartialWitness::new();
+
+        merge_proof_target.set_witness(
+            &mut pw,
+            &MergeTransition {
+                proofs: vec![merge_proof],
+                old_user_asset_root: merge_inclusion_old_root,
+            },
+        );
+
+        println!("start proving: proof");
+        let start = Instant::now();
+        let proof = data.prove(pw).unwrap();
+        let end = start.elapsed();
+        println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+
+        data.verify(proof).unwrap();
+
+        let mut pw = PartialWitness::new();
+
+        merge_proof_target.set_witness::<F, H>(
+            &mut pw,
+            &MergeTransition {
+                proofs: vec![],
+                old_user_asset_root: default_hash,
+            },
+        );
+
+        println!("start proving: default proof");
+        let start = Instant::now();
+        let default_proof = data.prove(pw).unwrap();
+        let end = start.elapsed();
+        println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+
+        data.verify(default_proof).unwrap();
+    }
 }

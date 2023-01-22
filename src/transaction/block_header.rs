@@ -93,30 +93,6 @@ where
     Ok(value.0)
 }
 
-#[test]
-fn test_serde_block_header() {
-    use plonky2::field::goldilocks_field::GoldilocksField;
-
-    type F = GoldilocksField;
-
-    let block_header = BlockHeader {
-        block_number: 0,
-        prev_block_hash: *WrappedHashOut::from_u32(1),
-        block_headers_digest: *WrappedHashOut::from_u32(2),
-        transactions_digest: *WrappedHashOut::from_u32(3),
-        deposit_digest: *WrappedHashOut::from_u32(4),
-        proposed_world_state_digest: *WrappedHashOut::from_u32(5),
-        approved_world_state_digest: *WrappedHashOut::from_u32(6),
-        latest_account_digest: *WrappedHashOut::from_u32(7),
-    };
-    let encoded_block_header = serde_json::to_string(&block_header).unwrap();
-    let expected_encoded_block_header = "{\"block_number\":\"0x00000000\",\"prev_block_hash\":\"0x0000000000000000000000000000000000000000000000000000000000000001\",\"block_headers_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000002\",\"transactions_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000003\",\"deposit_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000004\",\"proposed_world_state_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000005\",\"approved_world_state_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000006\",\"latest_account_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000007\"}";
-    assert_eq!(encoded_block_header, expected_encoded_block_header);
-    let decoded_block_header: BlockHeader<F> =
-        serde_json::from_str(expected_encoded_block_header).unwrap();
-    assert_eq!(decoded_block_header, block_header);
-}
-
 impl<F: RichField> BlockHeader<F> {
     pub fn new(log_num_txs_in_block: usize) -> Self {
         let default_hash = HashOut::ZERO;
@@ -199,4 +175,34 @@ pub fn get_block_header_tree_proof<F: RichField>(
         old_proof.root.into(),
         new_root.into(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::transaction::block_header::BlockHeader;
+    use crate::utils::hash::WrappedHashOut;
+
+    #[test]
+    fn test_serde_block_header() {
+        use plonky2::field::goldilocks_field::GoldilocksField;
+
+        type F = GoldilocksField;
+
+        let block_header = BlockHeader {
+            block_number: 0,
+            prev_block_hash: *WrappedHashOut::from_u32(1),
+            block_headers_digest: *WrappedHashOut::from_u32(2),
+            transactions_digest: *WrappedHashOut::from_u32(3),
+            deposit_digest: *WrappedHashOut::from_u32(4),
+            proposed_world_state_digest: *WrappedHashOut::from_u32(5),
+            approved_world_state_digest: *WrappedHashOut::from_u32(6),
+            latest_account_digest: *WrappedHashOut::from_u32(7),
+        };
+        let encoded_block_header = serde_json::to_string(&block_header).unwrap();
+        let expected_encoded_block_header = "{\"block_number\":\"0x00000000\",\"prev_block_hash\":\"0x0000000000000000000000000000000000000000000000000000000000000001\",\"block_headers_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000002\",\"transactions_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000003\",\"deposit_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000004\",\"proposed_world_state_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000005\",\"approved_world_state_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000006\",\"latest_account_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000007\"}";
+        assert_eq!(encoded_block_header, expected_encoded_block_header);
+        let decoded_block_header: BlockHeader<F> =
+            serde_json::from_str(expected_encoded_block_header).unwrap();
+        assert_eq!(decoded_block_header, block_header);
+    }
 }

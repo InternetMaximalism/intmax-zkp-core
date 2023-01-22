@@ -20,21 +20,6 @@ pub struct DepositInfo<F: Field> {
     pub amount: F,
 }
 
-#[test]
-fn test_serde_deposit_info() {
-    use plonky2::field::goldilocks_field::GoldilocksField;
-
-    let deposit_info: DepositInfo<GoldilocksField> = DepositInfo::default();
-    let _json = serde_json::to_string(&deposit_info).unwrap();
-    let json = "{\"receiver_address\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"contract_address\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"variable_index\":\"0x00\",\"amount\":0}";
-    let decoded_deposit_info: DepositInfo<_> = serde_json::from_str(json).unwrap();
-    assert_eq!(decoded_deposit_info, deposit_info);
-
-    let json_value = serde_json::to_value(deposit_info).unwrap();
-    let decoded_deposit_info: DepositInfo<_> = serde_json::from_value(json_value).unwrap();
-    assert_eq!(decoded_deposit_info, deposit_info);
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct DepositInfoTarget {
     pub receiver_address: AddressTarget,
@@ -71,5 +56,24 @@ impl DepositInfoTarget {
             .set_witness(pw, value.contract_address);
         pw.set_hash_target(self.variable_index, value.variable_index.to_hash_out());
         pw.set_target(self.amount, value.amount);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::transaction::gadgets::deposit_info::DepositInfo;
+    use plonky2::field::goldilocks_field::GoldilocksField;
+
+    #[test]
+    fn test_serde_deposit_info() {
+        let deposit_info: DepositInfo<GoldilocksField> = DepositInfo::default();
+        let _json = serde_json::to_string(&deposit_info).unwrap();
+        let json = "{\"receiver_address\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"contract_address\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"variable_index\":\"0x00\",\"amount\":0}";
+        let decoded_deposit_info: DepositInfo<_> = serde_json::from_str(json).unwrap();
+        assert_eq!(decoded_deposit_info, deposit_info);
+
+        let json_value = serde_json::to_value(deposit_info).unwrap();
+        let decoded_deposit_info: DepositInfo<_> = serde_json::from_value(json_value).unwrap();
+        assert_eq!(decoded_deposit_info, deposit_info);
     }
 }

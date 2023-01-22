@@ -28,9 +28,9 @@ use crate::{
 use super::asset_mess::{verify_equal_assets, ContributedAssetTarget};
 
 /*
-* 指定された`old_leaf_data`をしょ
+* 指定された`old_leaf_data`をアセットのデフォルト値に変更する構造体
+* `RemoveAssetProof`などの方が分かりやすい気がする。Purgeはpurge txの意味でも使われているので、区別したほうが良さそう
 */
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PurgeInputProcessProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     pub siblings: Vec<H::Hash>,
@@ -107,6 +107,10 @@ impl PurgeInputProcessProofTarget {
     }
 }
 
+/*
+* 空のasset leafに`new_leaf_data`を挿入する証明
+* InsertAssetなどの名前の方が良い気がする
+*/
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PurgeOutputProcessProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     pub siblings: Vec<H::Hash>,
@@ -118,42 +122,12 @@ impl<F: RichField, H: Hasher<F>, K: KeyLike> PurgeOutputProcessProof<F, H, K> {
     pub fn calculate(&self) -> (H::Hash, H::Hash) {
         let old_leaf_hash = H::hash_or_noop(&ContributedAsset::default().encode());
         let new_leaf_hash = H::hash_or_noop(&self.new_leaf_data.encode());
+
+        // tx_diffしか想定していないなら、この構造体(&self)の名前にtx_diffを含めたほうが良さそう
         let old_tx_diff_root =
             get_merkle_root::<F, H, _>(&self.index, old_leaf_hash, &self.siblings);
         let new_tx_diff_root =
             get_merkle_root::<F, H, _>(&self.index, new_leaf_hash, &self.siblings);
-
-        // verify_layered_smt_connection(
-        //     w0.fnc,
-        //     w0.old_value,
-        //     w0.new_value,
-        //     w1_old_root.into(),
-        //     w1_new_root.into(),
-        // )
-        // .unwrap_or_else(|_| {
-        //     panic!(
-        //         "invalid connection between first and second SMT proof of index {} in output witnesses",
-        //         i
-        //     )
-        // });
-        // assert!(
-        //     w1.fnc == ProcessMerkleProofRole::ProcessUpdate
-        //         || w1.fnc == ProcessMerkleProofRole::ProcessInsert
-        // );
-        // verify_layered_smt_connection(
-        //     w1.fnc,
-        //     w1.old_value,
-        //     w1.new_value,
-        //     w2.old_root,
-        //     w2.new_root,
-        // )
-        // .unwrap_or_else(|_| {
-        //     panic!(
-        //         "invalid connection between second and third SMT proof of index {} in output witnesses",
-        //         i
-        //     )
-        // });
-        // assert_eq!(w2.fnc, ProcessMerkleProofRole::ProcessInsert);
 
         // 移動する asset の amount が 2^56 未満の値であること
         assert!(self.new_leaf_data.amount < 1u64 << 56);
@@ -171,7 +145,7 @@ pub struct PurgeOutputProcessProofTarget {
 }
 
 impl PurgeOutputProcessProofTarget {
-    pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+    pub fn new<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
         log_n_recipients: usize,
         log_n_kinds: usize,
@@ -200,7 +174,6 @@ impl PurgeOutputProcessProofTarget {
         let mut index = witness.index.to_bits();
         index.resize(self.index.len(), false);
 
-        // p0_t.set_witness(pw, w0);
         assert_eq!(self.siblings.len(), witness.siblings.len());
         for (ht, value) in self.siblings.iter().zip(witness.siblings.iter()) {
             pw.set_hash_target(*ht, *value);
@@ -215,6 +188,10 @@ impl PurgeOutputProcessProofTarget {
         witness.calculate()
     }
 }
+
+/*
+* Assetの消去と、追加をbatchして行うメソッド
+*/
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PurgeTransition<F: RichField, H: AlgebraicHasher<F>, K: KeyLike> {
@@ -290,8 +267,7 @@ pub struct PurgeTransitionTarget {
 }
 
 impl PurgeTransitionTarget {
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+    pub fn new<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
         log_max_n_txs: usize,
         log_max_n_kinds: usize,
@@ -299,7 +275,7 @@ impl PurgeTransitionTarget {
         log_n_kinds: usize,
         n_diffs: usize,
     ) -> Self {
-        let sender_address = AddressTarget::add_virtual_to(builder);
+        let sender_address = AddressTarget::new(builder);
         let old_user_asset_root = builder.add_virtual_hash();
         let nonce = builder.add_virtual_hash();
         let input_proofs_t = (0..n_diffs)
@@ -314,7 +290,7 @@ impl PurgeTransitionTarget {
 
         let output_proofs_t = (0..n_diffs)
             .map(|_| {
-                PurgeOutputProcessProofTarget::add_virtual_to::<F, H, D>(
+                PurgeOutputProcessProofTarget::new::<F, H, D>(
                     builder,
                     log_n_recipients,
                     log_n_kinds,
@@ -660,7 +636,7 @@ mod tests {
         let config = CircuitConfig::standard_recursion_config();
 
         let mut builder = CircuitBuilder::<F, D>::new(config);
-        let target = PurgeTransitionTarget::add_virtual_to::<F, H, D>(
+        let target = PurgeTransitionTarget::new::<F, H, D>(
             &mut builder,
             LOG_MAX_N_TXS,
             LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES,

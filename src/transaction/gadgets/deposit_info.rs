@@ -32,8 +32,8 @@ impl DepositInfoTarget {
     pub fn add_virtual_to<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
-        let receiver_address = AddressTarget::add_virtual_to(builder);
-        let contract_address = AddressTarget::add_virtual_to(builder);
+        let receiver_address = AddressTarget::new(builder);
+        let contract_address = AddressTarget::new(builder);
         let variable_index = builder.add_virtual_hash();
         let amount = builder.add_virtual_target();
 

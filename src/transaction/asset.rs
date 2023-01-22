@@ -14,6 +14,7 @@ use crate::{
 
 use super::gadgets::deposit_info::DepositInfo;
 
+// `TokenKind`で、トークンの種類を記述するのに使われる構造体
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct VariableIndex<F>(pub u8, core::marker::PhantomData<F>);

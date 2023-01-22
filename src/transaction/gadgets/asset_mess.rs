@@ -22,7 +22,7 @@ impl ContributedAssetTarget {
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
         Self {
-            recipient: AddressTarget::add_virtual_to(builder),
+            recipient: AddressTarget::new(builder),
             contract_address: builder.add_virtual_hash(),
             token_id: builder.add_virtual_hash(),
             amount: builder.add_virtual_target(),

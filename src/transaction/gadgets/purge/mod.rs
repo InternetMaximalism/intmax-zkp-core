@@ -638,7 +638,7 @@ pub fn verify_user_asset_purge_proof<
         // builder.connect_hashes(prev_diff_root, proof1_old_root_t);
         // prev_diff_root = proof1_new_root_t;
 
-        let proof1_old_root_t =
+        let _proof1_old_root_t =
             get_merkle_root_target::<F, H, D>(builder, index_t, proof1_old_leaf_t, siblings_t);
         let proof1_new_root_t =
             get_merkle_root_target::<F, H, D>(builder, index_t, proof1_new_leaf_t, siblings_t);

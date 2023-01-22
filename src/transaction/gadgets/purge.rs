@@ -27,6 +27,10 @@ use crate::{
 
 use super::asset_mess::{verify_equal_assets, ContributedAssetTarget};
 
+/*
+* 指定された`old_leaf_data`をしょ
+*/
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PurgeInputProcessProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     pub siblings: Vec<H::Hash>,
@@ -39,7 +43,7 @@ impl<F: RichField, H: Hasher<F>, K: KeyLike> PurgeInputProcessProof<F, H, K> {
         // 取り除いた asset の amount が 2^56 未満の値であること
         assert!(self.old_leaf_data.amount < 1u64 << 56);
 
-        let old_leaf_hash = H::hash_or_noop(&encode_contributed_asset(&self.old_leaf_data));
+        let old_leaf_hash = H::hash_or_noop(&self.old_leaf_data.encode());
         let new_leaf_hash =
             H::hash_or_noop(&encode_contributed_asset(&ContributedAsset::default()));
         let old_user_asset_root =
@@ -60,7 +64,7 @@ pub struct PurgeInputProcessProofTarget {
 }
 
 impl PurgeInputProcessProofTarget {
-    pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+    pub fn new<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
         log_max_n_txs: usize,
         log_max_n_kinds: usize,
@@ -113,29 +117,6 @@ pub struct PurgeOutputProcessProof<F: RichField, H: Hasher<F>, K: KeyLike> {
 
 impl<F: RichField, H: Hasher<F>, K: KeyLike> PurgeOutputProcessProof<F, H, K> {
     pub fn calculate(&self) -> (H::Hash, H::Hash) {
-        // let { w1, index, new_leaf_data} = self;
-        // assert_eq!(w0.old_root, prev_diff_root);
-        // prev_diff_root = w0.new_root;
-
-        // assert!(
-        //     w0.fnc == ProcessMerkleProofRole::ProcessUpdate
-        //         || w0.fnc == ProcessMerkleProofRole::ProcessInsert
-        // );
-
-        // let mut w1_old_root =
-        //     H::hash_or_noop(&encode_contributed_asset(&ContributedAsset::default()));
-        // let mut w1_new_root = H::hash_or_noop(&encode_contributed_asset(&self.new_leaf_data));
-        // assert_eq!(index.len(), self.siblings.len());
-        // for (lr_bit, sibling) in index.iter().zip(self.siblings.iter()) {
-        //     if *lr_bit {
-        //         w1_old_root = H::two_to_one(*sibling, w1_old_root);
-        //         w1_new_root = H::two_to_one(*sibling, w1_new_root);
-        //     } else {
-        //         w1_old_root = H::two_to_one(w1_old_root, *sibling);
-        //         w1_new_root = H::two_to_one(w1_new_root, *sibling);
-        //     }
-        // }
-
         let old_leaf_hash =
             H::hash_or_noop(&encode_contributed_asset(&ContributedAsset::default()));
         let new_leaf_hash = H::hash_or_noop(&encode_contributed_asset(&self.new_leaf_data));
@@ -325,7 +306,7 @@ impl PurgeTransitionTarget {
         let nonce = builder.add_virtual_hash();
         let input_proofs_t = (0..n_diffs)
             .map(|_| {
-                PurgeInputProcessProofTarget::add_virtual_to::<F, H, D>(
+                PurgeInputProcessProofTarget::new::<F, H, D>(
                     builder,
                     log_max_n_txs,
                     log_max_n_kinds,

@@ -95,17 +95,13 @@ pub struct Asset<F: RichField> {
 
 impl<F: RichField> Asset<F> {
     pub fn encode(&self) -> Vec<F> {
-        encode_asset(self)
+        [
+            self.kind.contract_address.0.elements.to_vec(),
+            self.kind.variable_index.to_hash_out().elements.to_vec(),
+            vec![F::from_canonical_u64(self.amount)],
+        ]
+        .concat()
     }
-}
-
-pub fn encode_asset<F: RichField>(asset: &Asset<F>) -> Vec<F> {
-    [
-        asset.kind.contract_address.0.elements.to_vec(),
-        asset.kind.variable_index.to_hash_out().elements.to_vec(),
-        vec![F::from_canonical_u64(asset.amount)],
-    ]
-    .concat()
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

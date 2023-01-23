@@ -20,7 +20,7 @@ use crate::{
         SmtInclusionProof, SparseMerkleInclusionProofTarget,
     },
     transaction::{
-        block_header::{get_block_hash, BlockHeader},
+        block_header::BlockHeader,
         gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
     },
     utils::gadgets::{
@@ -31,6 +31,10 @@ use crate::{
     },
 };
 
+/*
+* DiffTreeInclusionProofのsiblingが2つあるのはなぜ？
+* ２つあるなら複数形にしたほうが良い？
+*/
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(bound(deserialize = "H::Hash: KeyLike, BlockHeader<F>: Deserialize<'de>"))]
 pub struct DiffTreeInclusionProof<F: RichField, H: Hasher<F>> {
@@ -45,6 +49,9 @@ pub struct DiffTreeInclusionProof<F: RichField, H: Hasher<F>> {
     value2: H::Hash,
 }
 
+/*
+* MergeProof
+*/
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MergeProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     pub is_deposit: bool,
@@ -70,7 +77,6 @@ impl<F: RichField, H: AlgebraicHasher<F>> MergeProof<F, H, HashOut<F>> {
         let new_value_is_zero = self.merge_process_proof.new_value == HashOut::ZERO;
         let is_insert_op = old_value_is_zero && !new_value_is_zero;
         let is_no_op = old_value_is_zero && new_value_is_zero;
-        // let is_not_no_op = !is_no_op;
 
         // noop でないならば insert である
         assert_eq!(!is_no_op, is_insert_op);
@@ -106,7 +112,7 @@ impl<F: RichField, H: AlgebraicHasher<F>> MergeProof<F, H, HashOut<F>> {
         assert_eq!(self.diff_tree_inclusion_proof.value1, tx_hash);
 
         // deposit と purge の場合で merge の計算方法が異なる.
-        let block_hash = get_block_hash(block_header);
+        let block_hash = block_header.get_block_hash();
         let merge_key = if self.is_deposit {
             H::two_to_one(tx_hash, block_hash)
         } else {
@@ -581,7 +587,6 @@ pub fn verify_user_asset_merge_transitions<
 #[cfg(test)]
 mod tests {
     use crate::plonky2::plonk::config::Hasher;
-    use crate::transaction::gadgets::merge::get_block_hash;
     use crate::transaction::gadgets::merge::DiffTreeInclusionProof;
     use crate::transaction::gadgets::merge::MergeProof;
     use crate::transaction::gadgets::merge::MergeTransition;
@@ -798,7 +803,7 @@ mod tests {
             approved_world_state_digest: default_hash,
             latest_account_digest: default_hash,
         };
-        let block_hash = get_block_hash(&prev_block_header);
+        let block_hash = prev_block_header.get_block_hash();
 
         let deposit_merge_key = H::two_to_one(deposit_tx_hash, block_hash);
 

@@ -217,7 +217,6 @@ impl<F: RichField, H: AlgebraicHasher<F>> MergeProof<F, H, HashOut<F>> {
 
 #[derive(Clone, Debug)]
 pub struct MergeProofTarget {
-    // pub is_deposit: BoolTarget,
     pub diff_tree_inclusion_proof: (BlockHeaderTarget, MerkleProofTarget, MerkleProofTarget),
     pub merge_process_proof: (MerkleProofTarget, MerkleProofTarget), // (old, new)
     pub latest_account_tree_inclusion_proof: SparseMerkleInclusionProofTarget,
@@ -279,8 +278,6 @@ impl MergeProofTarget {
         witness: &MergeProof<F, H, HashOut<F>>,
     ) {
         witness.calculate();
-
-        // pw.set_bool_target(target.is_deposit, witness.is_deposit);
 
         self.diff_tree_inclusion_proof.2.set_witness::<_, H, _>(
             pw,

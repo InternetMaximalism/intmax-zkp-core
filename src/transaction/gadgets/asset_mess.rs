@@ -80,7 +80,7 @@ pub fn assets_into_mess<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, con
         let asset_id_t =
             calc_asset_id::<F, H, D>(builder, target.contract_address, target.token_id);
         for i in 0..3 {
-            // mess_t.elements[i] += asset_id_t.elements[i] * a_t
+            // mess_t.elements[i] += asset_id_t.elements[i] * amount_t
             mess_t.elements[i] =
                 builder.mul_add(asset_id_t.elements[i], target.amount, mess_t.elements[i]);
         }
@@ -91,7 +91,7 @@ pub fn assets_into_mess<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, con
 
 /// asset_id = PoseidonHash::two_to_one(contract_address, token_id)
 /// ただし, asset_id は 0 でないとする.
-pub fn calc_asset_id<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+fn calc_asset_id<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     contract_t: HashOutTarget,
     token_id_t: HashOutTarget,

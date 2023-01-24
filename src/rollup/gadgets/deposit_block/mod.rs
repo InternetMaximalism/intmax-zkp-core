@@ -27,7 +27,7 @@ use crate::{
 #[allow(clippy::complexity)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DepositBlockProduction<F: RichField, H: Hasher<F>, K: KeyLike> {
-    pub deposit_process_proof: Vec<PurgeOutputProcessProof<F, H, K>>,
+    pub deposit_process_proofs: Vec<PurgeOutputProcessProof<F, H, K>>,
     pub log_n_recipients: usize,
     pub log_n_kinds: usize,
 }
@@ -37,7 +37,7 @@ impl<F: RichField, H: Hasher<F>, K: KeyLike> DepositBlockProduction<F, H, K> {
         let deposit_tree = TxDiffTree::<_, H>::new(self.log_n_recipients, self.log_n_kinds);
 
         let mut prev_deposit_root = deposit_tree.get_root().unwrap();
-        for process_proof in self.deposit_process_proof.iter() {
+        for process_proof in self.deposit_process_proofs.iter() {
             let (old_deposit_root, new_deposit_root) = process_proof.calculate();
 
             assert_eq!(old_deposit_root, prev_deposit_root);
@@ -52,7 +52,7 @@ impl<F: RichField, H: Hasher<F>, K: KeyLike> DepositBlockProduction<F, H, K> {
 
 #[derive(Clone, Debug)]
 pub struct DepositBlockProductionTarget {
-    pub deposit_process_proof: Vec<PurgeOutputProcessProofTarget>, // input
+    pub deposit_process_proofs: Vec<PurgeOutputProcessProofTarget>, // input
 
     pub interior_deposit_digest: HashOutTarget, // output
 
@@ -68,7 +68,7 @@ impl DepositBlockProductionTarget {
     ) -> Self {
         let n_levels = log_n_recipients + log_n_kinds;
         let n_deposits = 1 << n_levels;
-        let deposit_process_proof = (0..n_deposits)
+        let deposit_process_proofs = (0..n_deposits)
             .map(|_| {
                 PurgeOutputProcessProofTarget::add_virtual_to::<_, H, D>(
                     builder,
@@ -97,7 +97,7 @@ impl DepositBlockProductionTarget {
             index: index_t,
             new_leaf_data: new_leaf_data_t,
             enabled: enabled_t,
-        } in deposit_process_proof.iter()
+        } in deposit_process_proofs.iter()
         {
             let proof1_old_leaf_t = default_leaf_hash;
             let proof1_new_leaf_t = builder.hash_n_to_hash_no_pad::<H>(new_leaf_data_t.encode());
@@ -124,7 +124,7 @@ impl DepositBlockProductionTarget {
         }
 
         Self {
-            deposit_process_proof,
+            deposit_process_proofs,
             interior_deposit_digest,
             log_n_recipients,
             log_n_kinds,
@@ -138,18 +138,18 @@ impl DepositBlockProductionTarget {
         value: &DepositBlockProduction<F, H, Vec<bool>>,
     ) -> anyhow::Result<H::Hash> {
         for (target, value) in self
-            .deposit_process_proof
+            .deposit_process_proofs
             .iter()
-            .zip(value.deposit_process_proof.iter())
+            .zip(value.deposit_process_proofs.iter())
         {
             target.set_witness::<_, H, Vec<bool>>(pw, value, true);
         }
 
         let default_leaf_data = ContributedAsset::default();
         for target in self
-            .deposit_process_proof
+            .deposit_process_proofs
             .iter()
-            .skip(value.deposit_process_proof.len())
+            .skip(value.deposit_process_proofs.len())
         {
             target.set_witness::<_, H, Vec<bool>>(
                 pw,
@@ -245,7 +245,7 @@ mod tests {
         type F = <C as GenericConfig<D>>::F;
         type H = <C as GenericConfig<D>>::InnerHasher;
 
-        const ROLLUP_CONSTANTS: RollupConstants = RollupConstants {
+        let rollup_constants = RollupConstants {
             log_max_n_users: 3,
             log_max_n_txs: 3,
             log_max_n_contracts: 3,
@@ -260,7 +260,7 @@ mod tests {
             n_deposits: 2,
             n_blocks: 2,
         };
-        let examples = make_sample_circuit_inputs::<C, D>(ROLLUP_CONSTANTS);
+        let examples = make_sample_circuit_inputs::<C, D>(rollup_constants);
 
         let config = CircuitConfig::standard_recursion_config();
         let mut builder = CircuitBuilder::<F, D>::new(config);
@@ -268,8 +268,8 @@ mod tests {
         // deposit block
         let deposit_block_target = DepositBlockProductionTarget::add_virtual_to::<F, H, D>(
             &mut builder,
-            ROLLUP_CONSTANTS.log_n_recipients,
-            ROLLUP_CONSTANTS.log_n_contracts + ROLLUP_CONSTANTS.log_n_variables,
+            rollup_constants.log_n_recipients,
+            rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
         );
         builder.register_public_inputs(&deposit_block_target.interior_deposit_digest.elements);
         let circuit_data = builder.build::<C>();
@@ -299,11 +299,11 @@ mod tests {
         let deposit_list = &examples[0].deposit_list;
 
         let mut tx_diff_tree = TxDiffTree::<F, H>::new(
-            ROLLUP_CONSTANTS.log_n_recipients,
-            ROLLUP_CONSTANTS.log_n_contracts + ROLLUP_CONSTANTS.log_n_variables,
+            rollup_constants.log_n_recipients,
+            rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
         );
 
-        let mut deposit_process_proof = vec![];
+        let mut deposit_process_proofs = vec![];
         for asset in deposit_list {
             tx_diff_tree.insert(*asset).unwrap();
             let proof = tx_diff_tree
@@ -314,17 +314,17 @@ mod tests {
                 index: proof.index,
                 new_leaf_data: *asset,
             };
-            deposit_process_proof.push(process_proof);
+            deposit_process_proofs.push(process_proof);
         }
 
         let mut pw = PartialWitness::new();
-        let deposit_process_proof = DepositBlockProduction {
-            deposit_process_proof,
-            log_n_recipients: ROLLUP_CONSTANTS.log_n_recipients,
-            log_n_kinds: ROLLUP_CONSTANTS.log_n_contracts + ROLLUP_CONSTANTS.log_n_variables,
+        let deposit_process_proofs = DepositBlockProduction {
+            deposit_process_proofs,
+            log_n_recipients: rollup_constants.log_n_recipients,
+            log_n_kinds: rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
         };
         let interior_deposit_digest = deposit_block_target
-            .set_witness::<F, H, D>(&mut pw, &deposit_process_proof)
+            .set_witness::<F, H, D>(&mut pw, &deposit_process_proofs)
             .unwrap();
 
         println!("start proving: deposit_block_proof");
@@ -341,13 +341,13 @@ mod tests {
         circuit_data.verify(deposit_block_proof).unwrap();
 
         let mut pw = PartialWitness::new();
-        let default_deposit_process_proof = DepositBlockProduction {
-            deposit_process_proof: Default::default(),
-            log_n_recipients: ROLLUP_CONSTANTS.log_n_recipients,
-            log_n_kinds: ROLLUP_CONSTANTS.log_n_contracts + ROLLUP_CONSTANTS.log_n_variables,
+        let default_deposit_process_proofs = DepositBlockProduction {
+            deposit_process_proofs: Default::default(),
+            log_n_recipients: rollup_constants.log_n_recipients,
+            log_n_kinds: rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
         };
         let default_interior_deposit_digest = deposit_block_target
-            .set_witness::<F, H, D>(&mut pw, &default_deposit_process_proof)
+            .set_witness::<F, H, D>(&mut pw, &default_deposit_process_proofs)
             .unwrap();
 
         println!("start proving: default_deposit_block_proof");

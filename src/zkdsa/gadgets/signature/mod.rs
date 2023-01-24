@@ -18,7 +18,7 @@ use crate::{
 
 use super::super::account::SecretKey;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SimpleSignature<F: RichField> {
     pub private_key: SecretKey<F>,
     pub message: HashOut<F>,

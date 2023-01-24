@@ -286,7 +286,7 @@ mod tests {
         type F = <C as GenericConfig<D>>::F;
         type H = <C as GenericConfig<D>>::Hasher;
 
-        const ROLLUP_CONSTANTS: RollupConstants = RollupConstants {
+        let rollup_constants = RollupConstants {
             log_max_n_users: 3,
             log_max_n_txs: 3,
             log_max_n_contracts: 3,
@@ -301,15 +301,15 @@ mod tests {
             n_deposits: 2,
             n_blocks: 2,
         };
-        let n_txs = 2usize.pow(ROLLUP_CONSTANTS.log_n_txs as u32);
-        let examples = make_sample_circuit_inputs::<C, D>(ROLLUP_CONSTANTS);
+        let n_txs = 2usize.pow(rollup_constants.log_n_txs as u32);
+        let examples = make_sample_circuit_inputs::<C, D>(rollup_constants);
 
         // proposal block
         let config = CircuitConfig::standard_recursion_config();
         let mut builder = CircuitBuilder::<F, D>::new(config);
         let proposal_block_target = ProposalBlockProductionTarget::add_virtual_to::<F, H, D>(
             &mut builder,
-            ROLLUP_CONSTANTS.log_max_n_users,
+            rollup_constants.log_max_n_users,
             n_txs,
         );
         builder.register_public_inputs(&proposal_block_target.transactions_digest.elements);

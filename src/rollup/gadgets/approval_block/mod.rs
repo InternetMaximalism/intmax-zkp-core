@@ -389,6 +389,7 @@ pub fn verify_valid_approval_block<
     (new_world_state_root, new_latest_account_root)
 }
 
+#[allow(clippy::complexity)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SampleBlock<F: RichField, H: AlgebraicHasher<F>> {
     pub transactions: Vec<(MergeAndPurgeTransition<F, H>, Option<SimpleSignature<F>>)>,
@@ -421,7 +422,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
 
     let aggregator_nodes_db = NodeDataMemory::default();
     let mut world_state_tree =
-        PoseidonSparseMerkleTree::new(aggregator_nodes_db.clone(), RootDataTmp::default());
+        PoseidonSparseMerkleTree::new(aggregator_nodes_db, RootDataTmp::default());
 
     let sender1_private_key = HashOut {
         elements: [
@@ -610,13 +611,13 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     // let block0_deposit_tree: PoseidonSparseMerkleTree<_, _> = block0_deposit_tree.into();
 
     let merge_inclusion_root2 = block0_deposit_tree
-        .get_asset_root(&sender2_address.into())
+        .get_asset_root(&sender2_address)
         .unwrap();
 
     // `merge_inclusion_proof2` の root を `diff_root`, `hash(diff_root, nonce)` の値を `tx_hash` とよぶ.
     let deposit_nonce = HashOut::ZERO;
     let deposit_diff_root = merge_inclusion_root2;
-    let deposit_tx_hash = PoseidonHash::two_to_one(deposit_diff_root, deposit_nonce).into();
+    let deposit_tx_hash = PoseidonHash::two_to_one(deposit_diff_root, deposit_nonce);
 
     let diff_tree_inclusion_proof1 =
         get_merkle_proof::<_, C::InnerHasher>(&[deposit_tx_hash], 0, rollup_constants.log_n_txs);
@@ -633,8 +634,15 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
 
     let block_hash = get_block_hash(&prev_block_header);
 
+    world_state_tree
+        .set(
+            sender2_address.0.into(),
+            sender2_user_asset_tree.get_root().unwrap().into(),
+        )
+        .unwrap();
+
     // deposit の場合は, `hash(tx_hash, block_hash)` を `merge_key` とよぶ.
-    let deposit_merge_key = PoseidonHash::two_to_one(deposit_tx_hash, block_hash).into();
+    let deposit_merge_key = PoseidonHash::two_to_one(deposit_tx_hash, block_hash);
 
     // user_asset_tree に deposit を merge する.
     let old_sender2_asset_root = sender2_user_asset_tree.get_root().unwrap();
@@ -673,15 +681,8 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         diff_tree_inclusion_proof,
         merge_process_proof,
         latest_account_tree_inclusion_proof: default_inclusion_proof,
-        nonce: deposit_nonce.into(),
+        nonce: deposit_nonce,
     };
-
-    world_state_tree
-        .set(
-            sender2_address.0.into(),
-            sender2_user_asset_tree.get_root().unwrap().into(),
-        )
-        .unwrap();
 
     let middle_sender2_asset_root = sender2_user_asset_tree.get_root().unwrap();
     dbg!(middle_sender2_asset_root);
@@ -910,58 +911,68 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     }]
 }
 
-#[test]
-fn test_approval_block() {
-    use std::time::Instant;
-
-    use plonky2::{
-        iop::witness::PartialWitness,
-        plonk::{
-            circuit_builder::CircuitBuilder,
-            circuit_data::CircuitConfig,
-            config::{GenericConfig, PoseidonGoldilocksConfig},
+#[cfg(test)]
+mod tests {
+    use crate::{
+        config::RollupConstants,
+        rollup::gadgets::approval_block::{
+            make_sample_circuit_inputs, ApprovalBlockProductionTarget,
         },
     };
 
-    const D: usize = 2;
-    type C = PoseidonGoldilocksConfig;
-    type H = <C as GenericConfig<D>>::InnerHasher;
-    type F = <C as GenericConfig<D>>::F;
-    let rollup_constants: RollupConstants = RollupConstants {
-        log_max_n_users: 3,
-        log_max_n_txs: 3,
-        log_max_n_contracts: 3,
-        log_max_n_variables: 3,
-        log_n_txs: 2,
-        log_n_recipients: 3,
-        log_n_contracts: 3,
-        log_n_variables: 3,
-        n_registrations: 2,
-        n_diffs: 2,
-        n_merges: 2,
-        n_deposits: 2,
-        n_blocks: 2,
-    };
-    let n_txs = 1 << rollup_constants.log_n_txs;
-    let examples = make_sample_circuit_inputs::<C, D>(rollup_constants);
+    #[test]
+    fn test_approval_block() {
+        use std::time::Instant;
 
-    let config = CircuitConfig::standard_recursion_config();
-    let mut builder = CircuitBuilder::<F, D>::new(config);
-    let approval_block_target = ApprovalBlockProductionTarget::add_virtual_to::<F, H, D>(
-        &mut builder,
-        rollup_constants.log_max_n_users,
-        n_txs,
-    );
-    let circuit_data = builder.build::<C>();
+        use plonky2::{
+            iop::witness::PartialWitness,
+            plonk::{
+                circuit_builder::CircuitBuilder,
+                circuit_data::CircuitConfig,
+                config::{GenericConfig, PoseidonGoldilocksConfig},
+            },
+        };
 
-    let mut pw = PartialWitness::new();
-    approval_block_target.set_witness::<F, D>(&mut pw, &examples[0].approval_block);
+        const D: usize = 2;
+        type C = PoseidonGoldilocksConfig;
+        type H = <C as GenericConfig<D>>::InnerHasher;
+        type F = <C as GenericConfig<D>>::F;
+        let rollup_constants: RollupConstants = RollupConstants {
+            log_max_n_users: 3,
+            log_max_n_txs: 3,
+            log_max_n_contracts: 3,
+            log_max_n_variables: 3,
+            log_n_txs: 2,
+            log_n_recipients: 3,
+            log_n_contracts: 3,
+            log_n_variables: 3,
+            n_registrations: 2,
+            n_diffs: 2,
+            n_merges: 2,
+            n_deposits: 2,
+            n_blocks: 2,
+        };
+        let n_txs = 1 << rollup_constants.log_n_txs;
+        let examples = make_sample_circuit_inputs::<C, D>(rollup_constants);
 
-    println!("start proving: block_proof");
-    let start = Instant::now();
-    let proof = circuit_data.prove(pw).unwrap();
-    let end = start.elapsed();
-    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        let config = CircuitConfig::standard_recursion_config();
+        let mut builder = CircuitBuilder::<F, D>::new(config);
+        let approval_block_target = ApprovalBlockProductionTarget::add_virtual_to::<F, H, D>(
+            &mut builder,
+            rollup_constants.log_max_n_users,
+            n_txs,
+        );
+        let circuit_data = builder.build::<C>();
 
-    circuit_data.verify(proof).unwrap();
+        let mut pw = PartialWitness::new();
+        approval_block_target.set_witness::<F, D>(&mut pw, &examples[0].approval_block);
+
+        println!("start proving: block_proof");
+        let start = Instant::now();
+        let proof = circuit_data.prove(pw).unwrap();
+        let end = start.elapsed();
+        println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+
+        circuit_data.verify(proof).unwrap();
+    }
 }

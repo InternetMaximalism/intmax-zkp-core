@@ -40,7 +40,7 @@ pub fn make_partial_deposit_proof(
     let deposit_diff_root =
         PoseidonHash::two_to_one(*inner_deposit_tree.get_root().unwrap(), deposit_nonce);
 
-    get_merkle_proof(&[deposit_diff_root.into()], 0, num_log_txs)
+    get_merkle_proof(&[deposit_diff_root], 0, num_log_txs)
 }
 
 #[allow(clippy::type_complexity)]
@@ -69,7 +69,7 @@ pub fn make_deposit_proof(
     let deposit_diff_root =
         PoseidonHash::two_to_one(*inner_deposit_tree.get_root().unwrap(), deposit_nonce);
 
-    let deposit_proof1 = get_merkle_proof(&[deposit_diff_root.into()], 0, num_log_txs);
+    let deposit_proof1 = get_merkle_proof(&[deposit_diff_root], 0, num_log_txs);
 
     let inner_deposit_tree: PoseidonSparseMerkleTree<NodeDataMemory, RootDataMemory> =
         inner_deposit_tree.into();

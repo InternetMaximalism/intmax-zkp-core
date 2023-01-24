@@ -1,12 +1,9 @@
-use std::str::FromStr;
-
 use plonky2::{
-    field::{extension::Extendable, types::Field},
+    field::extension::Extendable,
     hash::hash_types::{HashOut, HashOutTarget, RichField},
-    iop::{target::Target, witness::Witness},
+    iop::witness::Witness,
     plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
 };
-use serde::{Deserialize, Serialize};
 
 use crate::{
     sparse_merkle_tree::{
@@ -20,9 +17,7 @@ use crate::{
         layered_tree::verify_layered_smt_connection,
         proof::ProcessMerkleProofRole,
     },
-    transaction::gadgets::deposit_info::DepositInfo,
     utils::hash::WrappedHashOut,
-    zkdsa::{account::Address, gadgets::account::AddressTarget},
 };
 
 #[derive(Clone, Debug)]
@@ -173,8 +168,8 @@ pub fn calc_deposit_digest<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, 
     interior_deposit_digest
 }
 
-#[test]
-fn test_deposit_block() {
+#[cfg(test)]
+mod tests {
     use std::time::Instant;
 
     use plonky2::{
@@ -189,102 +184,109 @@ fn test_deposit_block() {
     };
 
     use crate::{
+        rollup::gadgets::deposit_block::DepositBlockProductionTarget,
         sparse_merkle_tree::goldilocks_poseidon::{
             LayeredLayeredPoseidonSparseMerkleTree, NodeDataMemory, RootDataTmp,
         },
+        transaction::gadgets::deposit_info::DepositInfo,
+        utils::hash::WrappedHashOut,
         zkdsa::account::{private_key_to_account, Address},
     };
 
-    const D: usize = 2;
-    type C = PoseidonGoldilocksConfig;
-    type F = <C as GenericConfig<D>>::F;
-    const LOG_N_RECIPIENTS: usize = 3;
-    const LOG_N_CONTRACTS: usize = 3;
-    const LOG_N_VARIABLES: usize = 3;
-    const N_DEPOSITS: usize = 2;
+    #[test]
+    fn test_deposit_block() {
+        const D: usize = 2;
+        type C = PoseidonGoldilocksConfig;
+        type F = <C as GenericConfig<D>>::F;
+        const LOG_N_RECIPIENTS: usize = 3;
+        const LOG_N_CONTRACTS: usize = 3;
+        const LOG_N_VARIABLES: usize = 3;
+        const N_DEPOSITS: usize = 2;
 
-    let sender2_private_key = HashOut {
-        elements: [
-            F::from_canonical_u64(15657143458229430356),
-            F::from_canonical_u64(6012455030006979790),
-            F::from_canonical_u64(4280058849535143691),
-            F::from_canonical_u64(5153662694263190591),
-        ],
-    };
-    let sender2_account = private_key_to_account(sender2_private_key);
-    let sender2_address = sender2_account.address.0;
+        let sender2_private_key = HashOut {
+            elements: [
+                F::from_canonical_u64(15657143458229430356),
+                F::from_canonical_u64(6012455030006979790),
+                F::from_canonical_u64(4280058849535143691),
+                F::from_canonical_u64(5153662694263190591),
+            ],
+        };
+        let sender2_account = private_key_to_account(sender2_private_key);
+        let sender2_address = sender2_account.address.0;
 
-    let config = CircuitConfig::standard_recursion_config();
-    let mut builder = CircuitBuilder::<F, D>::new(config);
-    // builder.debug_gate_row = Some(529); // xors in SparseMerkleProcessProof in DepositBlock
+        let config = CircuitConfig::standard_recursion_config();
+        let mut builder = CircuitBuilder::<F, D>::new(config);
+        // builder.debug_gate_row = Some(529); // xors in SparseMerkleProcessProof in DepositBlock
 
-    // deposit block
-    let deposit_block_target =
-        DepositBlockProductionTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher, D>(
-            &mut builder,
-            LOG_N_RECIPIENTS,
-            LOG_N_CONTRACTS,
-            LOG_N_VARIABLES,
-            N_DEPOSITS,
+        // deposit block
+        let deposit_block_target =
+            DepositBlockProductionTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher, D>(
+                &mut builder,
+                LOG_N_RECIPIENTS,
+                LOG_N_CONTRACTS,
+                LOG_N_VARIABLES,
+                N_DEPOSITS,
+            );
+        builder.register_public_inputs(&deposit_block_target.interior_deposit_digest.elements);
+        let circuit_data = builder.build::<C>();
+
+        let deposit_list = vec![DepositInfo {
+            receiver_address: Address(sender2_address),
+            contract_address: Address(*WrappedHashOut::from_u128(1)),
+            variable_index: 0u8.into(),
+            amount: F::from_noncanonical_u64(1),
+        }];
+
+        let mut deposit_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
+            NodeDataMemory::default(),
+            RootDataTmp::default(),
         );
-    builder.register_public_inputs(&deposit_block_target.interior_deposit_digest.elements);
-    let circuit_data = builder.build::<C>();
+        let deposit_process_proofs = deposit_list
+            .iter()
+            .map(|leaf| {
+                deposit_tree
+                    .set(
+                        leaf.receiver_address.0.into(),
+                        leaf.contract_address.0.into(),
+                        leaf.variable_index.to_hash_out().into(),
+                        HashOut::from_partial(&[leaf.amount]).into(),
+                    )
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
 
-    let deposit_list = vec![DepositInfo {
-        receiver_address: Address(sender2_address),
-        contract_address: Address(*WrappedHashOut::from_u128(1)),
-        variable_index: 0u8.into(),
-        amount: F::from_noncanonical_u64(1),
-    }];
+        let mut pw = PartialWitness::new();
+        let interior_deposit_digest =
+            deposit_block_target.set_witness::<F, D>(&mut pw, &deposit_process_proofs);
 
-    let mut deposit_tree = LayeredLayeredPoseidonSparseMerkleTree::new(
-        NodeDataMemory::default(),
-        RootDataTmp::default(),
-    );
-    let deposit_process_proofs = deposit_list
-        .iter()
-        .map(|leaf| {
-            deposit_tree
-                .set(
-                    leaf.receiver_address.0.into(),
-                    leaf.contract_address.0.into(),
-                    leaf.variable_index.to_hash_out().into(),
-                    HashOut::from_partial(&[leaf.amount]).into(),
-                )
-                .unwrap()
-        })
-        .collect::<Vec<_>>();
+        println!("start proving: block_proof");
+        let start = Instant::now();
+        let deposit_block_proof = circuit_data.prove(pw).unwrap();
+        let end = start.elapsed();
+        println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-    let mut pw = PartialWitness::new();
-    let interior_deposit_digest =
-        deposit_block_target.set_witness::<F, D>(&mut pw, &deposit_process_proofs);
+        assert_eq!(
+            [interior_deposit_digest.elements].concat(),
+            deposit_block_proof.public_inputs
+        );
 
-    println!("start proving: block_proof");
-    let start = Instant::now();
-    let deposit_block_proof = circuit_data.prove(pw).unwrap();
-    let end = start.elapsed();
-    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+        circuit_data.verify(deposit_block_proof).unwrap();
 
-    assert_eq!(
-        [interior_deposit_digest.elements].concat(),
-        deposit_block_proof.public_inputs
-    );
+        let mut pw = PartialWitness::new();
+        let default_interior_deposit_digest =
+            deposit_block_target.set_witness::<F, D>(&mut pw, &[]);
 
-    circuit_data.verify(deposit_block_proof).unwrap();
+        println!("start proving: block_proof");
+        let start = Instant::now();
+        let default_deposit_block_proof = circuit_data.prove(pw).unwrap();
+        let end = start.elapsed();
+        println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-    let mut pw = PartialWitness::new();
-    let default_interior_deposit_digest = deposit_block_target.set_witness::<F, D>(&mut pw, &[]);
+        assert_eq!(
+            [default_interior_deposit_digest.elements].concat(),
+            default_deposit_block_proof.public_inputs
+        );
 
-    println!("start proving: block_proof");
-    let start = Instant::now();
-    let default_deposit_block_proof = circuit_data.prove(pw).unwrap();
-    let end = start.elapsed();
-    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
-
-    assert_eq!(
-        [default_interior_deposit_digest.elements].concat(),
-        default_deposit_block_proof.public_inputs
-    );
-
-    circuit_data.verify(default_deposit_block_proof).unwrap();
+        circuit_data.verify(default_deposit_block_proof).unwrap();
+    }
 }

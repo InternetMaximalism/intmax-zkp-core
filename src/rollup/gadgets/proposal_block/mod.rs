@@ -315,10 +315,6 @@ mod tests {
         builder.register_public_inputs(&proposal_block_target.new_world_state_root.elements);
         let circuit_data = builder.build::<C>();
 
-        dbg!(
-            &examples[0].world_state_process_proofs,
-            &examples[0].approval_block.user_transactions
-        );
         let mut pw = PartialWitness::new();
         let (transactions_digest, new_world_state_root) = proposal_block_target
             .set_witness::<F, D>(

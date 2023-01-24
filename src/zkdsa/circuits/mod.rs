@@ -143,14 +143,14 @@ fn test_serde_simple_signature_public_inputs() {
     type F = GoldilocksField;
 
     let public_inputs: SimpleSignaturePublicInputs<F> = SimpleSignaturePublicInputs::default();
-    let encoded_public_inputs = "{\"message\":{\"elements\":[0,0,0,0]},\"public_key\":{\"elements\":[4330397376401421145,14124799381142128323,8742572140681234676,14345658006221440202]},\"signature\":{\"elements\":[4330397376401421145,14124799381142128323,8742572140681234676,14345658006221440202]}}";
-    let decoded_public_inputs: SimpleSignaturePublicInputs<F> =
-        serde_json::from_str(encoded_public_inputs).unwrap();
-    assert_eq!(decoded_public_inputs, public_inputs);
+    // let encoded_public_inputs = "{\"message\":{\"elements\":[0,0,0,0]},\"public_key\":{\"elements\":[4330397376401421145,14124799381142128323,8742572140681234676,14345658006221440202]},\"signature\":{\"elements\":[4330397376401421145,14124799381142128323,8742572140681234676,14345658006221440202]}}";
+    // let decoded_public_inputs: SimpleSignaturePublicInputs<F> =
+    //     serde_json::from_str(encoded_public_inputs).unwrap();
+    // assert_eq!(decoded_public_inputs, public_inputs);
 
-    let public_inputs: SerializableSimpleSignaturePublicInputs<F> = public_inputs.into();
+    // let public_inputs: SerializableSimpleSignaturePublicInputs<F> = public_inputs.into();
     let encoded_public_inputs = "{\"message\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"public_key\":\"0xc71603f33a1144ca7953db0ab48808f4c4055e3364a246c33c18a9786cb0b359\",\"signature\":\"0xc71603f33a1144ca7953db0ab48808f4c4055e3364a246c33c18a9786cb0b359\"}";
-    let decoded_public_inputs: SerializableSimpleSignaturePublicInputs<F> =
+    let decoded_public_inputs: SimpleSignaturePublicInputs<F> =
         serde_json::from_str(encoded_public_inputs).unwrap();
     assert_eq!(decoded_public_inputs, public_inputs);
 }

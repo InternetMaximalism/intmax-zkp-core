@@ -475,12 +475,7 @@ where
 
     pub fn set_witness_and_prove(
         &self,
-        witness: &MergeAndPurgeTransition<F, C::InnerHasher>, // sender_address: Address<F>,
-                                                              // merge_witnesses: &[MergeProof<F, C::Hasher, HashOut<F>>],
-                                                              // purge_input_witnesses: &[PurgeInputProcessProof<F, C::Hasher, HashOut<F>>],
-                                                              // purge_output_witnesses: &[PurgeOutputProcessProof<F, C::Hasher, HashOut<F>>],
-                                                              // nonce: HashOut<F>,
-                                                              // old_user_asset_root: HashOut<F>,
+        witness: &MergeAndPurgeTransition<F, C::InnerHasher>,
     ) -> anyhow::Result<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>> {
         let mut pw = PartialWitness::new();
         self.targets.set_witness(&mut pw, witness);
@@ -560,7 +555,7 @@ fn test_prove_user_transaction() {
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
     type F = <C as GenericConfig<D>>::F;
-    let rollup_constants: RollupConstants = RollupConstants {
+    let rollup_constants = RollupConstants {
         log_max_n_users: LOG_MAX_N_USERS,
         log_max_n_txs: LOG_MAX_N_TXS,
         log_max_n_contracts: LOG_MAX_N_CONTRACTS,

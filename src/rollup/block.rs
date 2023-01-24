@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::RollupConstants,
-    merkle_tree::tree::{get_merkle_proof, get_merkle_root, MerkleProcessProof},
+    merkle_tree::tree::{get_merkle_proof, get_merkle_root, MerkleProcessProof, MerkleProof},
     rollup::address_list::TransactionSenderWithValidity,
     sparse_merkle_tree::{
         goldilocks_poseidon::{NodeDataMemory, PoseidonSparseMerkleTree, RootDataTmp},
@@ -35,6 +35,8 @@ use crate::{
 };
 
 use super::gadgets::approval_block::ApprovalBlockProduction;
+
+const LOG_MAX_N_BLOCKS: usize = 32;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound = "F: RichField")]
@@ -82,7 +84,10 @@ pub struct SampleBlock<F: RichField, H: AlgebraicHasher<F>> {
     pub world_state_process_proofs:
         Vec<SparseMerkleProcessProof<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>>>,
     pub deposit_list: Vec<ContributedAsset<F>>,
+    pub deposit_process_proofs: Vec<PurgeOutputProcessProof<F, H, Vec<bool>>>,
     pub approval_block: ApprovalBlockProduction<F>,
+    pub block_headers_proof_siblings: Vec<HashOut<F>>,
+    pub prev_block_header: BlockHeader<F>,
 }
 
 /// Returns `(stored_transactions, approval_block, new_world_root)`
@@ -139,7 +144,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
             contract_address: Address(GoldilocksHashOut::from_u128(305).0),
             variable_index: 8u8.into(),
         },
-        amount: 2,
+        amount: 2053,
     };
     let asset4 = ContributedAsset {
         receiver_address: sender1_address,
@@ -258,7 +263,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
             contract_address: Address(GoldilocksHashOut::from_u128(305).0),
             variable_index: 8u8.into(),
         },
-        amount: 2,
+        amount: 2053,
     };
     let asset4 = ContributedAsset {
         receiver_address: sender2_address,
@@ -278,13 +283,13 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     block0_deposit_tree.insert(asset1).unwrap();
     block0_deposit_tree.insert(asset2).unwrap();
 
-    let merge_inclusion_root2 = block0_deposit_tree
-        .get_asset_root(&sender2_address)
-        .unwrap();
+    // let merge_inclusion_root2 = block0_deposit_tree
+    //     .get_asset_root(&sender2_address)
+    //     .unwrap();
 
-    // `merge_inclusion_proof2` の root を `diff_root`, `hash(diff_root, nonce)` の値を `tx_hash` とよぶ.
+    // `deposit_tree` の root を `diff_root`, `hash(diff_root, nonce)` の値を `tx_hash` とよぶ.
     let deposit_nonce = HashOut::ZERO;
-    let deposit_diff_root = merge_inclusion_root2;
+    let deposit_diff_root = block0_deposit_tree.get_root().unwrap();
     let deposit_tx_hash = PoseidonHash::two_to_one(deposit_diff_root, deposit_nonce);
 
     let diff_tree_inclusion_proof1 =
@@ -565,6 +570,39 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         old_latest_account_root,
     };
 
+    let mut block_headers: Vec<HashOut<GoldilocksField>> =
+        vec![HashOut::ZERO; prev_block_header.block_number as usize];
+    let prev_block_hash = get_block_hash(&prev_block_header);
+    block_headers.push(prev_block_hash);
+    let prev_block_number = prev_block_header.block_number;
+    let MerkleProof {
+        siblings: block_headers_proof_siblings,
+        ..
+    } = get_merkle_proof::<_, PoseidonHash>(
+        &block_headers,
+        prev_block_number as usize,
+        LOG_MAX_N_BLOCKS,
+    );
+
+    let mut tx_diff_tree = TxDiffTree::<C::F, C::InnerHasher>::new(
+        rollup_constants.log_n_recipients,
+        rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
+    );
+
+    let mut deposit_process_proofs = vec![];
+    for asset in deposit_list.iter() {
+        tx_diff_tree.insert(*asset).unwrap();
+        let proof = tx_diff_tree
+            .prove_leaf_node(&asset.receiver_address, &asset.kind)
+            .unwrap();
+        let process_proof = PurgeOutputProcessProof {
+            siblings: proof.siblings,
+            index: proof.index,
+            new_leaf_data: *asset,
+        };
+        deposit_process_proofs.push(process_proof);
+    }
+
     vec![SampleBlock {
         transactions: vec![
             (sender1_merge_and_purge_transition, None),
@@ -576,6 +614,9 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         old_world_state_root,
         world_state_process_proofs,
         deposit_list,
+        deposit_process_proofs,
         approval_block,
+        block_headers_proof_siblings,
+        prev_block_header,
     }]
 }

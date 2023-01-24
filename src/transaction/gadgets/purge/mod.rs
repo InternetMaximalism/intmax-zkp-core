@@ -310,10 +310,18 @@ impl<F: RichField, H: AlgebraicHasher<F>, K: KeyLike> PurgeTransition<F, H, K> {
         let default_leaf_hash = H::hash_or_noop(&default_leaf_data.encode());
 
         let mut prev_user_asset_root = self.old_user_asset_root;
+        let mut input_assets = std::collections::HashMap::new();
         for input_witness in self.input_witnesses.iter() {
             let (old_user_asset_root, new_user_asset_root) = input_witness.calculate();
 
             assert_eq!(old_user_asset_root, prev_user_asset_root);
+
+            let asset = input_witness.old_leaf_data;
+            if let Some(old_amount) = input_assets.get(&asset.kind) {
+                input_assets.insert(asset.kind, old_amount + asset.amount);
+            } else {
+                input_assets.insert(asset.kind, asset.amount);
+            }
 
             prev_user_asset_root = new_user_asset_root;
         }
@@ -327,16 +335,26 @@ impl<F: RichField, H: AlgebraicHasher<F>, K: KeyLike> PurgeTransition<F, H, K> {
         )
         .root;
         let mut prev_diff_root = default_diff_tree_root;
-        for output_proof in self.output_witnesses.iter() {
-            let (old_tx_diff_root, new_tx_diff_root) = output_proof.calculate();
+        let mut output_assets = std::collections::HashMap::new();
+        for output_witness in self.output_witnesses.iter() {
+            let (old_tx_diff_root, new_tx_diff_root) = output_witness.calculate();
 
             assert_eq!(old_tx_diff_root, prev_diff_root);
+
+            let asset = output_witness.new_leaf_data;
+            if let Some(old_amount) = output_assets.get(&asset.kind) {
+                output_assets.insert(asset.kind, old_amount + asset.amount);
+            } else {
+                output_assets.insert(asset.kind, asset.amount);
+            }
 
             prev_diff_root = new_tx_diff_root;
         }
         let diff_root = prev_diff_root;
 
         let tx_hash = PoseidonHash::two_to_one(diff_root, self.nonce);
+
+        assert_eq!(input_assets, output_assets);
 
         (new_user_asset_root, diff_root, tx_hash)
     }

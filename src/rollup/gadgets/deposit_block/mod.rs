@@ -44,7 +44,6 @@ impl<F: RichField, H: Hasher<F>, K: KeyLike> DepositBlockProduction<F, H, K> {
 
             prev_deposit_root = new_deposit_root;
         }
-        dbg!(prev_deposit_root);
 
         Ok(prev_deposit_root)
     }

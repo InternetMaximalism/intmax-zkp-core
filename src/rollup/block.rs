@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::RollupConstants,
-    merkle_tree::tree::{get_merkle_proof, get_merkle_root, MerkleProcessProof, MerkleProof},
+    merkle_tree::tree::{get_merkle_proof, MerkleProcessProof, MerkleProof},
     rollup::address_list::TransactionSenderWithValidity,
     sparse_merkle_tree::{
         goldilocks_poseidon::{NodeDataMemory, PoseidonSparseMerkleTree, RootDataTmp},
@@ -194,9 +194,6 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         .remove(*merge_key1, asset1.receiver_address, asset1.kind)
         .unwrap();
 
-    let new_sender1_asset_root = sender1_user_asset_tree.get_root().unwrap();
-    dbg!(&new_sender1_asset_root);
-
     sender1_tx_diff_tree.insert(asset3).unwrap();
     let proof3 = sender1_tx_diff_tree
         .prove_leaf_node(&sender1_address, &asset3.kind)
@@ -299,14 +296,6 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         .prove_asset_root(&sender2_address)
         .unwrap();
 
-    let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
-    // let default_merkle_root = get_merkle_proof(&[], 0, LOG_N_TXS).root;
-    let mut prev_block_header = BlockHeader::new(rollup_constants.log_n_txs);
-    prev_block_header.block_number = 1;
-    prev_block_header.deposit_digest = diff_tree_inclusion_proof1.root;
-
-    let block_hash = get_block_hash(&prev_block_header);
-
     world_state_tree
         .set(
             sender2_address.0.into(),
@@ -314,8 +303,22 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         )
         .unwrap();
 
+    let old_world_state_root = *world_state_tree.get_root().unwrap();
+
+    let mut prev_block_header = BlockHeader::new(rollup_constants.log_n_txs);
+    prev_block_header.block_number = 1;
+    prev_block_header.deposit_digest = diff_tree_inclusion_proof1.root;
+    prev_block_header.proposed_world_state_digest = old_world_state_root;
+    prev_block_header.approved_world_state_digest = old_world_state_root;
+
+    let prev_block_hash = get_block_hash(&prev_block_header);
+
+    let mut block_headers: Vec<HashOut<GoldilocksField>> =
+        vec![HashOut::ZERO; prev_block_header.block_number as usize];
+    block_headers.push(prev_block_hash);
+
     // deposit の場合は, `hash(tx_hash, block_hash)` を `merge_key` とよぶ.
-    let deposit_merge_key = PoseidonHash::two_to_one(deposit_tx_hash, block_hash);
+    let deposit_merge_key = PoseidonHash::two_to_one(deposit_tx_hash, prev_block_hash);
 
     // user_asset_tree に deposit を merge する.
     let old_sender2_asset_root = sender2_user_asset_tree.get_root().unwrap();
@@ -349,6 +352,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         value2: diff_tree_inclusion_proof2.value,
     };
 
+    let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
     let merge_proof = MergeProof {
         is_deposit: true,
         diff_tree_inclusion_proof,
@@ -356,9 +360,6 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         latest_account_tree_inclusion_proof: default_inclusion_proof,
         nonce: deposit_nonce,
     };
-
-    let middle_sender2_asset_root = sender2_user_asset_tree.get_root().unwrap();
-    dbg!(middle_sender2_asset_root);
 
     let proof2 = sender2_user_asset_tree
         .prove_leaf_node(&deposit_merge_key, &asset2.receiver_address, &asset2.kind)
@@ -382,8 +383,6 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     sender2_user_asset_tree
         .remove(deposit_merge_key, sender2_address, asset1.kind)
         .unwrap();
-    let new_sender2_asset_root = sender2_user_asset_tree.get_root().unwrap();
-    dbg!(new_sender2_asset_root);
 
     sender2_tx_diff_tree.insert(asset3).unwrap();
     let proof3 = sender2_tx_diff_tree
@@ -424,15 +423,6 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         nonce: *sender1_nonce,
         old_user_asset_root: old_sender1_asset_root,
     };
-    let actual_old_root = get_merkle_root::<_, PoseidonHash, _>(
-        &sender1_merge_and_purge_transition.purge_input_witnesses[0].index,
-        PoseidonHash::hash_or_noop(&ContributedAsset::default().encode()),
-        &sender1_merge_and_purge_transition.purge_input_witnesses[0].siblings,
-    );
-    dbg!(
-        &sender1_merge_and_purge_transition.old_user_asset_root,
-        actual_old_root
-    );
     let sender1_tx_pis = {
         let (middle_user_asset_root, new_user_asset_root, diff_root, tx_hash) =
             sender1_merge_and_purge_transition.calculate(
@@ -488,7 +478,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         }
     };
 
-    let old_world_state_root = *world_state_tree.get_root().unwrap();
+    // let old_world_state_root = *world_state_tree.get_root().unwrap();
 
     let mut world_state_process_proofs = vec![];
     let mut user_transactions = vec![];
@@ -570,10 +560,6 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         old_latest_account_root,
     };
 
-    let mut block_headers: Vec<HashOut<GoldilocksField>> =
-        vec![HashOut::ZERO; prev_block_header.block_number as usize];
-    let prev_block_hash = get_block_hash(&prev_block_header);
-    block_headers.push(prev_block_hash);
     let prev_block_number = prev_block_header.block_number;
     let MerkleProof {
         siblings: block_headers_proof_siblings,

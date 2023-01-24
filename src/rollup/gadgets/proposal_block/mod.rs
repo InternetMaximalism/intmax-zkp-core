@@ -112,7 +112,6 @@ impl ProposalBlockProductionTarget {
                 "not allowed removing nodes in world state tree"
             );
 
-            dbg!("loop");
             verify_layered_smt_connection(
                 w.fnc,
                 w.old_value,

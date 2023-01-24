@@ -262,9 +262,9 @@ pub fn verify_valid_proposal_block<
 mod tests {
     use crate::{
         config::RollupConstants,
-        rollup::gadgets::{
-            approval_block::make_sample_circuit_inputs,
-            proposal_block::ProposalBlockProductionTarget,
+        rollup::{
+            block::make_sample_circuit_inputs,
+            gadgets::proposal_block::ProposalBlockProductionTarget,
         },
     };
 

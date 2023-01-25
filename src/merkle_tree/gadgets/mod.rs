@@ -1,22 +1,20 @@
 use plonky2::{
     field::extension::Extendable,
-    hash::hash_types::{HashOutTarget, RichField},
-    iop::{target::Target, witness::Witness},
+    hash::hash_types::{HashOut, HashOutTarget, RichField},
+    iop::{target::BoolTarget, witness::Witness},
     plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
 };
 
 use crate::{
-    poseidon::gadgets::poseidon_two_to_one,
-    sparse_merkle_tree::{
-        gadgets::common::conditionally_reverse, goldilocks_poseidon::WrappedHashOut,
-    },
+    merkle_tree::tree::KeyLike,
+    utils::gadgets::{hash::poseidon_two_to_one, logic::conditionally_reverse},
 };
 
 use super::tree::get_merkle_root;
 
 #[derive(Clone, Debug)]
 pub struct MerkleProofTarget {
-    pub index: Target,
+    pub index: Vec<BoolTarget>,
     pub value: HashOutTarget,
     pub siblings: Vec<HashOutTarget>,
     pub root: HashOutTarget,
@@ -28,42 +26,44 @@ impl MerkleProofTarget {
         builder: &mut CircuitBuilder<F, D>,
         n_levels: usize,
     ) -> Self {
-        let index = builder.add_virtual_target();
-        builder.range_check(index, n_levels);
+        let index = (0..n_levels)
+            .map(|_| builder.add_virtual_bool_target_safe())
+            .collect::<Vec<_>>();
         let value = builder.add_virtual_hash();
         let siblings = (0..n_levels)
             .map(|_| builder.add_virtual_hash())
             .collect::<Vec<_>>();
-        let root = get_merkle_root_target::<F, H, D>(builder, index, value, &siblings);
-        // let enabled = builder.add_virtual_bool_target_safe();
+        let root = get_merkle_root_target::<F, H, D>(builder, &index, value, &siblings);
 
         Self {
             index,
             value,
             siblings,
             root,
-            // enabled
         }
     }
 
-    pub fn set_witness<F: RichField>(
+    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>, K: KeyLike>(
         &self,
         pw: &mut impl Witness<F>,
-        index: usize,
-        value: WrappedHashOut<F>,
-        siblings: &[WrappedHashOut<F>],
-        // enabled: bool,
-    ) -> WrappedHashOut<F> {
-        // pw.set_bool_target(self.enabled, enabled);
-        pw.set_target(self.index, F::from_canonical_usize(index));
-        pw.set_hash_target(self.value, *value);
+        index: &K,
+        value: HashOut<F>,
+        siblings: &[HashOut<F>],
+    ) -> HashOut<F> {
+        let mut index = index.to_bits();
+        index.resize(self.index.len(), false);
+        for (target, value) in self.index.iter().zip(index.iter()) {
+            pw.set_bool_target(*target, *value);
+        }
+
+        pw.set_hash_target(self.value, value);
 
         assert_eq!(self.siblings.len(), siblings.len());
         for (sibling_t, sibling) in self.siblings.iter().cloned().zip(siblings.iter().cloned()) {
-            pw.set_hash_target(sibling_t, *sibling);
+            pw.set_hash_target(sibling_t, sibling);
         }
 
-        get_merkle_root(index, value, siblings)
+        get_merkle_root::<F, H, Vec<bool>>(&index, value, siblings)
     }
 }
 
@@ -73,14 +73,14 @@ pub fn get_merkle_root_target<
     const D: usize,
 >(
     builder: &mut CircuitBuilder<F, D>,
-    index_t: Target,
+    index_t: &[BoolTarget],
     value_t: HashOutTarget,
     siblings_t: &[HashOutTarget],
 ) -> HashOutTarget {
     let mut root_t = value_t;
-    let index_le_bits_t = builder.split_le(index_t, siblings_t.len());
-    for (sibling_t, lr_bit_t) in siblings_t.iter().zip(index_le_bits_t.into_iter()) {
-        let (left, right) = conditionally_reverse(builder, root_t, *sibling_t, lr_bit_t);
+    assert_eq!(index_t.len(), siblings_t.len());
+    for (sibling_t, lr_bit_t) in siblings_t.iter().zip(index_t.iter()) {
+        let (left, right) = conditionally_reverse(builder, root_t, *sibling_t, *lr_bit_t);
         root_t = poseidon_two_to_one::<F, H, D>(builder, left, right);
     }
 
@@ -138,24 +138,19 @@ fn test_verify_merkle_proof_by_plonky2() {
     let mut builder = CircuitBuilder::<F, D>::new(config);
     let targets = MerkleProofTarget::add_virtual_to::<F, H, D>(&mut builder, N_LEVELS);
     builder.register_public_inputs(&targets.root.elements);
-    builder.register_public_input(targets.index);
-    builder.register_public_inputs(&targets.value.elements);
     let data = builder.build::<C>();
 
     let leaves = vec![0, 10, 20, 30, 40, 0]
         .into_iter()
-        .map(|i| {
-            HashOut {
-                elements: [F::from_canonical_u32(i), F::ZERO, F::ZERO, F::ZERO],
-            }
-            .into()
+        .map(|i| HashOut {
+            elements: [F::from_canonical_u32(i), F::ZERO, F::ZERO, F::ZERO],
         })
         .collect::<Vec<_>>();
     let index = leaves.len() - 1;
-    let MerkleProof { siblings, root, .. } = get_merkle_proof(&leaves, index, N_LEVELS);
+    let MerkleProof { siblings, root, .. } = get_merkle_proof::<F, H>(&leaves, index, N_LEVELS);
 
     let mut pw = PartialWitness::new();
-    targets.set_witness(&mut pw, index, leaves[index], &siblings);
+    targets.set_witness::<_, H, _>(&mut pw, &index, leaves[index], &siblings);
 
     println!("start proving");
     let start = Instant::now();
@@ -165,8 +160,5 @@ fn test_verify_merkle_proof_by_plonky2() {
 
     assert_eq!(proof.public_inputs[0..4], root.elements[0..4]);
 
-    match data.verify(proof) {
-        Ok(()) => println!("Ok!"),
-        Err(x) => println!("{}", x),
-    }
+    data.verify(proof).unwrap();
 }

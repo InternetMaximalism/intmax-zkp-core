@@ -6,7 +6,7 @@ use plonky2::{
 
 use crate::{
     merkle_tree::tree::{get_merkle_proof, MerkleProof},
-    rollup::gadgets::deposit_block::DepositInfo,
+    // rollup::gadgets::deposit_block::DepositInfo,
     sparse_merkle_tree::{
         gadgets::verify::verify_smt::SmtInclusionProof,
         goldilocks_poseidon::{
@@ -14,6 +14,7 @@ use crate::{
             RootDataMemory,
         },
     },
+    transaction::gadgets::deposit_info::DepositInfo,
     zkdsa::account::Address,
 };
 
@@ -21,7 +22,7 @@ use crate::{
 pub fn make_partial_deposit_proof(
     deposit_list: &[DepositInfo<GoldilocksField>],
     num_log_txs: usize,
-) -> MerkleProof<GoldilocksField> {
+) -> MerkleProof<GoldilocksField, PoseidonHash, usize> {
     let mut inner_deposit_tree =
         LayeredLayeredPoseidonSparseMerkleTree::<NodeDataMemory, RootDataMemory>::default();
     for leaf in deposit_list {
@@ -39,7 +40,7 @@ pub fn make_partial_deposit_proof(
     let deposit_diff_root =
         PoseidonHash::two_to_one(*inner_deposit_tree.get_root().unwrap(), deposit_nonce);
 
-    get_merkle_proof(&[deposit_diff_root.into()], 0, num_log_txs)
+    get_merkle_proof(&[deposit_diff_root], 0, num_log_txs)
 }
 
 #[allow(clippy::type_complexity)]
@@ -48,7 +49,7 @@ pub fn make_deposit_proof(
     receiver_address: Address<GoldilocksField>,
     num_log_txs: usize,
 ) -> (
-    MerkleProof<GoldilocksField>,
+    MerkleProof<GoldilocksField, PoseidonHash, usize>,
     SmtInclusionProof<GoldilocksField>,
 ) {
     let mut inner_deposit_tree =
@@ -68,7 +69,7 @@ pub fn make_deposit_proof(
     let deposit_diff_root =
         PoseidonHash::two_to_one(*inner_deposit_tree.get_root().unwrap(), deposit_nonce);
 
-    let deposit_proof1 = get_merkle_proof(&[deposit_diff_root.into()], 0, num_log_txs);
+    let deposit_proof1 = get_merkle_proof(&[deposit_diff_root], 0, num_log_txs);
 
     let inner_deposit_tree: PoseidonSparseMerkleTree<NodeDataMemory, RootDataMemory> =
         inner_deposit_tree.into();

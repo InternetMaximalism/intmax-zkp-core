@@ -5,18 +5,24 @@ use plonky2::{
     plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
 };
 
-use crate::sparse_merkle_tree::proof::common::first_different_bit_index;
-
-use super::super::super::{goldilocks_poseidon::Wrapper, proof::SparseMerkleProcessProof};
-use super::super::common::{
-    calc_internal_hash, calc_leaf_hash, conditionally_reverse, conditionally_select,
-    element_wise_add, enforce_equal_if_enabled, logical_and_not, logical_or, logical_xor,
-    smt_lev_ins,
+use crate::{
+    sparse_merkle_tree::proof::common::first_different_bit_index, utils::hash::WrappedHashOut,
 };
+
+use super::super::super::proof::SparseMerkleProcessProof;
+use super::super::common::{calc_internal_hash, calc_leaf_hash, smt_lev_ins};
 use super::utils::{get_process_merkle_proof_role, ProcessMerkleProofRoleTarget};
 
+use crate::utils::gadgets::{
+    arithmetic::element_wise_add,
+    logic::{
+        conditionally_reverse, conditionally_select, enforce_equal_if_enabled, logical_and_not,
+        logical_or, logical_xor,
+    },
+};
+
 pub type SmtProcessProof<F> =
-    SparseMerkleProcessProof<Wrapper<HashOut<F>>, Wrapper<HashOut<F>>, Wrapper<HashOut<F>>>;
+    SparseMerkleProcessProof<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>>;
 
 pub type LayeredSmtProcessProof<F> = (SmtProcessProof<F>, SmtProcessProof<F>);
 

@@ -1,11 +1,11 @@
-use std::{fmt::Debug, hash::Hash};
-
 use super::{
     node_data::{Node, NodeData},
     node_hash::NodeHash,
     proof::{ProcessMerkleProofRole, SparseMerkleInclusionProof, SparseMerkleProcessProof},
     root_data::RootData,
 };
+
+use crate::merkle_tree::tree::{HashLike, KeyLike, ValueLike};
 
 #[derive(Debug)]
 pub struct SparseMerkleTree<
@@ -52,14 +52,6 @@ impl<
         Self::new(Default::default(), Default::default())
     }
 }
-
-pub trait KeyLike: Copy + Eq + Debug + Default + Hash {
-    fn to_bits(&self) -> Vec<bool>;
-}
-
-pub trait ValueLike: Copy + PartialEq + Debug + Default {}
-
-pub trait HashLike: Copy + PartialEq + Debug + Default {}
 
 impl<
         K: KeyLike,
@@ -198,8 +190,8 @@ fn update<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeDa
     let mut insert_entries = vec![];
     let mut delete_keys = vec![];
 
-    let old_leaf_node = Node::Leaf(found_key, found_value);
-    let new_leaf_node = Node::Leaf(found_key, new_value);
+    let old_leaf_node = Node::Leaf(found_key.clone(), found_value);
+    let new_leaf_node = Node::Leaf(found_key.clone(), new_value);
     let mut rt_old = H::calc_node_hash(old_leaf_node);
     let mut rt_new = H::calc_node_hash(new_leaf_node.clone());
     insert_entries.push((rt_new, new_leaf_node));
@@ -241,7 +233,7 @@ fn update<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeDa
 
     Ok(SparseMerkleProcessProof {
         old_root: res_old_root,
-        old_key: found_key,
+        old_key: found_key.clone(),
         old_value: found_value,
         new_root: rt_new,
         new_key: found_key,
@@ -291,7 +283,7 @@ fn insert<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeDa
             res_siblings.push(I::default());
         }
 
-        let old_node = Node::Leaf(not_found_key, not_found_value);
+        let old_node = Node::Leaf(not_found_key.clone(), not_found_value);
         // dbg!(&old_node);
 
         let rt_old = H::calc_node_hash(old_node);
@@ -313,8 +305,8 @@ fn insert<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeDa
     let mut insert_entries = vec![];
     let mut delete_keys = vec![];
 
-    let mut rt = H::calc_node_hash(Node::Leaf(key, value));
-    insert_entries.push((rt, Node::Leaf(key, value)));
+    let mut rt = H::calc_node_hash(Node::Leaf(key.clone(), value));
+    insert_entries.push((rt, Node::Leaf(key.clone(), value)));
 
     let new_key_bits = key.to_bits();
     for (level, (&sibling, bit)) in res_siblings.iter().zip(new_key_bits).rev().enumerate() {
@@ -406,7 +398,7 @@ fn remove<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeDa
 
     let mut delete_keys = vec![];
     let mut insert_entries = vec![];
-    let old_leaf_node = Node::Leaf(found_key, found_value);
+    let old_leaf_node = Node::Leaf(found_key.clone(), found_value);
     let mut rt_old = H::calc_node_hash(old_leaf_node);
     delete_keys.push(rt_old);
 
@@ -428,7 +420,7 @@ fn remove<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeDa
             }
             Some(Node::Internal(_, _)) => {
                 let mixed = true;
-                let res_old_key = found_key;
+                let res_old_key = found_key.clone();
                 let res_old_value = V::default();
                 let res_is_old0 = true;
                 let rt_new = I::default(); // 後で値を決める
@@ -443,7 +435,7 @@ fn remove<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeDa
         // if res_find.siblings.is_empty()
 
         let mixed = false; // unused
-        let res_old_key = found_key;
+        let res_old_key = found_key.clone();
         let res_old_value = V::default();
         let res_is_old0 = true;
         let rt_new = I::default();
@@ -547,10 +539,10 @@ fn noop<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: NodeData
 
     Ok(SparseMerkleProcessProof {
         old_root: *root,
-        old_key: *key,
+        old_key: key.clone(),
         old_value: V::default(),
         new_root: *root,
-        new_key: *key,
+        new_key: key.clone(),
         new_value: V::default(),
         siblings: vec![],
         is_old0: true,
@@ -613,7 +605,7 @@ fn find_rec<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: Node
             root: *root,
             found: false,
             siblings: vec![],
-            key: *key,
+            key: key.clone(),
             value: V::default(),
             not_found_key: K::default(),
             not_found_value: V::default(),
@@ -631,7 +623,7 @@ fn find_rec<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: Node
                     root: *root,
                     found: true,
                     siblings: vec![],
-                    key: *key,
+                    key: key.clone(),
                     value: record_value,
                     not_found_key: K::default(),
                     not_found_value: V::default(),
@@ -642,7 +634,7 @@ fn find_rec<K: KeyLike, V: ValueLike, I: HashLike, H: NodeHash<K, V, I>, D: Node
                     root: *root,
                     found: false,
                     siblings: vec![],
-                    key: *key,
+                    key: key.clone(),
                     value: V::default(),
                     not_found_key: record_key,
                     not_found_value: record_value,

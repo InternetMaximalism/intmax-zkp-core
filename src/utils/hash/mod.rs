@@ -10,9 +10,6 @@ use plonky2::{
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-#[cfg(feature = "ecdsa")]
-pub mod secp256k1;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Wrapper<T>(pub T);
@@ -367,4 +364,77 @@ impl<F: PrimeField64> WrappedHashOut<F> {
     //         l0, l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11, l12, l13, l14, l15, h0, h1, h2, h3,
     //     ])
     // }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[serde(
+    remote = "HashOut",
+    from = "WrappedHashOut<F>",
+    into = "WrappedHashOut<F>",
+    bound = "F: RichField"
+)]
+pub struct SerializableHashOut<F: Field> {
+    pub elements: [F; 4],
+}
+
+impl<F: Field> From<WrappedHashOut<F>> for HashOut<F> {
+    fn from(value: WrappedHashOut<F>) -> Self {
+        HashOut {
+            elements: value.elements,
+        }
+    }
+}
+
+impl<F: Field> From<WrappedHashOut<F>> for SerializableHashOut<F> {
+    fn from(value: WrappedHashOut<F>) -> Self {
+        SerializableHashOut {
+            elements: value.elements,
+        }
+    }
+}
+
+impl<F: Field> From<SerializableHashOut<F>> for WrappedHashOut<F> {
+    fn from(value: SerializableHashOut<F>) -> Self {
+        Wrapper(HashOut {
+            elements: value.elements,
+        })
+    }
+}
+
+impl<F: Field> From<SerializableHashOut<F>> for HashOut<F> {
+    fn from(value: SerializableHashOut<F>) -> Self {
+        HashOut {
+            elements: value.elements,
+        }
+    }
+}
+
+impl<F: Field> From<HashOut<F>> for SerializableHashOut<F> {
+    fn from(value: HashOut<F>) -> Self {
+        Self {
+            elements: value.elements,
+        }
+    }
+}
+
+#[test]
+fn test_serde_serializable_hashout() {
+    type F = GoldilocksField;
+
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+    #[serde(bound = "F: RichField")]
+    struct SingleHashOut<F: Field> {
+        #[serde(with = "SerializableHashOut")]
+        pub data: HashOut<F>,
+    }
+
+    let value = SingleHashOut {
+        data: *GoldilocksHashOut::from_u32(1),
+    };
+    let encoded_value = serde_json::to_string(&value).unwrap();
+    let expected_encoded_value =
+        "{\"data\":\"0x0000000000000000000000000000000000000000000000000000000000000001\"}";
+    assert_eq!(encoded_value, expected_encoded_value);
+    let decoded_value: SingleHashOut<F> = serde_json::from_str(expected_encoded_value).unwrap();
+    assert_eq!(decoded_value, value);
 }

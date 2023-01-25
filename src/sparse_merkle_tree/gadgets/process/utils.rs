@@ -5,7 +5,7 @@ use plonky2::{
     plonk::circuit_builder::CircuitBuilder,
 };
 
-use super::super::common::{
+use crate::utils::gadgets::logic::{
     enforce_equal_if_enabled, logical_and_not, logical_nor, logical_or, logical_xor,
 };
 

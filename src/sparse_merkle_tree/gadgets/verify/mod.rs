@@ -11,8 +11,10 @@ fn test_verify_inclusion_proof_by_plonky2() {
 
     use super::super::{
         gadgets::verify::verify_smt::SparseMerkleInclusionProofTarget,
-        goldilocks_poseidon::{GoldilocksHashOut, PoseidonSparseMerkleTreeMemory},
+        goldilocks_poseidon::PoseidonSparseMerkleTreeMemory,
     };
+
+    use crate::utils::hash::GoldilocksHashOut;
 
     const D: usize = 2; // extension degree
     type C = PoseidonGoldilocksConfig;

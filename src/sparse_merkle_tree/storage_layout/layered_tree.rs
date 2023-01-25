@@ -7,7 +7,6 @@ use plonky2::field::{
 use crate::sparse_merkle_tree::root_data::RootData;
 
 use super::super::{
-    goldilocks_poseidon::{GoldilocksHashOut, Wrapper},
     layered_tree::LayeredSparseMerkleTree,
     node_data::NodeData,
     node_hash::NodeHash,
@@ -17,6 +16,8 @@ use super::{
     tree::{get_index_position, get_key_position},
     types::StorageLayout,
 };
+
+use crate::utils::hash::{GoldilocksHashOut, Wrapper};
 
 type F = GoldilocksField;
 type K = GoldilocksHashOut;

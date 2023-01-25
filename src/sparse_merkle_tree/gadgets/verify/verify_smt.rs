@@ -6,16 +6,17 @@ use plonky2::{
 };
 
 use super::super::super::{
-    gadgets::common::{
-        calc_internal_hash, calc_leaf_hash, enforce_equal_if_enabled, is_equal_hash_out,
-        logical_and_not, smt_lev_ins,
-    },
-    goldilocks_poseidon::Wrapper,
+    gadgets::common::{calc_internal_hash, calc_leaf_hash, smt_lev_ins},
     proof::SparseMerkleInclusionProof,
 };
 
+use crate::utils::{
+    gadgets::logic::{enforce_equal_if_enabled, is_equal_hash_out, logical_and_not},
+    hash::WrappedHashOut,
+};
+
 pub type SmtInclusionProof<F> =
-    SparseMerkleInclusionProof<Wrapper<HashOut<F>>, Wrapper<HashOut<F>>, Wrapper<HashOut<F>>>;
+    SparseMerkleInclusionProof<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>>;
 
 pub type LayeredSmtInclusionProof<F> = (SmtInclusionProof<F>, SmtInclusionProof<F>);
 

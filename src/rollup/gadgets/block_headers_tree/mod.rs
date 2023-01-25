@@ -25,12 +25,13 @@ pub fn calc_block_headers_proof<
     let default_hash = HashOutTarget::from_partial(&[], zero);
 
     let prev_block_number = prev_block_header.block_number;
+    let prev_block_number_path = builder.split_le(prev_block_number, 32);
 
     // `block_number - 2` までの block header で作られた block headers tree の `block_number - 1` 番目の proof
     // この時点では, leaf の値は 0 である.
     let prev_block_headers_digest = get_merkle_root_target::<F, H, D>(
         builder,
-        prev_block_number,
+        &prev_block_number_path,
         default_hash,
         &prev_block_headers_proof_siblings,
     );
@@ -43,14 +44,14 @@ pub fn calc_block_headers_proof<
     // `block_number - 1` までの block header で作られた block headers tree の `block_number - 1` 番目の proof
     let block_headers_digest = get_merkle_root_target::<F, H, D>(
         builder,
-        prev_block_number,
+        &prev_block_number_path,
         prev_block_hash,
         &prev_block_headers_proof_siblings,
     );
 
     MerkleProofTarget {
         root: block_headers_digest,
-        index: prev_block_number,
+        index: prev_block_number_path,
         value: prev_block_hash,
         siblings: prev_block_headers_proof_siblings,
     }

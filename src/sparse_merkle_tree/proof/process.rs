@@ -1,10 +1,11 @@
 use std::fmt::Debug;
 
-use crate::sparse_merkle_tree::{
-    goldilocks_poseidon::{GoldilocksHashOut, PoseidonNodeHash},
-    node_data::Node,
-    node_hash::NodeHash,
-    proof::common::{smt_lev_ins, to_le_bits},
+use crate::{
+    sparse_merkle_tree::{
+        goldilocks_poseidon::PoseidonNodeHash, node_data::Node, node_hash::NodeHash,
+        proof::common::smt_lev_ins,
+    },
+    utils::{common::to_le_bits, hash::GoldilocksHashOut},
 };
 use plonky2::{hash::hash_types::RichField, plonk::config::GenericHashOut};
 use serde::{Deserialize, Serialize};

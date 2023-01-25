@@ -11,9 +11,12 @@ use plonky2::{
     },
 };
 
-use intmax_zkp_core::sparse_merkle_tree::{
-    gadgets::process::process_smt::SparseMerkleProcessProofTarget,
-    goldilocks_poseidon::{GoldilocksHashOut, PoseidonSparseMerkleTreeMemory},
+use intmax_zkp_core::{
+    sparse_merkle_tree::{
+        gadgets::process::process_smt::SparseMerkleProcessProofTarget,
+        goldilocks_poseidon::PoseidonSparseMerkleTreeMemory,
+    },
+    utils::hash::GoldilocksHashOut,
 };
 
 const D: usize = 2; // extension degree

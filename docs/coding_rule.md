@@ -21,4 +21,6 @@
 
 - `PurgeInputProcessProof`の`Proof`は、他の命名の整合性を考えると`Witness`の方が適当ではないか？
 
+-
+
 <!-- - `new`(`add_virtual_to`)と、`calculate`は完全に対応させたほうが良いのではないか？つまり、入力と出力の関係を完全に対応させたほうが良いのではないか？ -->

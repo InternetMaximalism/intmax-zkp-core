@@ -160,7 +160,7 @@ impl<F: RichField, H: AlgebraicHasher<F>> MergeProof<F, H, HashOut<F>> {
 }
 
 impl<F: RichField, H: AlgebraicHasher<F>> MergeProof<F, H, HashOut<F>> {
-    pub fn new(
+    pub fn make_constraints(
         log_max_n_txs: usize,
         log_n_txs: usize,
         log_n_recipients: usize,
@@ -526,7 +526,7 @@ impl MergeTransitionTarget {
             target.set_witness::<F, H>(pw, proof);
         }
 
-        let default_merge_witness = MergeProof::new(
+        let default_merge_witness = MergeProof::make_constraints(
             self.log_max_n_txs,
             self.log_n_txs,
             self.log_n_recipients,

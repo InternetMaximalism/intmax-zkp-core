@@ -18,7 +18,7 @@ pub struct ContributedAssetTarget {
 }
 
 impl ContributedAssetTarget {
-    pub fn add_virtual_to<F: RichField + Extendable<D>, const D: usize>(
+    pub fn make_constraints<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
         Self {

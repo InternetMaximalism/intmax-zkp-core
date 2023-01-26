@@ -107,14 +107,15 @@ impl MergeAndPurgeTransitionTarget {
                 rollup_constants.n_merges,
             );
 
-        let purge_proof_target: PurgeTransitionTarget = PurgeTransitionTarget::new::<F, H, D>(
-            builder,
-            rollup_constants.log_max_n_txs,
-            rollup_constants.log_max_n_contracts + rollup_constants.log_max_n_variables,
-            rollup_constants.log_n_recipients,
-            rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
-            rollup_constants.n_diffs,
-        );
+        let purge_proof_target: PurgeTransitionTarget =
+            PurgeTransitionTarget::make_constraints::<F, H, D>(
+                builder,
+                rollup_constants.log_max_n_txs,
+                rollup_constants.log_max_n_contracts + rollup_constants.log_max_n_variables,
+                rollup_constants.log_n_recipients,
+                rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
+                rollup_constants.n_diffs,
+            );
         builder.connect_hashes(
             merge_proof_target.new_user_asset_root,
             purge_proof_target.old_user_asset_root,

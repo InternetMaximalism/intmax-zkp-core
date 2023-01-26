@@ -29,7 +29,7 @@ pub struct DepositInfoTarget {
 }
 
 impl DepositInfoTarget {
-    pub fn add_virtual_to<F: RichField + Extendable<D>, const D: usize>(
+    pub fn make_constraints<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
         let receiver_address = AddressTarget::new(builder);

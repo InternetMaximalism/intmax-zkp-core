@@ -232,7 +232,7 @@ impl MergeProofTarget {
         log_n_recipients: usize,
     ) -> Self {
         let diff_tree_inclusion_proof = (
-            BlockHeaderTarget::add_virtual_to::<F, D>(builder),
+            BlockHeaderTarget::make_constraints::<F, D>(builder),
             MerkleProofTarget::add_virtual_to::<F, H, D>(builder, log_n_txs),
             MerkleProofTarget::add_virtual_to::<F, H, D>(builder, log_n_recipients),
         );
@@ -651,8 +651,10 @@ mod tests {
         let mut user_asset_tree =
             UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
 
-        let mut deposit_tree =
-            TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
+        let mut deposit_tree = TxDiffTree::<F, H>::make_constraints(
+            LOG_N_RECIPIENTS,
+            LOG_N_CONTRACTS + LOG_N_VARIABLES,
+        );
 
         deposit_tree.insert(asset1).unwrap();
         deposit_tree.insert(asset2).unwrap();
@@ -770,8 +772,10 @@ mod tests {
         let mut user_asset_tree =
             UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
 
-        let mut deposit_tree =
-            TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
+        let mut deposit_tree = TxDiffTree::<F, H>::make_constraints(
+            LOG_N_RECIPIENTS,
+            LOG_N_CONTRACTS + LOG_N_VARIABLES,
+        );
 
         deposit_tree.insert(asset1).unwrap();
         deposit_tree.insert(asset2).unwrap();

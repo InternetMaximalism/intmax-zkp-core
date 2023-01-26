@@ -63,7 +63,7 @@ pub struct PurgeInputProcessProofTarget {
 }
 
 impl PurgeInputProcessProofTarget {
-    pub fn new<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+    pub fn make_constraints<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
         log_max_n_txs: usize,
         log_max_n_kinds: usize,
@@ -72,7 +72,7 @@ impl PurgeInputProcessProofTarget {
         let index = (0..log_max_n_txs + log_max_n_kinds)
             .map(|_| builder.add_virtual_bool_target_safe())
             .collect::<Vec<_>>();
-        let old_leaf_data = ContributedAssetTarget::add_virtual_to(builder);
+        let old_leaf_data = ContributedAssetTarget::make_constraints(builder);
         let enabled = builder.add_virtual_bool_target_safe();
 
         Self {
@@ -145,7 +145,7 @@ pub struct PurgeOutputProcessProofTarget {
 }
 
 impl PurgeOutputProcessProofTarget {
-    pub fn new<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+    pub fn make_constraints<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
         log_n_recipients: usize,
         log_n_kinds: usize,
@@ -154,7 +154,7 @@ impl PurgeOutputProcessProofTarget {
         let index = (0..log_n_recipients + log_n_kinds)
             .map(|_| builder.add_virtual_bool_target_safe())
             .collect::<Vec<_>>();
-        let new_leaf_data = ContributedAssetTarget::add_virtual_to(builder);
+        let new_leaf_data = ContributedAssetTarget::make_constraints(builder);
         let enabled = builder.add_virtual_bool_target_safe();
 
         Self {
@@ -266,7 +266,7 @@ pub struct PurgeTransitionTarget {
 }
 
 impl PurgeTransitionTarget {
-    pub fn new<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+    pub fn make_constraints<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
         log_max_n_txs: usize,
         log_max_n_kinds: usize,
@@ -279,7 +279,7 @@ impl PurgeTransitionTarget {
         let nonce = builder.add_virtual_hash();
         let input_proofs_t = (0..n_diffs)
             .map(|_| {
-                PurgeInputProcessProofTarget::new::<F, H, D>(
+                PurgeInputProcessProofTarget::make_constraints::<F, H, D>(
                     builder,
                     log_max_n_txs,
                     log_max_n_kinds,
@@ -289,7 +289,7 @@ impl PurgeTransitionTarget {
 
         let output_proofs_t = (0..n_diffs)
             .map(|_| {
-                PurgeOutputProcessProofTarget::new::<F, H, D>(
+                PurgeOutputProcessProofTarget::make_constraints::<F, H, D>(
                     builder,
                     log_n_recipients,
                     log_n_kinds,
@@ -535,7 +535,7 @@ mod tests {
         let config = CircuitConfig::standard_recursion_config();
 
         let mut builder = CircuitBuilder::<F, D>::new(config);
-        let target = PurgeTransitionTarget::new::<F, H, D>(
+        let target = PurgeTransitionTarget::make_constraints::<F, H, D>(
             &mut builder,
             LOG_MAX_N_TXS,
             LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES,
@@ -600,8 +600,10 @@ mod tests {
 
         let mut user_asset_tree =
             UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
-        let mut tx_diff_tree =
-            TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
+        let mut tx_diff_tree = TxDiffTree::<F, H>::make_constraints(
+            LOG_N_RECIPIENTS,
+            LOG_N_CONTRACTS + LOG_N_VARIABLES,
+        );
 
         user_asset_tree
             .insert_assets(*merge_key1, vec![asset1])

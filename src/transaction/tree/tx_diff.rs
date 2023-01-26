@@ -24,7 +24,7 @@ pub struct TxDiffTree<F: RichField, H: Hasher<F>> {
 }
 
 impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
-    pub fn new(log_n_recipients: usize, log_n_kinds: usize) -> Self {
+    pub fn make_constraints(log_n_recipients: usize, log_n_kinds: usize) -> Self {
         let mut zero_hashes = vec![];
 
         let zero = vec![F::ZERO; 13];
@@ -310,8 +310,10 @@ mod tests {
             amount: 1111,
         };
 
-        let mut deposit_tree =
-            TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
+        let mut deposit_tree = TxDiffTree::<F, H>::make_constraints(
+            LOG_N_RECIPIENTS,
+            LOG_N_CONTRACTS + LOG_N_VARIABLES,
+        );
 
         deposit_tree.insert(asset1).unwrap();
         deposit_tree.insert(asset2).unwrap();
@@ -382,8 +384,10 @@ mod tests {
             amount: 1111,
         };
 
-        let mut deposit_tree =
-            TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
+        let mut deposit_tree = TxDiffTree::<F, H>::make_constraints(
+            LOG_N_RECIPIENTS,
+            LOG_N_CONTRACTS + LOG_N_VARIABLES,
+        );
 
         deposit_tree.insert(asset1).unwrap();
         deposit_tree.insert(asset2).unwrap();

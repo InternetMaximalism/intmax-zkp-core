@@ -369,7 +369,7 @@ impl PurgeTransitionTarget {
             let proof1_old_leaf_t = default_root_hash;
             let proof1_new_leaf_t = builder.hash_n_to_hash_no_pad::<H>(new_leaf_data_t.encode());
 
-            let proof1_old_root_t =
+            let _proof1_old_root_t =
                 get_merkle_root_target::<F, H, D>(builder, index_t, proof1_old_leaf_t, siblings_t);
             let proof1_new_root_t =
                 get_merkle_root_target::<F, H, D>(builder, index_t, proof1_new_leaf_t, siblings_t);

@@ -88,7 +88,10 @@ impl<F: RichField> ApprovalBlockProduction<F> {
             // merge までは signature がなくても実行されるが, purge は signature がない時には実行されない.
             let expected_new_last_block_number = if let Some(signature) = r {
                 // signature が特定のメッセージに署名している時のみ有効である.
-                assert_eq!(signature.message, *self.old_world_state_root);
+                assert_eq!(
+                    signature.message,
+                    self.old_world_state_root.0.elements.to_vec()
+                );
                 // signature が提出された時, user asset root は変わらない.
                 assert_eq!(w.new_value, u.new_user_asset_root);
 
@@ -227,6 +230,7 @@ impl ApprovalBlockProductionTarget {
             t.user_transaction.set_witness(pw, &Default::default());
         }
 
+        let default_signature = SimpleSignaturePublicInputs::new(4, 4);
         for (t, r) in self
             .world_state_revert_transitions
             .iter()
@@ -235,7 +239,7 @@ impl ApprovalBlockProductionTarget {
             let r: Option<&_> = r.into();
             t.received_signature
                 .0
-                .set_witness(pw, r.unwrap_or(&Default::default()));
+                .set_witness(pw, r.unwrap_or(&default_signature));
             pw.set_bool_target(t.received_signature.1, r.is_some());
         }
         for t in self
@@ -243,7 +247,7 @@ impl ApprovalBlockProductionTarget {
             .iter()
             .skip(witness.received_signatures.len())
         {
-            t.received_signature.0.set_witness(pw, &Default::default());
+            t.received_signature.0.set_witness(pw, &default_signature);
             pw.set_bool_target(t.received_signature.1, false);
         }
 
@@ -331,11 +335,12 @@ pub fn verify_valid_approval_block<
     } in world_state_revert_transitions
     {
         let (signature, enabled_signature) = r;
+        assert!(signature.message.len() <= 4);
 
         // 特定のメッセージに署名したことを確かめる.
         enforce_equal_if_enabled(
             builder,
-            signature.message,
+            HashOutTarget::from_partial(&signature.message, zero),
             old_world_state_root, // = proposal_world_state_root
             *enabled_signature,
         );

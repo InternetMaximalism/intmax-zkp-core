@@ -546,14 +546,12 @@ mod tests {
         builder.register_public_inputs(&target.tx_hash.elements);
         let data = builder.build::<C>();
 
-        let private_key = HashOut {
-            elements: [
-                F::from_canonical_u64(15657143458229430356),
-                F::from_canonical_u64(6012455030006979790),
-                F::from_canonical_u64(4280058849535143691),
-                F::from_canonical_u64(5153662694263190591),
-            ],
-        };
+        let private_key = vec![
+            F::from_canonical_u64(15657143458229430356),
+            F::from_canonical_u64(6012455030006979790),
+            F::from_canonical_u64(4280058849535143691),
+            F::from_canonical_u64(5153662694263190591),
+        ];
         let user_account = private_key_to_account(private_key);
         let user_address = user_account.address;
 

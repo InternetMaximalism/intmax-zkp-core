@@ -56,7 +56,7 @@ use crate::{
             make_simple_signature_circuit, SimpleSignatureCircuit,
             SimpleSignatureProofWithPublicInputs, SimpleSignaturePublicInputsTarget,
         },
-        gadgets::account::AddressTarget,
+        gadgets::{account::AddressTarget, signature::SimpleSignature},
     },
 };
 
@@ -391,7 +391,7 @@ where
         .iter()
         .zip(approval_block_target.world_state_revert_transitions.iter())
     {
-        let signature = SimpleSignaturePublicInputsTarget::decode(&r.inner.0.public_inputs);
+        let signature = SimpleSignaturePublicInputsTarget::decode(&r.inner.0.public_inputs, 4);
         SimpleSignaturePublicInputsTarget::connect(
             &mut builder,
             &a.received_signature.0,
@@ -956,11 +956,15 @@ where
         .set_witness_and_prove(&witness)
         .map_err(|err| anyhow::anyhow!("fail to prove user transaction: {}", err))?;
 
+    let private_key_len = 4;
+    let message_len = 4;
+
     // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
     let config = CircuitConfig::standard_recursion_config();
-    let simple_signature_circuit = make_simple_signature_circuit::<F, C, D>(config);
+    let simple_signature_circuit =
+        make_simple_signature_circuit::<F, C, D>(config, private_key_len, message_len);
     let default_simple_signature_proof = simple_signature_circuit
-        .set_witness_and_prove(&Default::default())
+        .set_witness_and_prove(&SimpleSignature::new(private_key_len, message_len))
         .map_err(|err| anyhow::anyhow!("fail to prove simple signature: {}", err))?;
 
     let config = CircuitConfig::standard_recursion_config();

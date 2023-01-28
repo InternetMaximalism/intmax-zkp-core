@@ -1,9 +1,6 @@
 use plonky2::{
     field::{extension::Extendable, types::Field},
-    hash::{
-        hash_types::{HashOut, HashOutTarget, RichField},
-        poseidon::PoseidonHash,
-    },
+    hash::hash_types::{HashOut, HashOutTarget, RichField},
     iop::{
         target::Target,
         witness::{PartialWitness, Witness},
@@ -11,7 +8,7 @@ use plonky2::{
     plonk::{
         circuit_builder::CircuitBuilder,
         circuit_data::{CircuitConfig, CircuitData},
-        config::{GenericConfig, Hasher},
+        config::GenericConfig,
         proof::{Proof, ProofWithPublicInputs},
     },
 };
@@ -27,13 +24,22 @@ pub fn make_simple_signature_circuit<
     const D: usize,
 >(
     config: CircuitConfig,
+    private_key_len: usize,
+    message_len: usize,
 ) -> SimpleSignatureCircuit<F, C, D> {
     let mut builder = CircuitBuilder::<F, D>::new(config);
 
-    let targets = SimpleSignatureTarget::add_virtual_to::<F, C::InnerHasher, D>(&mut builder);
-    builder.register_public_inputs(&targets.message.elements); // public_inputs[0..4]
-    builder.register_public_inputs(&targets.public_key.elements); // public_inputs[4..8]
-    builder.register_public_inputs(&targets.signature.elements); // public_inputs[8..12]
+    let targets = SimpleSignatureTarget::add_virtual_to::<F, C::InnerHasher, D>(
+        &mut builder,
+        private_key_len,
+        message_len,
+    );
+    let public_inputs = SimpleSignaturePublicInputsTarget {
+        message: targets.message.clone(),
+        public_key: targets.public_key,
+        signature: targets.signature,
+    };
+    builder.register_public_inputs(&public_inputs.encode());
     let zkdsa_circuit_data = builder.build::<C>();
 
     SimpleSignatureCircuit {
@@ -54,26 +60,16 @@ pub struct SimpleSignatureCircuit<
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound = "F: RichField")]
 pub struct SimpleSignaturePublicInputs<F: Field> {
-    #[serde(with = "SerializableHashOut")]
-    pub message: HashOut<F>,
+    pub message: Vec<F>, // nullifier
     #[serde(with = "SerializableHashOut")]
     pub public_key: HashOut<F>,
     #[serde(with = "SerializableHashOut")]
-    pub signature: HashOut<F>,
+    pub signature: HashOut<F>, // nullifier hash
 }
 
-impl<F: RichField> Default for SimpleSignaturePublicInputs<F> {
-    fn default() -> Self {
-        let message = Default::default();
-        let private_key = Default::default();
-        let public_key = PoseidonHash::two_to_one(private_key, private_key);
-        let signature = PoseidonHash::two_to_one(private_key, message);
-
-        Self {
-            message,
-            public_key,
-            signature,
-        }
+impl<F: RichField> SimpleSignaturePublicInputs<F> {
+    pub fn new(private_key_len: usize, message_len: usize) -> Self {
+        SimpleSignature::new(private_key_len, message_len).calculate()
     }
 }
 
@@ -83,7 +79,7 @@ fn test_default_simple_signature() {
 
     type F = GoldilocksField;
 
-    let default_user_transaction = SimpleSignaturePublicInputs::<F>::default();
+    let default_user_transaction = SimpleSignaturePublicInputs::<F>::new(4, 4);
 
     let public_key = HashOut {
         elements: [
@@ -103,7 +99,7 @@ fn test_default_simple_signature() {
         ],
     };
 
-    assert_eq!(default_user_transaction.message, Default::default());
+    assert_eq!(default_user_transaction.message, vec![F::ZERO; 4]);
     assert_eq!(default_user_transaction.public_key, public_key);
     assert_eq!(default_user_transaction.signature, signature);
 }
@@ -111,7 +107,7 @@ fn test_default_simple_signature() {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound = "F: RichField")]
 pub struct SerializableSimpleSignaturePublicInputs<F: Field> {
-    pub message: WrappedHashOut<F>,
+    pub message: Vec<F>,
     pub public_key: WrappedHashOut<F>,
     pub signature: WrappedHashOut<F>,
 }
@@ -119,7 +115,7 @@ pub struct SerializableSimpleSignaturePublicInputs<F: Field> {
 impl<F: Field> From<SerializableSimpleSignaturePublicInputs<F>> for SimpleSignaturePublicInputs<F> {
     fn from(value: SerializableSimpleSignaturePublicInputs<F>) -> Self {
         Self {
-            message: value.message.0,
+            message: value.message,
             public_key: value.public_key.0,
             signature: value.signature.0,
         }
@@ -129,7 +125,7 @@ impl<F: Field> From<SerializableSimpleSignaturePublicInputs<F>> for SimpleSignat
 impl<F: Field> From<SimpleSignaturePublicInputs<F>> for SerializableSimpleSignaturePublicInputs<F> {
     fn from(value: SimpleSignaturePublicInputs<F>) -> Self {
         Self {
-            message: value.message.into(),
+            message: value.message,
             public_key: value.public_key.into(),
             signature: value.signature.into(),
         }
@@ -142,14 +138,10 @@ fn test_serde_simple_signature_public_inputs() {
 
     type F = GoldilocksField;
 
-    let public_inputs: SimpleSignaturePublicInputs<F> = SimpleSignaturePublicInputs::default();
-    // let encoded_public_inputs = "{\"message\":{\"elements\":[0,0,0,0]},\"public_key\":{\"elements\":[4330397376401421145,14124799381142128323,8742572140681234676,14345658006221440202]},\"signature\":{\"elements\":[4330397376401421145,14124799381142128323,8742572140681234676,14345658006221440202]}}";
-    // let decoded_public_inputs: SimpleSignaturePublicInputs<F> =
-    //     serde_json::from_str(encoded_public_inputs).unwrap();
-    // assert_eq!(decoded_public_inputs, public_inputs);
-
-    // let public_inputs: SerializableSimpleSignaturePublicInputs<F> = public_inputs.into();
-    let encoded_public_inputs = "{\"message\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"public_key\":\"0xc71603f33a1144ca7953db0ab48808f4c4055e3364a246c33c18a9786cb0b359\",\"signature\":\"0xc71603f33a1144ca7953db0ab48808f4c4055e3364a246c33c18a9786cb0b359\"}";
+    let public_inputs: SimpleSignaturePublicInputs<F> = SimpleSignaturePublicInputs::new(4, 4);
+    // let encode_public_inputs = serde_json::to_string(&public_inputs).unwrap();
+    // dbg!(encode_public_inputs);
+    let encoded_public_inputs = "{\"message\":[0,0,0,0],\"public_key\":\"0xc71603f33a1144ca7953db0ab48808f4c4055e3364a246c33c18a9786cb0b359\",\"signature\":\"0xc71603f33a1144ca7953db0ab48808f4c4055e3364a246c33c18a9786cb0b359\"}";
     let decoded_public_inputs: SimpleSignaturePublicInputs<F> =
         serde_json::from_str(encoded_public_inputs).unwrap();
     assert_eq!(decoded_public_inputs, public_inputs);
@@ -157,22 +149,19 @@ fn test_serde_simple_signature_public_inputs() {
 
 impl<F: Field> SimpleSignaturePublicInputs<F> {
     pub fn encode(&self) -> Vec<F> {
-        let public_inputs = vec![
-            self.message.elements,
-            self.public_key.elements,
-            self.signature.elements,
+        vec![
+            self.public_key.elements.to_vec(),
+            self.signature.elements.to_vec(),
+            self.message.to_vec(),
         ]
-        .concat();
-        assert_eq!(public_inputs.len(), 12);
-
-        public_inputs
+        .concat()
     }
 
-    pub fn decode(public_inputs: &[F]) -> Self {
-        assert_eq!(public_inputs.len(), 12);
-        let message = HashOut::from_partial(&public_inputs[0..4]);
-        let public_key = HashOut::from_partial(&public_inputs[4..8]);
-        let signature = HashOut::from_partial(&public_inputs[8..12]);
+    pub fn decode(public_inputs: &[F], message_len: usize) -> Self {
+        assert_eq!(public_inputs.len(), 8 + message_len);
+        let public_key = HashOut::from_partial(&public_inputs[0..4]);
+        let signature = HashOut::from_partial(&public_inputs[4..8]);
+        let message = public_inputs[8..(8 + message_len)].to_vec();
 
         Self {
             message,
@@ -184,7 +173,7 @@ impl<F: Field> SimpleSignaturePublicInputs<F> {
 
 #[derive(Clone, Debug)]
 pub struct SimpleSignaturePublicInputsTarget {
-    pub message: HashOutTarget,
+    pub message: Vec<Target>,
     pub public_key: HashOutTarget,
     pub signature: HashOutTarget,
 }
@@ -193,7 +182,7 @@ impl SimpleSignaturePublicInputsTarget {
     pub fn add_virtual_to<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
-        let message = builder.add_virtual_hash();
+        let message = builder.add_virtual_targets(4);
         let public_key = builder.add_virtual_hash();
         let signature = builder.add_virtual_hash();
 
@@ -209,7 +198,10 @@ impl SimpleSignaturePublicInputsTarget {
         pw: &mut impl Witness<F>,
         public_inputs: &SimpleSignaturePublicInputs<F>,
     ) {
-        pw.set_hash_target(self.message, public_inputs.message);
+        for (target, value) in self.message.iter().zip(public_inputs.message.iter()) {
+            pw.set_target(*target, *value);
+        }
+
         pw.set_hash_target(self.public_key, public_inputs.public_key);
         pw.set_hash_target(self.signature, public_inputs.signature);
     }
@@ -219,34 +211,32 @@ impl SimpleSignaturePublicInputsTarget {
         a: &Self,
         b: &Self,
     ) {
-        builder.connect_hashes(a.message, b.message);
+        for (a, b) in a.message.iter().zip(b.message.iter()) {
+            builder.connect(*a, *b);
+        }
+
         builder.connect_hashes(a.public_key, b.public_key);
         builder.connect_hashes(a.signature, b.signature);
     }
 
     pub fn encode(&self) -> Vec<Target> {
-        let public_inputs_t = vec![
-            self.message.elements,
-            self.public_key.elements,
-            self.signature.elements,
+        vec![
+            self.public_key.elements.to_vec(),
+            self.signature.elements.to_vec(),
+            self.message.to_vec(),
         ]
-        .concat();
-        assert_eq!(public_inputs_t.len(), 12);
-
-        public_inputs_t
+        .concat()
     }
 
-    pub fn decode(public_inputs_t: &[Target]) -> Self {
-        assert_eq!(public_inputs_t.len(), 12);
-        let message = HashOutTarget {
+    pub fn decode(public_inputs_t: &[Target], message_len: usize) -> Self {
+        assert_eq!(public_inputs_t.len(), 8 + message_len);
+        let public_key = HashOutTarget {
             elements: public_inputs_t[0..4].try_into().unwrap(),
         };
-        let public_key = HashOutTarget {
+        let signature = HashOutTarget {
             elements: public_inputs_t[4..8].try_into().unwrap(),
         };
-        let signature = HashOutTarget {
-            elements: public_inputs_t[8..12].try_into().unwrap(),
-        };
+        let message = public_inputs_t[8..(8 + message_len)].to_vec();
 
         SimpleSignaturePublicInputsTarget {
             message,
@@ -288,7 +278,7 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     ) -> SimpleSignatureProofWithPublicInputs<F, C, D> {
         Self {
             proof: value.proof,
-            public_inputs: SimpleSignaturePublicInputs::decode(&value.public_inputs),
+            public_inputs: SimpleSignaturePublicInputs::decode(&value.public_inputs, 4),
         }
     }
 }
@@ -316,10 +306,10 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
 impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     SimpleSignatureCircuit<F, C, D>
 {
-    pub fn parse_public_inputs(&self) -> SimpleSignaturePublicInputsTarget {
+    pub fn parse_public_inputs(&self, message_len: usize) -> SimpleSignaturePublicInputsTarget {
         let public_inputs_t = self.data.prover_only.public_inputs.clone();
 
-        SimpleSignaturePublicInputsTarget::decode(&public_inputs_t)
+        SimpleSignaturePublicInputsTarget::decode(&public_inputs_t, message_len)
     }
 
     pub fn prove(
@@ -354,7 +344,6 @@ fn test_verify_simple_signature_by_plonky2() {
     use std::time::Instant;
 
     use plonky2::{
-        field::types::Sample,
         iop::witness::PartialWitness,
         plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
     };
@@ -366,16 +355,15 @@ fn test_verify_simple_signature_by_plonky2() {
     type F = <C as GenericConfig<D>>::F;
     // type F = GoldilocksField;
 
-    let config = CircuitConfig::standard_recursion_config();
-    let simple_signature_circuit = make_simple_signature_circuit::<F, C, D>(config);
+    let private_key_len = 4;
+    let message_len = 4;
 
-    let private_key = HashOut::<F>::rand();
-    let account = private_key_to_account(private_key);
-    let message = HashOut::<F>::rand();
-    let witness = SimpleSignature {
-        private_key,
-        message,
-    };
+    let config = CircuitConfig::standard_recursion_config();
+    let simple_signature_circuit =
+        make_simple_signature_circuit::<F, C, D>(config, private_key_len, message_len);
+
+    let witness = SimpleSignature::rand(private_key_len, message_len);
+    let account = private_key_to_account(witness.private_key.clone());
 
     let mut pw = PartialWitness::new();
     simple_signature_circuit
@@ -413,7 +401,8 @@ pub fn prove_simple_signature<
 ) -> anyhow::Result<SimpleSignatureProofWithPublicInputs<F, C, D>> {
     // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
     let config = CircuitConfig::standard_recursion_config();
-    let simple_signature_circuit = make_simple_signature_circuit(config);
+    let simple_signature_circuit =
+        make_simple_signature_circuit(config, witness.private_key.len(), witness.message.len());
 
     let mut pw = PartialWitness::new();
     simple_signature_circuit

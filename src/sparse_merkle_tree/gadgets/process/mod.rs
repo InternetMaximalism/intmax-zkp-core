@@ -93,7 +93,6 @@ fn test_verify_process_proof_by_plonky2() {
 fn test_verify_process_proof2_by_plonky2() {
     use plonky2::{
         field::{goldilocks_field::GoldilocksField, types::Field},
-        hash::hash_types::HashOut,
         iop::witness::PartialWitness,
         plonk::{
             circuit_builder::CircuitBuilder,
@@ -118,24 +117,20 @@ fn test_verify_process_proof2_by_plonky2() {
     // type F = GoldilocksField;
     const LOG_MAX_N_USERS: usize = 32;
 
-    let sender1_private_key = HashOut {
-        elements: [
-            GoldilocksField::from_canonical_u64(17426287337377512978),
-            GoldilocksField::from_canonical_u64(8703645504073070742),
-            GoldilocksField::from_canonical_u64(11984317793392655464),
-            GoldilocksField::from_canonical_u64(9979414176933652180),
-        ],
-    };
+    let sender1_private_key = vec![
+        GoldilocksField::from_canonical_u64(17426287337377512978),
+        GoldilocksField::from_canonical_u64(8703645504073070742),
+        GoldilocksField::from_canonical_u64(11984317793392655464),
+        GoldilocksField::from_canonical_u64(9979414176933652180),
+    ];
     let sender1_account = private_key_to_account(sender1_private_key);
 
-    let sender2_private_key = HashOut {
-        elements: [
-            GoldilocksField::from_canonical_u64(17814943904840276189),
-            GoldilocksField::from_canonical_u64(12088887497349422745),
-            GoldilocksField::from_canonical_u64(1199609976110004574),
-            GoldilocksField::from_canonical_u64(13794990519201211279),
-        ],
-    };
+    let sender2_private_key = vec![
+        GoldilocksField::from_canonical_u64(17814943904840276189),
+        GoldilocksField::from_canonical_u64(12088887497349422745),
+        GoldilocksField::from_canonical_u64(1199609976110004574),
+        GoldilocksField::from_canonical_u64(13794990519201211279),
+    ];
     let sender2_account = private_key_to_account(sender2_private_key);
 
     let mut world_state_tree =

@@ -621,14 +621,12 @@ mod tests {
         const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
         const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
 
-        let private_key = HashOut {
-            elements: [
-                F::from_canonical_u64(15657143458229430356),
-                F::from_canonical_u64(6012455030006979790),
-                F::from_canonical_u64(4280058849535143691),
-                F::from_canonical_u64(5153662694263190591),
-            ],
-        };
+        let private_key = vec![
+            F::from_canonical_u64(15657143458229430356),
+            F::from_canonical_u64(6012455030006979790),
+            F::from_canonical_u64(4280058849535143691),
+            F::from_canonical_u64(5153662694263190591),
+        ];
         let user_account = private_key_to_account(private_key);
         let user_address = user_account.address;
 
@@ -749,14 +747,12 @@ mod tests {
 
         let default_hash = HashOut::ZERO;
 
-        let private_key = HashOut {
-            elements: [
-                F::from_canonical_u64(15657143458229430356),
-                F::from_canonical_u64(6012455030006979790),
-                F::from_canonical_u64(4280058849535143691),
-                F::from_canonical_u64(5153662694263190591),
-            ],
-        };
+        let private_key = vec![
+            F::from_canonical_u64(15657143458229430356),
+            F::from_canonical_u64(6012455030006979790),
+            F::from_canonical_u64(4280058849535143691),
+            F::from_canonical_u64(5153662694263190591),
+        ];
         let user_account = private_key_to_account(private_key);
         let user_address = user_account.address;
 

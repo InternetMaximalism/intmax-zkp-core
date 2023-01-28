@@ -98,14 +98,12 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     let mut world_state_tree =
         PoseidonSparseMerkleTree::new(aggregator_nodes_db, RootDataTmp::default());
 
-    let sender1_private_key = HashOut {
-        elements: [
-            C::F::from_canonical_u64(17426287337377512978),
-            C::F::from_canonical_u64(8703645504073070742),
-            C::F::from_canonical_u64(11984317793392655464),
-            C::F::from_canonical_u64(9979414176933652180),
-        ],
-    };
+    let sender1_private_key = vec![
+        C::F::from_canonical_u64(17426287337377512978),
+        C::F::from_canonical_u64(8703645504073070742),
+        C::F::from_canonical_u64(11984317793392655464),
+        C::F::from_canonical_u64(9979414176933652180),
+    ];
     let sender1_account = private_key_to_account(sender1_private_key);
     let sender1_address = sender1_account.address;
 
@@ -216,14 +214,12 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     let sender1_input_witness = vec![proof2, proof1];
     let sender1_output_witness = vec![proof3, proof4];
 
-    let sender2_private_key = HashOut {
-        elements: [
-            C::F::from_canonical_u64(15657143458229430356),
-            C::F::from_canonical_u64(6012455030006979790),
-            C::F::from_canonical_u64(4280058849535143691),
-            C::F::from_canonical_u64(5153662694263190591),
-        ],
-    };
+    let sender2_private_key = vec![
+        C::F::from_canonical_u64(15657143458229430356),
+        C::F::from_canonical_u64(6012455030006979790),
+        C::F::from_canonical_u64(4280058849535143691),
+        C::F::from_canonical_u64(5153662694263190591),
+    ];
     let sender2_account = private_key_to_account(sender2_private_key);
     let sender2_address = sender2_account.address;
 
@@ -548,7 +544,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
 
     let sender2_received_signatures = SimpleSignature {
         private_key: sender2_account.private_key,
-        message: proposed_world_state_root,
+        message: proposed_world_state_root.elements.to_vec(),
     };
     let received_signatures = vec![None, Some(sender2_received_signatures.calculate())];
     let old_latest_account_root = latest_account_tree_process_proofs.first().unwrap().old_root;

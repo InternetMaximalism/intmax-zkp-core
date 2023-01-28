@@ -3,7 +3,7 @@ use std::str::FromStr;
 use plonky2::{
     field::{
         goldilocks_field::GoldilocksField,
-        types::{Field, PrimeField64, Sample},
+        types::{Field, PrimeField64},
     },
     hash::{
         hash_types::{HashOut, RichField},
@@ -15,7 +15,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::utils::hash::WrappedHashOut;
 
-pub type SecretKey<F> = HashOut<F>;
+pub type SecretKey<F> = Vec<F>;
 pub type PublicKey<F> = HashOut<F>;
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
@@ -115,15 +115,15 @@ impl<F: Field> Address<F> {
     }
 }
 
-pub fn private_key_to_public_key<F: RichField>(private_key: SecretKey<F>) -> PublicKey<F> {
-    PoseidonHash::two_to_one(private_key, private_key)
+pub fn private_key_to_public_key<F: RichField>(private_key: &SecretKey<F>) -> PublicKey<F> {
+    PoseidonHash::hash_no_pad(private_key)
 }
 
 pub fn public_key_to_address<F: RichField>(public_key: PublicKey<F>) -> Address<F> {
     Address(public_key.elements[0])
 }
 
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Account<F: RichField> {
     pub private_key: SecretKey<F>,
     pub public_key: PublicKey<F>,
@@ -132,7 +132,7 @@ pub struct Account<F: RichField> {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SerializableAccount {
-    pub private_key: WrappedHashOut<GoldilocksField>,
+    pub private_key: Vec<GoldilocksField>,
     pub public_key: WrappedHashOut<GoldilocksField>,
     pub address: Address<GoldilocksField>,
 }
@@ -140,7 +140,7 @@ pub struct SerializableAccount {
 impl From<SerializableAccount> for Account<GoldilocksField> {
     fn from(value: SerializableAccount) -> Self {
         Self {
-            private_key: *value.private_key,
+            private_key: value.private_key,
             public_key: *value.public_key,
             address: value.address,
         }
@@ -158,7 +158,7 @@ impl<'de> Deserialize<'de> for Account<GoldilocksField> {
 impl From<Account<GoldilocksField>> for SerializableAccount {
     fn from(value: Account<GoldilocksField>) -> Self {
         Self {
-            private_key: value.private_key.into(),
+            private_key: value.private_key,
             public_key: value.public_key.into(),
             address: value.address,
         }
@@ -167,7 +167,7 @@ impl From<Account<GoldilocksField>> for SerializableAccount {
 
 impl Serialize for Account<GoldilocksField> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let raw = SerializableAccount::from(*self);
+        let raw = SerializableAccount::from(self.clone());
 
         raw.serialize(serializer)
     }
@@ -182,7 +182,7 @@ fn test_serde_account() {
 }
 
 pub fn private_key_to_account<F: RichField>(private_key: SecretKey<F>) -> Account<F> {
-    let public_key = private_key_to_public_key(private_key);
+    let public_key = private_key_to_public_key(&private_key);
     let address = public_key_to_address(public_key);
 
     Account {
@@ -198,7 +198,7 @@ impl<F: RichField> Account<F> {
     }
 
     pub fn rand() -> Self {
-        let private_key = HashOut::rand();
+        let private_key = F::rand_vec(4);
 
         Account::new(private_key)
     }

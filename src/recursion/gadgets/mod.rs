@@ -132,8 +132,6 @@ mod tests {
     use std::time::Instant;
 
     use plonky2::{
-        field::types::Sample,
-        hash::hash_types::HashOut,
         iop::witness::PartialWitness,
         plonk::{
             circuit_builder::CircuitBuilder,
@@ -153,19 +151,17 @@ mod tests {
         type C = PoseidonGoldilocksConfig;
         type F = <C as GenericConfig<D>>::F;
 
-        let private_key = HashOut::rand();
-        let message = HashOut::rand();
+        let private_key_len = 4;
+        let message_len = 4;
 
         let config = CircuitConfig::standard_recursion_config();
-        let zkdsa_circuit = make_simple_signature_circuit::<F, C, D>(config);
+        let zkdsa_circuit =
+            make_simple_signature_circuit::<F, C, D>(config, private_key_len, message_len);
 
         let mut pw = PartialWitness::new();
         zkdsa_circuit.targets.set_witness(
             &mut pw,
-            &SimpleSignature {
-                private_key,
-                message,
-            },
+            &SimpleSignature::rand(private_key_len, message_len),
         );
 
         println!("start proving: sender2_received_signature");
@@ -204,17 +200,17 @@ mod tests {
         type C = PoseidonGoldilocksConfig;
         type F = <C as GenericConfig<D>>::F;
 
+        let private_key_len = 4;
+        let message_len = 4;
+
         let config = CircuitConfig::standard_recursion_config();
-        let zkdsa_circuit = make_simple_signature_circuit::<F, C, D>(config);
+        let zkdsa_circuit =
+            make_simple_signature_circuit::<F, C, D>(config, private_key_len, message_len);
 
         let mut pw = PartialWitness::new();
-        zkdsa_circuit.targets.set_witness(
-            &mut pw,
-            &SimpleSignature {
-                private_key: Default::default(),
-                message: Default::default(),
-            },
-        );
+        zkdsa_circuit
+            .targets
+            .set_witness(&mut pw, &SimpleSignature::new(private_key_len, message_len));
 
         println!("start proving: sender2_received_signature");
         let start = Instant::now();

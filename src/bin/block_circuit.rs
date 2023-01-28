@@ -8,7 +8,7 @@ use intmax_zkp_core::{
         gadgets::{batch::BlockBatchTarget, deposit_block::DepositBlockProduction},
     },
     transaction::circuits::{make_user_proof_circuit, MergeAndPurgeTransition},
-    zkdsa::circuits::make_simple_signature_circuit,
+    zkdsa::{circuits::make_simple_signature_circuit, gadgets::signature::SimpleSignature},
 };
 use plonky2::{
     iop::witness::PartialWitness,
@@ -92,7 +92,7 @@ fn main() {
 
     // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
     let config = CircuitConfig::standard_recursion_config();
-    let zkdsa_circuit = make_simple_signature_circuit(config);
+    let zkdsa_circuit = make_simple_signature_circuit(config, 4, 4);
 
     let mut pw = PartialWitness::new();
     zkdsa_circuit
@@ -110,7 +110,7 @@ fn main() {
     let mut pw = PartialWitness::new();
     zkdsa_circuit
         .targets
-        .set_witness(&mut pw, &Default::default());
+        .set_witness(&mut pw, &SimpleSignature::new(4, 4));
 
     println!("start proving: default_simple_signature");
     let start = Instant::now();

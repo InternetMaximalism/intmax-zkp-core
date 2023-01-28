@@ -17,17 +17,23 @@ use crate::{
 /// `TokenKind` で、トークンの種類を記述するのに使われる構造体
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct VariableIndex<F>(pub u8, core::marker::PhantomData<F>);
+pub struct VariableIndex<F>(pub u32, core::marker::PhantomData<F>);
 
 impl<F: Field> From<u8> for VariableIndex<F> {
     fn from(value: u8) -> Self {
+        Self(value as u32, core::marker::PhantomData)
+    }
+}
+
+impl<F: Field> From<u32> for VariableIndex<F> {
+    fn from(value: u32) -> Self {
         Self(value, core::marker::PhantomData)
     }
 }
 
 impl<F: RichField> VariableIndex<F> {
     pub fn to_hash_out(&self) -> HashOut<F> {
-        HashOut::from_partial(&[F::from_canonical_u8(self.0)])
+        HashOut::from_partial(&[F::from_canonical_u32(self.0)])
     }
 
     pub fn from_hash_out(value: HashOut<F>) -> Self {
@@ -35,7 +41,7 @@ impl<F: RichField> VariableIndex<F> {
     }
 
     pub fn read(inputs: &mut core::slice::Iter<F>) -> Self {
-        let value = WrappedHashOut::read(inputs).0.elements[0].to_canonical_u64() as u8;
+        let value = WrappedHashOut::read(inputs).0.elements[0].to_canonical_u64() as u32;
 
         value.into()
     }
@@ -62,25 +68,6 @@ impl<F: RichField> FromStr for VariableIndex<F> {
         let json = "\"".to_string() + s + "\"";
 
         serde_json::from_str(&json)
-    }
-}
-
-impl<'de, F: RichField> Deserialize<'de> for VariableIndex<F> {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = String::deserialize(deserializer)?;
-        let raw_without_prefix = raw.strip_prefix("0x").ok_or_else(|| {
-            serde::de::Error::custom(format!(
-                "fail to strip 0x-prefix: given value {raw} does not start with 0x"
-            ))
-        })?;
-        let bytes = hex::decode(raw_without_prefix).map_err(|err| {
-            serde::de::Error::custom(format!("fail to parse a hex string: {err}"))
-        })?;
-        let raw = *bytes.first().ok_or_else(|| {
-            serde::de::Error::custom(format!("out of index: given value {raw} is too short"))
-        })?;
-
-        Ok(raw.into())
     }
 }
 
@@ -167,10 +154,35 @@ impl<F: RichField> From<DepositInfo<F>> for Transaction<F> {
 
 impl<F: RichField> Serialize for VariableIndex<F> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let bytes = [self.0];
+        let bytes = self.0.to_be_bytes();
         let raw = format!("0x{}", hex::encode(bytes));
 
         raw.serialize(serializer)
+    }
+}
+
+impl<'de, F: RichField> Deserialize<'de> for VariableIndex<F> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = String::deserialize(deserializer)?;
+        let raw_without_prefix = raw.strip_prefix("0x").ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "fail to strip 0x-prefix: given value {raw} does not start with 0x"
+            ))
+        })?;
+        let mut bytes = hex::decode(raw_without_prefix).map_err(|err| {
+            serde::de::Error::custom(format!("fail to parse a hex string: {err}"))
+        })?;
+        if bytes.len() > 4 {
+            return Err(serde::de::Error::custom("too long hexadecimal sequence"));
+        }
+        bytes.reverse(); // little endian
+        bytes.resize(4, 0);
+
+        let raw = u32::from_le_bytes(bytes.try_into().map_err(|_| {
+            serde::de::Error::custom(format!("out of index: given value {raw} is too short"))
+        })?);
+
+        Ok(raw.into())
     }
 }
 
@@ -219,7 +231,7 @@ mod tests {
 
         let value = VariableIndex::from(20u8);
         let encoded_value = format!("{}", value);
-        assert_eq!(encoded_value, "0x14");
+        assert_eq!(encoded_value, "0x00000014");
         let decoded_value: VariableIndex<GoldilocksField> =
             VariableIndex::from_str("0x14").unwrap();
         assert_eq!(decoded_value, value);

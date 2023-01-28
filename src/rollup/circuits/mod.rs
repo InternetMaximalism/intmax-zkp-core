@@ -37,7 +37,7 @@ use crate::{
     },
     sparse_merkle_tree::gadgets::process::process_smt::SmtProcessProof,
     transaction::{
-        asset::{ContributedAsset, TokenKind, VariableIndex},
+        asset::{TokenKind, Transaction, VariableIndex},
         block_header::BlockHeader,
         circuits::{
             make_user_proof_circuit, MergeAndPurgeTransition, MergeAndPurgeTransitionCircuit,
@@ -45,7 +45,7 @@ use crate::{
             MergeAndPurgeTransitionPublicInputsTarget,
         },
         gadgets::{
-            asset_mess::ContributedAssetTarget,
+            asset_mess::TransactionTarget,
             block_header::{get_block_hash_target, BlockHeaderTarget},
         },
     },
@@ -303,7 +303,7 @@ impl<const D: usize> BlockProductionTarget<D> {
             .iter()
             .map(|proof_t| proof_t.new_leaf_data)
             .collect::<Vec<_>>();
-        deposit_list.resize(n_deposits, ContributedAsset::default());
+        deposit_list.resize(n_deposits, Transaction::default());
 
         BlockProductionPublicInputs {
             address_list,
@@ -519,7 +519,7 @@ pub struct BlockProductionCircuit<
 )]
 pub struct BlockProductionPublicInputs<F: RichField> {
     pub address_list: Vec<TransactionSenderWithValidity<F>>,
-    pub deposit_list: Vec<ContributedAsset<F>>,
+    pub deposit_list: Vec<Transaction<F>>,
     pub old_account_tree_root: HashOut<F>,
     pub new_account_tree_root: HashOut<F>,
     pub old_world_state_root: HashOut<F>,
@@ -533,7 +533,7 @@ pub struct BlockProductionPublicInputs<F: RichField> {
 #[serde(bound = "F: RichField")]
 pub struct SerializableBlockProductionPublicInputs<F: RichField> {
     pub address_list: Vec<TransactionSenderWithValidity<F>>,
-    pub deposit_list: Vec<ContributedAsset<F>>,
+    pub deposit_list: Vec<Transaction<F>>,
     pub old_account_tree_root: WrappedHashOut<F>,
     pub new_account_tree_root: WrappedHashOut<F>,
     pub old_world_state_root: WrappedHashOut<F>,
@@ -598,8 +598,8 @@ impl<F: RichField> BlockProductionPublicInputs<F> {
         //     public_inputs.push(F::from_bool(false));
         // }
 
-        for ContributedAsset {
-            receiver_address,
+        for Transaction {
+            to,
             kind:
                 TokenKind {
                     contract_address,
@@ -608,7 +608,7 @@ impl<F: RichField> BlockProductionPublicInputs<F> {
             amount,
         } in self.deposit_list.iter()
         {
-            receiver_address.write(&mut public_inputs);
+            to.write(&mut public_inputs);
             contract_address.write(&mut public_inputs);
             variable_index.write(&mut public_inputs);
             public_inputs.push(F::from_canonical_u64(*amount));
@@ -645,8 +645,8 @@ impl<F: RichField> BlockProductionPublicInputs<F> {
             })
             .collect::<Vec<_>>();
         let deposit_list = (0..n_deposits)
-            .map(|_| ContributedAsset {
-                receiver_address: Address::read(&mut public_inputs),
+            .map(|_| Transaction {
+                to: Address::read(&mut public_inputs),
                 kind: TokenKind {
                     contract_address: Address::read(&mut public_inputs),
                     variable_index: VariableIndex::read(&mut public_inputs),
@@ -686,7 +686,7 @@ impl<F: RichField> BlockProductionPublicInputs<F> {
 #[derive(Clone, Debug)]
 pub struct BlockProductionPublicInputsTarget {
     pub address_list: Vec<TransactionSenderWithValidityTarget>,
-    pub deposit_list: Vec<ContributedAssetTarget>,
+    pub deposit_list: Vec<TransactionTarget>,
     pub old_account_tree_root: HashOutTarget,
     pub new_account_tree_root: HashOutTarget,
     pub old_world_state_root: HashOutTarget,
@@ -773,7 +773,7 @@ impl BlockProductionPublicInputsTarget {
             .collect::<Vec<_>>();
 
         let deposit_list = (0..n_deposits)
-            .map(|_| ContributedAssetTarget {
+            .map(|_| TransactionTarget {
                 recipient: AddressTarget::read(&mut public_inputs_t),
                 contract_address: AddressTarget::read(&mut public_inputs_t),
                 token_id: HashOutTarget {
@@ -1010,7 +1010,7 @@ mod tests {
             address_list::TransactionSenderWithValidity,
             circuits::{prove_block_production, BlockDetail, BlockProductionPublicInputs},
         },
-        transaction::asset::{ContributedAsset, TokenKind, VariableIndex},
+        transaction::asset::{TokenKind, Transaction, VariableIndex},
         zkdsa::account::Address,
     };
 
@@ -1030,8 +1030,8 @@ mod tests {
                 })
                 .collect::<Vec<_>>(),
             deposit_list: (0..N_DEPOSITS)
-                .map(|_| ContributedAsset {
-                    receiver_address: Address::rand(),
+                .map(|_| Transaction {
+                    to: Address::rand(),
                     kind: TokenKind {
                         contract_address: Address::rand(),
                         variable_index: VariableIndex::from(random::<u8>()),

@@ -600,7 +600,7 @@ mod tests {
 
         use crate::{
             transaction::{
-                asset::{ContributedAsset, TokenKind, VariableIndex},
+                asset::{TokenKind, Transaction, VariableIndex},
                 tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
             },
             utils::hash::GoldilocksHashOut,
@@ -630,16 +630,16 @@ mod tests {
         let user_account = private_key_to_account(private_key);
         let user_address = user_account.address;
 
-        let asset1 = ContributedAsset {
-            receiver_address: user_address,
+        let asset1 = Transaction {
+            to: user_address,
             kind: TokenKind {
                 contract_address: Address(*GoldilocksHashOut::from_u128(305)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
             },
             amount: 2053,
         };
-        let asset2 = ContributedAsset {
-            receiver_address: user_address,
+        let asset2 = Transaction {
+            to: user_address,
             kind: TokenKind {
                 contract_address: Address(*GoldilocksHashOut::from_u128(471)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
@@ -698,7 +698,7 @@ mod tests {
             merkle_tree::tree::get_merkle_proof,
             sparse_merkle_tree::proof::SparseMerkleInclusionProof,
             transaction::{
-                asset::{ContributedAsset, TokenKind, VariableIndex},
+                asset::{TokenKind, Transaction, VariableIndex},
                 block_header::BlockHeader,
                 tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
             },
@@ -758,16 +758,16 @@ mod tests {
         let user_account = private_key_to_account(private_key);
         let user_address = user_account.address;
 
-        let asset1 = ContributedAsset {
-            receiver_address: user_address,
+        let asset1 = Transaction {
+            to: user_address,
             kind: TokenKind {
                 contract_address: Address(*GoldilocksHashOut::from_u128(305)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
             },
             amount: 2053,
         };
-        let asset2 = ContributedAsset {
-            receiver_address: user_address,
+        let asset2 = Transaction {
+            to: user_address,
             kind: TokenKind {
                 contract_address: Address(*GoldilocksHashOut::from_u128(471)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),

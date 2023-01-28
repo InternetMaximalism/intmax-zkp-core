@@ -16,7 +16,7 @@ use crate::{
         gadgets::get_merkle_root_target,
         tree::{get_merkle_proof_with_zero, get_merkle_root, KeyLike},
     },
-    transaction::asset::ContributedAsset,
+    transaction::asset::Transaction,
     // merkle_tree::sparse_merkle_tree::SparseMerkleTreeMemory,
     utils::gadgets::{
         hash::poseidon_two_to_one,
@@ -25,7 +25,7 @@ use crate::{
     zkdsa::{account::Address, gadgets::account::AddressTarget},
 };
 
-use super::asset_mess::{verify_equal_assets, ContributedAssetTarget};
+use super::asset_mess::{verify_equal_assets, TransactionTarget};
 
 /// 指定された`old_leaf_data`をアセットのデフォルト値に変更する構造体
 // TODO: `RemoveAssetProof`などの方が分かりやすい気がする。Purgeはpurge txの意味でも使われているので、区別したほうが良さそう
@@ -33,7 +33,7 @@ use super::asset_mess::{verify_equal_assets, ContributedAssetTarget};
 pub struct PurgeInputProcessProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     pub siblings: Vec<H::Hash>,
     pub index: K,
-    pub old_leaf_data: ContributedAsset<F>,
+    pub old_leaf_data: Transaction<F>,
 }
 
 impl<F: RichField, H: Hasher<F>, K: KeyLike> PurgeInputProcessProof<F, H, K> {
@@ -42,7 +42,7 @@ impl<F: RichField, H: Hasher<F>, K: KeyLike> PurgeInputProcessProof<F, H, K> {
         assert!(self.old_leaf_data.amount < 1u64 << 56);
 
         let old_leaf_hash = H::hash_or_noop(&self.old_leaf_data.encode());
-        let new_leaf_hash = H::hash_or_noop(&ContributedAsset::default().encode());
+        let new_leaf_hash = H::hash_or_noop(&Transaction::default().encode());
         let old_user_asset_root =
             get_merkle_root::<F, H, _>(&self.index, old_leaf_hash, &self.siblings);
         let new_user_asset_root =
@@ -56,7 +56,7 @@ impl<F: RichField, H: Hasher<F>, K: KeyLike> PurgeInputProcessProof<F, H, K> {
 pub struct PurgeInputProcessProofTarget {
     pub siblings: Vec<HashOutTarget>,
     pub index: Vec<BoolTarget>,
-    pub old_leaf_data: ContributedAssetTarget,
+    pub old_leaf_data: TransactionTarget,
     pub enabled: BoolTarget,
 }
 
@@ -70,7 +70,7 @@ impl PurgeInputProcessProofTarget {
         let index = (0..log_max_n_txs + log_max_n_kinds)
             .map(|_| builder.add_virtual_bool_target_safe())
             .collect::<Vec<_>>();
-        let old_leaf_data = ContributedAssetTarget::make_constraints(builder);
+        let old_leaf_data = TransactionTarget::make_constraints(builder);
         let enabled = builder.add_virtual_bool_target_safe();
 
         Self {
@@ -111,12 +111,12 @@ impl PurgeInputProcessProofTarget {
 pub struct PurgeOutputProcessProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     pub siblings: Vec<H::Hash>,
     pub index: K,
-    pub new_leaf_data: ContributedAsset<F>,
+    pub new_leaf_data: Transaction<F>,
 }
 
 impl<F: RichField, H: Hasher<F>, K: KeyLike> PurgeOutputProcessProof<F, H, K> {
     pub fn calculate(&self) -> (H::Hash, H::Hash) {
-        let old_leaf_hash = H::hash_or_noop(&ContributedAsset::default().encode());
+        let old_leaf_hash = H::hash_or_noop(&Transaction::default().encode());
         let new_leaf_hash = H::hash_or_noop(&self.new_leaf_data.encode());
 
         // TODO: tx_diffしか想定していないなら、この構造体(&self)の名前にtx_diffを含めたほうが良さそう
@@ -136,7 +136,7 @@ impl<F: RichField, H: Hasher<F>, K: KeyLike> PurgeOutputProcessProof<F, H, K> {
 pub struct PurgeOutputProcessProofTarget {
     pub siblings: Vec<HashOutTarget>,
     pub index: Vec<BoolTarget>,
-    pub new_leaf_data: ContributedAssetTarget,
+    pub new_leaf_data: TransactionTarget,
     pub enabled: BoolTarget,
 }
 
@@ -150,7 +150,7 @@ impl PurgeOutputProcessProofTarget {
         let index = (0..log_n_recipients + log_n_kinds)
             .map(|_| builder.add_virtual_bool_target_safe())
             .collect::<Vec<_>>();
-        let new_leaf_data = ContributedAssetTarget::make_constraints(builder);
+        let new_leaf_data = TransactionTarget::make_constraints(builder);
         let enabled = builder.add_virtual_bool_target_safe();
 
         Self {
@@ -201,7 +201,7 @@ impl<F: RichField, H: AlgebraicHasher<F>, K: KeyLike> PurgeTransition<F, H, K> {
         log_n_recipients: usize,
         log_n_kinds: usize,
     ) -> (HashOut<F>, HashOut<F>, HashOut<F>) {
-        let default_leaf_data = ContributedAsset::default();
+        let default_leaf_data = Transaction::default();
         let default_leaf_hash = H::hash_or_noop(&default_leaf_data.encode());
 
         let mut prev_user_asset_root = self.old_user_asset_root;
@@ -317,7 +317,7 @@ impl PurgeTransitionTarget {
             elements: [zero; 4],
         };
 
-        let default_asset_target = ContributedAssetTarget::constant_default(builder);
+        let default_asset_target = TransactionTarget::constant_default(builder);
         let default_leaf_hash = builder.hash_n_to_hash_no_pad::<H>(default_asset_target.encode());
         assert_eq!(input_proofs_t.len(), output_proofs_t.len());
         let mut input_assets_t = Vec::with_capacity(input_proofs_t.len());
@@ -410,7 +410,7 @@ impl PurgeTransitionTarget {
         pw: &mut impl Witness<F>,
         witness: &PurgeTransition<F, H, K>,
     ) -> (HashOut<F>, HashOut<F>, HashOut<F>) {
-        let default_leaf_data = ContributedAsset::default();
+        let default_leaf_data = Transaction::<F>::default();
 
         let (new_user_asset_root, diff_root, tx_hash) =
             witness.calculate(self.log_n_recipients, self.log_n_kinds);
@@ -507,8 +507,8 @@ mod tests {
         transaction::{
             asset::TokenKind,
             gadgets::purge::{
-                ContributedAsset, PurgeInputProcessProof, PurgeOutputProcessProof, PurgeTransition,
-                PurgeTransitionTarget,
+                PurgeInputProcessProof, PurgeOutputProcessProof, PurgeTransition,
+                PurgeTransitionTarget, Transaction,
             },
             tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
         },
@@ -558,8 +558,8 @@ mod tests {
         let user_address = user_account.address;
 
         let merge_key1 = GoldilocksHashOut::from_u128(1);
-        let asset1 = ContributedAsset {
-            receiver_address: user_address,
+        let asset1 = Transaction {
+            to: user_address,
             kind: TokenKind {
                 contract_address: Address(GoldilocksHashOut::from_u128(3).0),
                 variable_index: 8u8.into(),
@@ -567,8 +567,8 @@ mod tests {
             amount: 2,
         };
         let merge_key2 = GoldilocksHashOut::from_u128(12);
-        let asset2 = ContributedAsset {
-            receiver_address: user_address,
+        let asset2 = Transaction {
+            to: user_address,
             kind: TokenKind {
                 contract_address: Address(GoldilocksHashOut::from_u128(4).0),
                 variable_index: 8u8.into(),
@@ -576,16 +576,16 @@ mod tests {
             amount: 1,
         };
 
-        let asset3 = ContributedAsset {
-            receiver_address: Address(GoldilocksHashOut::from_u128(407).0),
+        let asset3 = Transaction {
+            to: Address(GoldilocksHashOut::from_u128(407).0),
             kind: TokenKind {
                 contract_address: Address(GoldilocksHashOut::from_u128(3).0),
                 variable_index: 8u8.into(),
             },
             amount: 2,
         };
-        let asset4 = ContributedAsset {
-            receiver_address: Address(GoldilocksHashOut::from_u128(832).0),
+        let asset4 = Transaction {
+            to: Address(GoldilocksHashOut::from_u128(832).0),
             kind: TokenKind {
                 contract_address: Address(GoldilocksHashOut::from_u128(4).0),
                 variable_index: 8u8.into(),
@@ -617,7 +617,7 @@ mod tests {
             )
             .unwrap();
 
-        let default_leaf_hash = H::hash_or_noop(&ContributedAsset::default().encode());
+        let default_leaf_hash = H::hash_or_noop(&Transaction::default().encode());
 
         let old_user_asset_root = user_asset_tree.get_root().unwrap();
         let proof1 = user_asset_tree
@@ -653,7 +653,7 @@ mod tests {
         let init_root = tx_diff_tree.get_root().unwrap();
         tx_diff_tree.insert(asset3).unwrap();
         let proof3 = tx_diff_tree
-            .prove_leaf_node(&asset3.receiver_address, &asset3.kind)
+            .prove_leaf_node(&asset3.to, &asset3.kind)
             .unwrap();
 
         let first_root = get_merkle_root::<F, H, _>(&proof3.index, proof3.value, &proof3.siblings);
@@ -665,7 +665,7 @@ mod tests {
         }
         tx_diff_tree.insert(asset4).unwrap();
         let proof4 = tx_diff_tree
-            .prove_leaf_node(&asset4.receiver_address, &asset4.kind)
+            .prove_leaf_node(&asset4.to, &asset4.kind)
             .unwrap();
         let second_root = get_merkle_root::<F, H, _>(&proof4.index, proof4.value, &proof4.siblings);
         assert_eq!(second_root, proof4.root);

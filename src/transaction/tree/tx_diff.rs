@@ -10,7 +10,7 @@ use crate::{
         sparse_merkle_tree::{MerklePath, Node},
         tree::{le_bytes_to_bits, MerkleProof},
     },
-    transaction::asset::{ContributedAsset, TokenKind},
+    transaction::asset::{TokenKind, Transaction},
     zkdsa::account::Address,
 };
 
@@ -111,8 +111,8 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
         }
     }
 
-    pub fn insert(&mut self, asset: ContributedAsset<F>) -> anyhow::Result<()> {
-        let mut recipient_path = le_bytes_to_bits(&asset.receiver_address.to_bytes());
+    pub fn insert(&mut self, asset: Transaction<F>) -> anyhow::Result<()> {
+        let mut recipient_path = le_bytes_to_bits(&asset.to.to_bytes());
         recipient_path.resize(self.log_n_recipients, false);
         recipient_path.reverse(); // BE
 
@@ -252,7 +252,7 @@ fn le_bits_to_usize(bits: &[bool]) -> usize {
 #[cfg(test)]
 mod tests {
     use crate::plonky2::plonk::config::Hasher;
-    use crate::transaction::tree::tx_diff::ContributedAsset;
+    use crate::transaction::tree::tx_diff::Transaction;
 
     #[test]
     fn test_prove_tx_diff_tree() {
@@ -292,16 +292,16 @@ mod tests {
         let user_account = private_key_to_account(private_key);
         let user_address = user_account.address;
 
-        let asset1 = ContributedAsset {
-            receiver_address: user_address,
+        let asset1 = Transaction {
+            to: user_address,
             kind: TokenKind {
                 contract_address: Address(*GoldilocksHashOut::from_u128(305)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
             },
             amount: 2053,
         };
-        let asset2 = ContributedAsset {
-            receiver_address: user_address,
+        let asset2 = Transaction {
+            to: user_address,
             kind: TokenKind {
                 contract_address: Address(*GoldilocksHashOut::from_u128(471)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
@@ -366,16 +366,16 @@ mod tests {
         let user_account = private_key_to_account(private_key);
         let user_address = user_account.address;
 
-        let asset1 = ContributedAsset {
-            receiver_address: user_address,
+        let asset1 = Transaction {
+            to: user_address,
             kind: TokenKind {
                 contract_address: Address(*GoldilocksHashOut::from_u128(305)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
             },
             amount: 2053,
         };
-        let asset2 = ContributedAsset {
-            receiver_address: user_address,
+        let asset2 = Transaction {
+            to: user_address,
             kind: TokenKind {
                 contract_address: Address(*GoldilocksHashOut::from_u128(471)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),

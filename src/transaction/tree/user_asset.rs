@@ -10,7 +10,7 @@ use crate::{
         sparse_merkle_tree::{MerklePath, Node},
         tree::{le_bytes_to_bits, KeyLike, MerkleProof},
     },
-    transaction::asset::{ContributedAsset, TokenKind, VariableIndex},
+    transaction::asset::{TokenKind, Transaction, VariableIndex},
     zkdsa::account::Address,
 };
 
@@ -146,7 +146,7 @@ impl<F: RichField, H: Hasher<F>> UserAssetTree<F, H> {
     pub fn insert_assets(
         &mut self,
         merge_key: HashOut<F>,
-        assets: Vec<ContributedAsset<F>>,
+        assets: Vec<Transaction<F>>,
     ) -> anyhow::Result<()> {
         for (i, asset) in assets.iter().enumerate() {
             // XXX: `merge_key` does not include in leaf data
@@ -163,7 +163,7 @@ impl<F: RichField, H: Hasher<F>> UserAssetTree<F, H> {
         merge_key: HashOut<F>,
         user_address: Address<F>,
         token_kind: TokenKind<F>,
-    ) -> anyhow::Result<ContributedAsset<F>> {
+    ) -> anyhow::Result<Transaction<F>> {
         let mut merge_key_path = merge_key.to_bits();
         merge_key_path.resize(self.log_max_n_txs, false);
         merge_key_path.reverse();
@@ -204,8 +204,8 @@ impl<F: RichField, H: Hasher<F>> UserAssetTree<F, H> {
             anyhow::bail!("found unexpected inner node");
         };
 
-        Ok(ContributedAsset {
-            receiver_address: Address(HashOut::from_partial(&old_leaf_data[0..4])),
+        Ok(Transaction {
+            to: Address(HashOut::from_partial(&old_leaf_data[0..4])),
             kind: TokenKind {
                 contract_address: Address(HashOut::from_partial(&old_leaf_data[4..8])),
                 variable_index: VariableIndex::from_hash_out(HashOut::from_partial(
@@ -324,7 +324,7 @@ mod tests {
 
         use crate::{
             merkle_tree::tree::get_merkle_root,
-            transaction::asset::{ContributedAsset, TokenKind, VariableIndex},
+            transaction::asset::{TokenKind, Transaction, VariableIndex},
             utils::hash::GoldilocksHashOut,
             zkdsa::account::{private_key_to_account, Address},
         };
@@ -349,16 +349,16 @@ mod tests {
         let user_account = private_key_to_account(private_key);
         let user_address = user_account.address;
 
-        let asset1 = ContributedAsset {
-            receiver_address: user_address,
+        let asset1 = Transaction {
+            to: user_address,
             kind: TokenKind {
                 contract_address: Address(*GoldilocksHashOut::from_u128(305)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
             },
             amount: 2053,
         };
-        let asset2 = ContributedAsset {
-            receiver_address: user_address,
+        let asset2 = Transaction {
+            to: user_address,
             kind: TokenKind {
                 contract_address: Address(*GoldilocksHashOut::from_u128(471)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
@@ -400,7 +400,7 @@ mod tests {
         use crate::{
             merkle_tree::tree::get_merkle_root,
             transaction::{
-                asset::{ContributedAsset, TokenKind, VariableIndex},
+                asset::{TokenKind, Transaction, VariableIndex},
                 tree::user_asset::UserAssetTree,
             },
             utils::hash::GoldilocksHashOut,
@@ -427,16 +427,16 @@ mod tests {
         let user_account = private_key_to_account(private_key);
         let user_address = user_account.address;
 
-        let asset1 = ContributedAsset {
-            receiver_address: user_address,
+        let asset1 = Transaction {
+            to: user_address,
             kind: TokenKind {
                 contract_address: Address(*GoldilocksHashOut::from_u128(305)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
             },
             amount: 2053,
         };
-        let asset2 = ContributedAsset {
-            receiver_address: user_address,
+        let asset2 = Transaction {
+            to: user_address,
             kind: TokenKind {
                 contract_address: Address(*GoldilocksHashOut::from_u128(471)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),

@@ -5,19 +5,19 @@ use plonky2::{
     plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
 };
 
-use crate::{transaction::asset::ContributedAsset, zkdsa::gadgets::account::AddressTarget};
+use crate::{transaction::asset::Transaction, zkdsa::gadgets::account::AddressTarget};
 
 use super::utils::is_non_zero;
 
 #[derive(Copy, Clone, Debug)]
-pub struct ContributedAssetTarget {
+pub struct TransactionTarget {
     pub recipient: AddressTarget,
     pub contract_address: AddressTarget,
     pub token_id: HashOutTarget,
     pub amount: Target,
 }
 
-impl ContributedAssetTarget {
+impl TransactionTarget {
     pub fn make_constraints<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
@@ -40,8 +40,8 @@ impl ContributedAssetTarget {
         }
     }
 
-    pub fn set_witness<F: RichField>(&self, pw: &mut impl Witness<F>, value: ContributedAsset<F>) {
-        self.recipient.set_witness(pw, value.receiver_address);
+    pub fn set_witness<F: RichField>(&self, pw: &mut impl Witness<F>, value: Transaction<F>) {
+        self.recipient.set_witness(pw, value.to);
         self.contract_address
             .set_witness(pw, value.kind.contract_address);
         pw.set_hash_target(self.token_id, value.kind.variable_index.to_hash_out());
@@ -65,7 +65,7 @@ impl ContributedAssetTarget {
 ///  例えば, 1 種類の NFT を mess にすると, その asset_id がそのまま現れるため容易に推測される.
 pub fn assets_into_mess<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
-    assets_t: &[ContributedAssetTarget],
+    assets_t: &[TransactionTarget],
 ) -> (HashOutTarget, Target) {
     let mut total_amount_t = builder.zero();
     let mut mess_t = HashOutTarget {
@@ -129,8 +129,8 @@ fn calc_asset_id<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: u
 ///  一定値 (例えば 2^56) 未満であることを事前に検証すると, より安全である.
 pub fn verify_equal_assets<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
-    input_assets_t: &[ContributedAssetTarget],
-    output_assets_t: &[ContributedAssetTarget],
+    input_assets_t: &[TransactionTarget],
+    output_assets_t: &[TransactionTarget],
 ) {
     let (input_mess_t, total_inputs_t) = assets_into_mess::<F, H, D>(builder, input_assets_t);
     let (output_mess_t, total_outputs_t) = assets_into_mess::<F, H, D>(builder, output_assets_t);

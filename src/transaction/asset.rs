@@ -106,25 +106,18 @@ impl<F: RichField> Asset<F> {
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ContributedAsset<F: RichField> {
-    #[serde(bound(
-        serialize = "Address<F>: Serialize",
-        deserialize = "Address<F>: Deserialize<'de>"
-    ))]
-    pub receiver_address: Address<F>,
+#[serde(bound = "F: RichField")]
+pub struct Transaction<F: RichField> {
+    pub to: Address<F>,
     #[serde(flatten)]
-    #[serde(bound(
-        serialize = "TokenKind<F>: Serialize",
-        deserialize = "TokenKind<F>: Deserialize<'de>"
-    ))]
     pub kind: TokenKind<F>,
     pub amount: u64,
 }
 
-impl<F: RichField> ContributedAsset<F> {
+impl<F: RichField> Transaction<F> {
     pub fn encode(&self) -> Vec<F> {
         [
-            self.receiver_address.0.elements.to_vec(),
+            self.to.0.elements.to_vec(),
             self.kind.contract_address.0.elements.to_vec(),
             self.kind.variable_index.to_hash_out().elements.to_vec(),
             vec![F::from_canonical_u64(self.amount)],
@@ -133,7 +126,7 @@ impl<F: RichField> ContributedAsset<F> {
     }
 }
 
-impl<F: RichField> FromStr for ContributedAsset<F> {
+impl<F: RichField> FromStr for Transaction<F> {
     type Err = serde_json::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -141,7 +134,7 @@ impl<F: RichField> FromStr for ContributedAsset<F> {
     }
 }
 
-impl<F: RichField> core::fmt::Display for ContributedAsset<F> {
+impl<F: RichField> core::fmt::Display for Transaction<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = serde_json::to_string(self).unwrap();
 
@@ -149,10 +142,10 @@ impl<F: RichField> core::fmt::Display for ContributedAsset<F> {
     }
 }
 
-impl<F: RichField> From<ContributedAsset<F>> for DepositInfo<F> {
-    fn from(value: ContributedAsset<F>) -> Self {
+impl<F: RichField> From<Transaction<F>> for DepositInfo<F> {
+    fn from(value: Transaction<F>) -> Self {
         Self {
-            receiver_address: value.receiver_address,
+            receiver_address: value.to,
             contract_address: value.kind.contract_address,
             variable_index: value.kind.variable_index,
             amount: F::from_canonical_u64(value.amount),
@@ -160,10 +153,10 @@ impl<F: RichField> From<ContributedAsset<F>> for DepositInfo<F> {
     }
 }
 
-impl<F: RichField> From<DepositInfo<F>> for ContributedAsset<F> {
+impl<F: RichField> From<DepositInfo<F>> for Transaction<F> {
     fn from(value: DepositInfo<F>) -> Self {
         Self {
-            receiver_address: value.receiver_address,
+            to: value.receiver_address,
             kind: TokenKind {
                 contract_address: value.contract_address,
                 variable_index: value.variable_index,
@@ -217,9 +210,9 @@ pub struct TokenKind<F: RichField> {
 #[cfg(test)]
 mod tests {
 
-    use crate::transaction::asset::ContributedAsset;
     use crate::transaction::asset::FromStr;
     use crate::transaction::asset::TokenKind;
+    use crate::transaction::asset::Transaction;
     use crate::transaction::asset::VariableIndex;
     use crate::transaction::gadgets::deposit_info::DepositInfo;
     use crate::zkdsa::account::Address;
@@ -266,8 +259,8 @@ mod tests {
     fn test_serde_owned_asset() {
         use plonky2::field::goldilocks_field::GoldilocksField;
 
-        let owned_asset: ContributedAsset<GoldilocksField> = ContributedAsset {
-            receiver_address: Address::rand(),
+        let owned_asset: Transaction<GoldilocksField> = Transaction {
+            to: Address::rand(),
             kind: TokenKind {
                 contract_address: Address::rand(),
                 variable_index: 1u8.into(),
@@ -276,7 +269,7 @@ mod tests {
         };
 
         let encoded_owned_asset = serde_json::to_string(&owned_asset).unwrap();
-        let decoded_owned_asset: ContributedAsset<GoldilocksField> =
+        let decoded_owned_asset: Transaction<GoldilocksField> =
             serde_json::from_str(&encoded_owned_asset).unwrap();
         assert_eq!(decoded_owned_asset, owned_asset);
 
@@ -287,8 +280,8 @@ mod tests {
 
         let encoded_owned_asset = owned_asset.to_string();
         dbg!(&encoded_owned_asset);
-        let decoded_owned_asset: ContributedAsset<GoldilocksField> =
-            ContributedAsset::from_str(&encoded_owned_asset).unwrap();
+        let decoded_owned_asset: Transaction<GoldilocksField> =
+            Transaction::from_str(&encoded_owned_asset).unwrap();
         assert_eq!(decoded_owned_asset, owned_asset);
     }
 }

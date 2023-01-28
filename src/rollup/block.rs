@@ -17,7 +17,7 @@ use crate::{
         proof::{SparseMerkleInclusionProof, SparseMerkleProcessProof},
     },
     transaction::{
-        asset::{ContributedAsset, TokenKind},
+        asset::{TokenKind, Transaction},
         block_header::BlockHeader,
         circuits::{MergeAndPurgeTransition, MergeAndPurgeTransitionPublicInputs},
         gadgets::{
@@ -83,7 +83,7 @@ pub struct SampleBlock<F: RichField, H: AlgebraicHasher<F>> {
     pub old_world_state_root: HashOut<F>,
     pub world_state_process_proofs:
         Vec<SparseMerkleProcessProof<WrappedHashOut<F>, WrappedHashOut<F>, WrappedHashOut<F>>>,
-    pub deposit_list: Vec<ContributedAsset<F>>,
+    pub deposit_list: Vec<Transaction<F>>,
     pub deposit_process_proofs: Vec<PurgeOutputProcessProof<F, H, Vec<bool>>>,
     pub approval_block: ApprovalBlockProduction<F>,
     pub block_headers_proof_siblings: Vec<HashOut<F>>,
@@ -121,16 +121,16 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
 
     let merge_key1 = GoldilocksHashOut::from_u128(1);
     let merge_key2 = GoldilocksHashOut::from_u128(12);
-    let asset1 = ContributedAsset {
-        receiver_address: sender1_address,
+    let asset1 = Transaction {
+        to: sender1_address,
         kind: TokenKind {
             contract_address: Address(GoldilocksHashOut::from_u128(305).0),
             variable_index: 8u8.into(),
         },
         amount: 2053,
     };
-    let asset2 = ContributedAsset {
-        receiver_address: sender1_address,
+    let asset2 = Transaction {
+        to: sender1_address,
         kind: TokenKind {
             contract_address: Address(GoldilocksHashOut::from_u128(471).0),
             variable_index: 8u8.into(),
@@ -138,16 +138,16 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         amount: 1111,
     };
 
-    let asset3 = ContributedAsset {
-        receiver_address: sender1_address,
+    let asset3 = Transaction {
+        to: sender1_address,
         kind: TokenKind {
             contract_address: Address(GoldilocksHashOut::from_u128(305).0),
             variable_index: 8u8.into(),
         },
         amount: 2053,
     };
-    let asset4 = ContributedAsset {
-        receiver_address: sender1_address,
+    let asset4 = Transaction {
+        to: sender1_address,
         kind: TokenKind {
             contract_address: Address(GoldilocksHashOut::from_u128(471).0),
             variable_index: 8u8.into(),
@@ -172,7 +172,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     let old_sender1_asset_root = sender1_user_asset_tree.get_root().unwrap();
 
     let proof2 = sender1_user_asset_tree
-        .prove_leaf_node(&merge_key2, &asset2.receiver_address, &asset2.kind)
+        .prove_leaf_node(&merge_key2, &asset2.to, &asset2.kind)
         .unwrap();
     let proof2 = PurgeInputProcessProof {
         siblings: proof2.siblings,
@@ -180,10 +180,10 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         old_leaf_data: asset2,
     };
     sender1_user_asset_tree
-        .remove(*merge_key2, asset2.receiver_address, asset2.kind)
+        .remove(*merge_key2, asset2.to, asset2.kind)
         .unwrap();
     let proof1 = sender1_user_asset_tree
-        .prove_leaf_node(&merge_key1, &asset1.receiver_address, &asset1.kind)
+        .prove_leaf_node(&merge_key1, &asset1.to, &asset1.kind)
         .unwrap();
     let proof1 = PurgeInputProcessProof {
         siblings: proof1.siblings,
@@ -191,7 +191,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         old_leaf_data: asset1,
     };
     sender1_user_asset_tree
-        .remove(*merge_key1, asset1.receiver_address, asset1.kind)
+        .remove(*merge_key1, asset1.to, asset1.kind)
         .unwrap();
 
     sender1_tx_diff_tree.insert(asset3).unwrap();
@@ -237,16 +237,16 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
     );
 
-    let asset1 = ContributedAsset {
-        receiver_address: sender2_address,
+    let asset1 = Transaction {
+        to: sender2_address,
         kind: TokenKind {
             contract_address: Address(GoldilocksHashOut::from_u128(305).0),
             variable_index: 8u8.into(),
         },
         amount: 2053,
     };
-    let asset2 = ContributedAsset {
-        receiver_address: sender2_address,
+    let asset2 = Transaction {
+        to: sender2_address,
         kind: TokenKind {
             contract_address: Address(GoldilocksHashOut::from_u128(471).0),
             variable_index: 8u8.into(),
@@ -254,16 +254,16 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         amount: 1111,
     };
 
-    let asset3 = ContributedAsset {
-        receiver_address: sender2_address,
+    let asset3 = Transaction {
+        to: sender2_address,
         kind: TokenKind {
             contract_address: Address(GoldilocksHashOut::from_u128(305).0),
             variable_index: 8u8.into(),
         },
         amount: 2053,
     };
-    let asset4 = ContributedAsset {
-        receiver_address: sender2_address,
+    let asset4 = Transaction {
+        to: sender2_address,
         kind: TokenKind {
             contract_address: Address(GoldilocksHashOut::from_u128(471).0),
             variable_index: 8u8.into(),
@@ -362,7 +362,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     };
 
     let proof2 = sender2_user_asset_tree
-        .prove_leaf_node(&deposit_merge_key, &asset2.receiver_address, &asset2.kind)
+        .prove_leaf_node(&deposit_merge_key, &asset2.to, &asset2.kind)
         .unwrap();
     let proof2 = PurgeInputProcessProof {
         siblings: proof2.siblings,
@@ -373,7 +373,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         .remove(deposit_merge_key, sender2_address, asset2.kind)
         .unwrap();
     let proof1 = sender2_user_asset_tree
-        .prove_leaf_node(&deposit_merge_key, &asset1.receiver_address, &asset1.kind)
+        .prove_leaf_node(&deposit_merge_key, &asset1.to, &asset1.kind)
         .unwrap();
     let proof1 = PurgeInputProcessProof {
         siblings: proof1.siblings,
@@ -386,7 +386,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
 
     sender2_tx_diff_tree.insert(asset3).unwrap();
     let proof3 = sender2_tx_diff_tree
-        .prove_leaf_node(&asset3.receiver_address, &asset3.kind)
+        .prove_leaf_node(&asset3.to, &asset3.kind)
         .unwrap();
     let proof3 = PurgeOutputProcessProof {
         siblings: proof3.siblings,
@@ -395,7 +395,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     };
     sender2_tx_diff_tree.insert(asset4).unwrap();
     let proof4 = sender2_tx_diff_tree
-        .prove_leaf_node(&asset4.receiver_address, &asset4.kind)
+        .prove_leaf_node(&asset4.to, &asset4.kind)
         .unwrap();
     let proof4 = PurgeOutputProcessProof {
         siblings: proof4.siblings,
@@ -579,7 +579,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     for asset in deposit_list.iter() {
         tx_diff_tree.insert(*asset).unwrap();
         let proof = tx_diff_tree
-            .prove_leaf_node(&asset.receiver_address, &asset.kind)
+            .prove_leaf_node(&asset.to, &asset.kind)
             .unwrap();
         let process_proof = PurgeOutputProcessProof {
             siblings: proof.siblings,

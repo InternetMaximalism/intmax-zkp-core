@@ -11,9 +11,9 @@ use plonky2::{
 use crate::{
     merkle_tree::{gadgets::get_merkle_root_target, tree::KeyLike},
     transaction::{
-        asset::ContributedAsset,
+        asset::Transaction,
         gadgets::{
-            asset_mess::ContributedAssetTarget,
+            asset_mess::TransactionTarget,
             purge::{PurgeOutputProcessProof, PurgeOutputProcessProofTarget},
         },
         tree::tx_diff::TxDiffTree,
@@ -78,7 +78,7 @@ impl DepositBlockProductionTarget {
             })
             .collect::<Vec<_>>();
 
-        let default_asset_target = ContributedAssetTarget::constant_default(builder);
+        let default_asset_target = TransactionTarget::constant_default(builder);
         let default_leaf_hash = builder.hash_n_to_hash_no_pad::<H>(default_asset_target.encode());
 
         let default_root_hash = {
@@ -145,7 +145,7 @@ impl DepositBlockProductionTarget {
             target.set_witness::<_, H, Vec<bool>>(pw, value, true);
         }
 
-        let default_leaf_data = ContributedAsset::default();
+        let default_leaf_data = Transaction::default();
         for target in self
             .deposit_process_proofs
             .iter()
@@ -287,7 +287,7 @@ mod tests {
         for asset in deposit_list {
             tx_diff_tree.insert(*asset).unwrap();
             let proof = tx_diff_tree
-                .prove_leaf_node(&asset.receiver_address, &asset.kind)
+                .prove_leaf_node(&asset.to, &asset.kind)
                 .unwrap();
             let process_proof = PurgeOutputProcessProof {
                 siblings: proof.siblings,

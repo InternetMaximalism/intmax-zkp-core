@@ -78,6 +78,7 @@ impl<F: RichField> BlockHeader<F> {
             latest_account_digest: default_hash,
         }
     }
+
     pub fn get_block_hash(&self) -> HashOut<F> {
         let a = PoseidonHash::two_to_one(
             HashOut::from_partial(&[F::from_canonical_u32(self.block_number)]),

@@ -27,10 +27,8 @@ use crate::{
 
 use super::asset_mess::{verify_equal_assets, ContributedAssetTarget};
 
-/*
-* 指定された`old_leaf_data`をアセットのデフォルト値に変更する構造体
-* `RemoveAssetProof`などの方が分かりやすい気がする。Purgeはpurge txの意味でも使われているので、区別したほうが良さそう
-*/
+/// 指定された`old_leaf_data`をアセットのデフォルト値に変更する構造体
+// TODO: `RemoveAssetProof`などの方が分かりやすい気がする。Purgeはpurge txの意味でも使われているので、区別したほうが良さそう
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PurgeInputProcessProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     pub siblings: Vec<H::Hash>,
@@ -107,10 +105,8 @@ impl PurgeInputProcessProofTarget {
     }
 }
 
-/*
-* 空のasset leafに`new_leaf_data`を挿入する証明
-* InsertAssetなどの名前の方が良い気がする
-*/
+/// 空のasset leafに`new_leaf_data`を挿入する証明
+// TODO: InsertAssetなどの名前の方が良い気がする
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PurgeOutputProcessProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     pub siblings: Vec<H::Hash>,
@@ -123,7 +119,7 @@ impl<F: RichField, H: Hasher<F>, K: KeyLike> PurgeOutputProcessProof<F, H, K> {
         let old_leaf_hash = H::hash_or_noop(&ContributedAsset::default().encode());
         let new_leaf_hash = H::hash_or_noop(&self.new_leaf_data.encode());
 
-        // tx_diffしか想定していないなら、この構造体(&self)の名前にtx_diffを含めたほうが良さそう
+        // TODO: tx_diffしか想定していないなら、この構造体(&self)の名前にtx_diffを含めたほうが良さそう
         let old_tx_diff_root =
             get_merkle_root::<F, H, _>(&self.index, old_leaf_hash, &self.siblings);
         let new_tx_diff_root =
@@ -189,9 +185,7 @@ impl PurgeOutputProcessProofTarget {
     }
 }
 
-/*
-* Assetの消去と、追加をbatchして行う処理
-*/
+/// Assetの消去と、追加をbatchして行う処理
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PurgeTransition<F: RichField, H: AlgebraicHasher<F>, K: KeyLike> {
     pub sender_address: Address<F>,
@@ -211,10 +205,18 @@ impl<F: RichField, H: AlgebraicHasher<F>, K: KeyLike> PurgeTransition<F, H, K> {
         let default_leaf_hash = H::hash_or_noop(&default_leaf_data.encode());
 
         let mut prev_user_asset_root = self.old_user_asset_root;
+        let mut input_assets = std::collections::HashMap::new();
         for input_witness in self.input_witnesses.iter() {
             let (old_user_asset_root, new_user_asset_root) = input_witness.calculate();
 
             assert_eq!(old_user_asset_root, prev_user_asset_root);
+
+            let asset = input_witness.old_leaf_data;
+            if let Some(old_amount) = input_assets.get(&asset.kind) {
+                input_assets.insert(asset.kind, old_amount + asset.amount);
+            } else {
+                input_assets.insert(asset.kind, asset.amount);
+            }
 
             prev_user_asset_root = new_user_asset_root;
         }
@@ -228,16 +230,26 @@ impl<F: RichField, H: AlgebraicHasher<F>, K: KeyLike> PurgeTransition<F, H, K> {
         )
         .root;
         let mut prev_diff_root = default_diff_tree_root;
-        for output_proof in self.output_witnesses.iter() {
-            let (old_tx_diff_root, new_tx_diff_root) = output_proof.calculate();
+        let mut output_assets = std::collections::HashMap::new();
+        for output_witness in self.output_witnesses.iter() {
+            let (old_tx_diff_root, new_tx_diff_root) = output_witness.calculate();
 
             assert_eq!(old_tx_diff_root, prev_diff_root);
+
+            let asset = output_witness.new_leaf_data;
+            if let Some(old_amount) = output_assets.get(&asset.kind) {
+                output_assets.insert(asset.kind, old_amount + asset.amount);
+            } else {
+                output_assets.insert(asset.kind, asset.amount);
+            }
 
             prev_diff_root = new_tx_diff_root;
         }
         let diff_root = prev_diff_root;
 
         let tx_hash = PoseidonHash::two_to_one(diff_root, self.nonce);
+
+        assert_eq!(input_assets, output_assets);
 
         (new_user_asset_root, diff_root, tx_hash)
     }
@@ -266,6 +278,7 @@ pub struct PurgeTransitionTarget {
 }
 
 impl PurgeTransitionTarget {
+    #[allow(clippy::too_many_arguments)]
     pub fn make_constraints<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
         log_max_n_txs: usize,
@@ -274,6 +287,8 @@ impl PurgeTransitionTarget {
         log_n_kinds: usize,
         n_diffs: usize,
     ) -> Self {
+        let n_levels = log_n_recipients + log_n_kinds;
+
         let sender_address = AddressTarget::new(builder);
         let old_user_asset_root = builder.add_virtual_hash();
         let nonce = builder.add_virtual_hash();
@@ -297,13 +312,81 @@ impl PurgeTransitionTarget {
             })
             .collect::<Vec<_>>();
 
-        let (new_user_asset_root, diff_root, tx_hash) = verify_user_asset_purge_proof::<F, H, D>(
-            builder,
-            &input_proofs_t,
-            &output_proofs_t,
-            old_user_asset_root,
-            nonce,
-        );
+        let zero = builder.zero();
+        let default_hash = HashOutTarget {
+            elements: [zero; 4],
+        };
+
+        let default_asset_target = ContributedAssetTarget::constant_default(builder);
+        let default_leaf_hash = builder.hash_n_to_hash_no_pad::<H>(default_asset_target.encode());
+        assert_eq!(input_proofs_t.len(), output_proofs_t.len());
+        let mut input_assets_t = Vec::with_capacity(input_proofs_t.len());
+        let mut prev_user_asset_root = old_user_asset_root;
+        for PurgeInputProcessProofTarget {
+            siblings: siblings_t,
+            index: index_t,
+            old_leaf_data: old_leaf_data_t,
+            enabled: enabled_t,
+        } in input_proofs_t.iter()
+        {
+            let proof1_old_leaf_t = builder.hash_n_to_hash_no_pad::<H>(old_leaf_data_t.encode());
+            let proof1_new_leaf_t = default_leaf_hash;
+
+            let proof1_old_root_t =
+                get_merkle_root_target::<F, H, D>(builder, index_t, proof1_old_leaf_t, siblings_t);
+            let proof1_new_root_t =
+                get_merkle_root_target::<F, H, D>(builder, index_t, proof1_new_leaf_t, siblings_t);
+            enforce_equal_if_enabled(builder, prev_user_asset_root, proof1_old_root_t, *enabled_t);
+            prev_user_asset_root =
+                conditionally_select(builder, proof1_new_root_t, prev_user_asset_root, *enabled_t);
+
+            // 取り除いた asset が 2^56 未満の値であること
+            builder.range_check(old_leaf_data_t.amount, 56);
+
+            input_assets_t.push(*old_leaf_data_t);
+        }
+        let new_user_asset_root = prev_user_asset_root;
+
+        let default_root_hash = {
+            let mut default_root_hash = default_leaf_hash;
+            for _ in 0..n_levels {
+                default_root_hash =
+                    poseidon_two_to_one::<_, H, D>(builder, default_root_hash, default_root_hash);
+            }
+
+            default_root_hash
+        };
+
+        let mut prev_diff_root = default_hash;
+        let mut output_assets_t = Vec::with_capacity(output_proofs_t.len());
+        for PurgeOutputProcessProofTarget {
+            siblings: siblings_t,
+            index: index_t,
+            new_leaf_data: new_leaf_data_t,
+            enabled: enabled_t,
+        } in output_proofs_t.iter()
+        {
+            let proof1_old_leaf_t = default_root_hash;
+            let proof1_new_leaf_t = builder.hash_n_to_hash_no_pad::<H>(new_leaf_data_t.encode());
+
+            let proof1_old_root_t =
+                get_merkle_root_target::<F, H, D>(builder, index_t, proof1_old_leaf_t, siblings_t);
+            let proof1_new_root_t =
+                get_merkle_root_target::<F, H, D>(builder, index_t, proof1_new_leaf_t, siblings_t);
+            // enforce_equal_if_enabled(builder, prev_diff_root, proof1_old_root_t, *enabled_t); // XXX: zero_hash が途中で不自然に変化するため, この方法では検証できない.
+            prev_diff_root =
+                conditionally_select(builder, proof1_new_root_t, prev_diff_root, *enabled_t);
+
+            // 移動する asset の amount が 2^56 未満の値であること
+            builder.range_check(new_leaf_data_t.amount, 56);
+
+            output_assets_t.push(*new_leaf_data_t);
+        }
+        let diff_root = prev_diff_root;
+
+        verify_equal_assets::<F, H, D>(builder, &input_assets_t, &output_assets_t);
+
+        let tx_hash = poseidon_two_to_one::<F, H, D>(builder, diff_root, nonce);
 
         Self {
             sender_address,
@@ -401,97 +484,8 @@ impl PurgeTransitionTarget {
     }
 }
 
-// Returns (`new_user_asset_root`, `tx_hash`)
-fn verify_user_asset_purge_proof<
-    F: RichField + Extendable<D>,
-    H: AlgebraicHasher<F>,
-    const D: usize,
->(
-    builder: &mut CircuitBuilder<F, D>,
-    input_proofs_t: &[PurgeInputProcessProofTarget],
-    output_proofs_t: &[PurgeOutputProcessProofTarget],
-    old_user_asset_root: HashOutTarget,
-    nonce: HashOutTarget,
-) -> (HashOutTarget, HashOutTarget, HashOutTarget) {
-    let zero = builder.zero();
-    let default_hash = HashOutTarget {
-        elements: [zero; 4],
-    };
-
-    let default_asset_target = ContributedAssetTarget::constant_default(builder);
-    let default_leaf_hash = builder.hash_n_to_hash_no_pad::<H>(default_asset_target.encode());
-    assert_eq!(input_proofs_t.len(), output_proofs_t.len());
-    let mut input_assets_t = Vec::with_capacity(input_proofs_t.len());
-    let mut prev_user_asset_root = old_user_asset_root;
-    for PurgeInputProcessProofTarget {
-        siblings: siblings_t,
-        index: index_t,
-        old_leaf_data: old_leaf_data_t,
-        enabled: enabled_t,
-    } in input_proofs_t
-    {
-        let proof1_old_leaf_t = builder.hash_n_to_hash_no_pad::<H>(old_leaf_data_t.encode());
-        let proof1_new_leaf_t = default_leaf_hash;
-
-        let proof1_old_root_t =
-            get_merkle_root_target::<F, H, D>(builder, index_t, proof1_old_leaf_t, siblings_t);
-        let proof1_new_root_t =
-            get_merkle_root_target::<F, H, D>(builder, index_t, proof1_new_leaf_t, siblings_t);
-        enforce_equal_if_enabled(builder, prev_user_asset_root, proof1_old_root_t, *enabled_t);
-        prev_user_asset_root =
-            conditionally_select(builder, proof1_new_root_t, prev_user_asset_root, *enabled_t);
-
-        // 取り除いた asset が 2^56 未満の値であること
-        builder.range_check(old_leaf_data_t.amount, 56);
-
-        input_assets_t.push(*old_leaf_data_t);
-    }
-    let new_user_asset_root = prev_user_asset_root;
-
-    let mut prev_diff_root = default_hash;
-    let mut output_assets_t = Vec::with_capacity(output_proofs_t.len());
-    for PurgeOutputProcessProofTarget {
-        siblings: siblings_t,
-        index: index_t,
-        new_leaf_data: new_leaf_data_t,
-        enabled: enabled_t,
-    } in output_proofs_t
-    {
-        let proof1_old_leaf_t = default_leaf_hash;
-        let proof1_new_leaf_t = builder.hash_n_to_hash_no_pad::<H>(new_leaf_data_t.encode());
-
-        let _proof1_old_root_t =
-            get_merkle_root_target::<F, H, D>(builder, index_t, proof1_old_leaf_t, siblings_t);
-        let proof1_new_root_t =
-            get_merkle_root_target::<F, H, D>(builder, index_t, proof1_new_leaf_t, siblings_t);
-        // enforce_equal_if_enabled(builder, prev_diff_root, proof1_old_root_t, *enabled_t); // XXX: zero_hash が途中で不自然に変化するため, この方法では検証できない.
-        prev_diff_root =
-            conditionally_select(builder, proof1_new_root_t, prev_diff_root, *enabled_t);
-
-        // 移動する asset の amount が 2^56 未満の値であること
-        builder.range_check(new_leaf_data_t.amount, 56);
-
-        output_assets_t.push(*new_leaf_data_t);
-    }
-    let diff_root = prev_diff_root;
-
-    verify_equal_assets::<F, H, D>(builder, &input_assets_t, &output_assets_t);
-
-    let tx_hash = poseidon_two_to_one::<F, H, D>(builder, diff_root, nonce);
-
-    (new_user_asset_root, diff_root, tx_hash)
-}
-
 #[cfg(test)]
 mod tests {
-
-    use crate::plonky2::plonk::config::Hasher;
-    use crate::transaction::gadgets::purge::ContributedAsset;
-    use crate::transaction::gadgets::purge::PurgeInputProcessProof;
-    use crate::transaction::gadgets::purge::PurgeOutputProcessProof;
-    use crate::transaction::gadgets::purge::PurgeTransition;
-    use crate::transaction::gadgets::purge::PurgeTransitionTarget;
-
     use std::time::Instant;
 
     use plonky2::{
@@ -501,7 +495,7 @@ mod tests {
         plonk::{
             circuit_builder::CircuitBuilder,
             circuit_data::CircuitConfig,
-            config::{GenericConfig, PoseidonGoldilocksConfig},
+            config::{GenericConfig, Hasher, PoseidonGoldilocksConfig},
         },
     };
 
@@ -512,6 +506,10 @@ mod tests {
         },
         transaction::{
             asset::TokenKind,
+            gadgets::purge::{
+                ContributedAsset, PurgeInputProcessProof, PurgeOutputProcessProof, PurgeTransition,
+                PurgeTransitionTarget,
+            },
             tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
         },
         utils::hash::GoldilocksHashOut,

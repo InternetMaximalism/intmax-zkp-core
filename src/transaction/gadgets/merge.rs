@@ -31,27 +31,22 @@ use crate::{
     },
 };
 
-/*
-* DiffTreeInclusionProofのsiblingが2つあるのはなぜ？
-* ２つあるなら複数形にしたほうが良い？
-*/
+// TODO: DiffTreeInclusionProofのsiblingが2つあるのはなぜ？
+// ２つあるなら複数形にしたほうが良い？
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(bound(deserialize = "H::Hash: KeyLike, BlockHeader<F>: Deserialize<'de>"))]
 pub struct DiffTreeInclusionProof<F: RichField, H: Hasher<F>> {
-    block_header: BlockHeader<F>,
-    siblings1: Vec<H::Hash>,
-    siblings2: Vec<H::Hash>,
-    root1: H::Hash,
-    index1: usize,
-    value1: H::Hash,
-    root2: H::Hash,
-    index2: Vec<bool>,
-    value2: H::Hash,
+    pub block_header: BlockHeader<F>,
+    pub siblings1: Vec<H::Hash>,
+    pub siblings2: Vec<H::Hash>,
+    pub root1: H::Hash,
+    pub index1: usize,
+    pub value1: H::Hash,
+    pub root2: H::Hash,
+    pub index2: Vec<bool>,
+    pub value2: H::Hash,
 }
 
-/*
-* MergeProof
-*/
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MergeProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     pub is_deposit: bool,
@@ -71,7 +66,7 @@ pub struct MergeProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     pub nonce: H::Hash,
 }
 
-impl<F: RichField, H: AlgebraicHasher<F>> MergeProof<F, H, HashOut<F>> {
+impl<F: RichField, H: AlgebraicHasher<F>, K: KeyLike> MergeProof<F, H, K> {
     pub fn calculate(&self) {
         let old_value_is_zero = self.merge_process_proof.old_value == HashOut::ZERO;
         let new_value_is_zero = self.merge_process_proof.new_value == HashOut::ZERO;
@@ -120,8 +115,10 @@ impl<F: RichField, H: AlgebraicHasher<F>> MergeProof<F, H, HashOut<F>> {
         };
 
         if !is_no_op {
-            assert_eq!(self.merge_process_proof.index, merge_key);
-        } // XXX
+            assert!(merge_key
+                .to_bits()
+                .starts_with(&self.merge_process_proof.index.to_bits()));
+        }
         assert_eq!(self.merge_process_proof.old_value, Default::default());
         let asset_root = self.diff_tree_inclusion_proof.value2;
         // let asset_root_with_merge_key = H::two_to_one(asset_root, merge_key);
@@ -272,13 +269,11 @@ impl MergeProofTarget {
         proof
     }
 
-    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>>(
+    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>, K: KeyLike>(
         &self,
         pw: &mut impl Witness<F>,
-        witness: &MergeProof<F, H, HashOut<F>>,
+        witness: &MergeProof<F, H, K>,
     ) {
-        witness.calculate();
-
         self.diff_tree_inclusion_proof.2.set_witness::<_, H, _>(
             pw,
             &witness.diff_tree_inclusion_proof.index2,
@@ -316,6 +311,8 @@ impl MergeProofTarget {
             !witness.is_deposit,
         );
         pw.set_hash_target(self.nonce, witness.nonce);
+
+        witness.calculate()
     }
 }
 
@@ -447,15 +444,17 @@ pub fn verify_user_asset_merge_proof<
     );
 }
 
-pub struct MergeTransition<F: RichField, H: AlgebraicHasher<F>> {
-    pub proofs: Vec<MergeProof<F, H, HashOut<F>>>,
+pub struct MergeTransition<F: RichField, H: AlgebraicHasher<F>, K: KeyLike> {
+    pub proofs: Vec<MergeProof<F, H, K>>,
     pub old_user_asset_root: HashOut<F>,
 }
 
-impl<F: RichField, H: AlgebraicHasher<F>> MergeTransition<F, H> {
+impl<F: RichField, H: AlgebraicHasher<F>, K: KeyLike> MergeTransition<F, H, K> {
     pub fn calculate(&self) -> HashOut<F> {
         let mut new_user_asset_root = self.old_user_asset_root;
         for proof in self.proofs.iter() {
+            proof.calculate();
+
             assert_eq!(proof.merge_process_proof.old_root, new_user_asset_root);
 
             new_user_asset_root = proof.merge_process_proof.new_root;
@@ -514,16 +513,16 @@ impl MergeTransitionTarget {
     }
 
     /// Returns new_user_asset_root
-    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>>(
+    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>, K: KeyLike>(
         &self,
         pw: &mut impl Witness<F>,
-        witness: &MergeTransition<F, H>,
+        witness: &MergeTransition<F, H, K>,
     ) -> HashOut<F> {
         pw.set_hash_target(self.old_user_asset_root, witness.old_user_asset_root);
 
         assert!(witness.proofs.len() <= self.proofs.len());
         for (target, proof) in self.proofs.iter().zip(witness.proofs.iter()) {
-            target.set_witness::<F, H>(pw, proof);
+            target.set_witness::<F, H, K>(pw, proof);
         }
 
         let default_merge_witness = MergeProof::make_constraints(
@@ -533,7 +532,7 @@ impl MergeTransitionTarget {
             self.log_n_kinds,
         );
         for target in self.proofs.iter().skip(witness.proofs.len()) {
-            target.set_witness::<F, H>(pw, &default_merge_witness);
+            target.set_witness::<F, H, _>(pw, &default_merge_witness);
         }
 
         witness.calculate()
@@ -583,14 +582,14 @@ pub fn verify_user_asset_merge_transitions<
 
 #[cfg(test)]
 mod tests {
-    use crate::plonky2::plonk::config::Hasher;
-    use crate::transaction::gadgets::merge::DiffTreeInclusionProof;
-    use crate::transaction::gadgets::merge::MergeProof;
-    use crate::transaction::gadgets::merge::MergeTransition;
-    use crate::transaction::gadgets::merge::MerkleProcessProof;
-    use plonky2::hash::hash_types::HashOut;
-
-    use crate::transaction::gadgets::merge::MergeTransitionTarget;
+    use crate::{
+        config::RollupConstants,
+        plonky2::{hash::hash_types::HashOut, plonk::config::Hasher},
+        transaction::gadgets::merge::{
+            DiffTreeInclusionProof, MergeProof, MergeTransition, MergeTransitionTarget,
+            MerkleProcessProof,
+        },
+    };
 
     #[test]
     fn test_two_tree_compatibility() {
@@ -712,34 +711,41 @@ mod tests {
         type F = <C as GenericConfig<D>>::F;
         const D: usize = 2;
 
-        const LOG_MAX_N_USERS: usize = 3;
-        const LOG_MAX_N_TXS: usize = 3;
-        const LOG_MAX_N_CONTRACTS: usize = 3;
-        const LOG_MAX_N_VARIABLES: usize = 3;
-        const LOG_N_TXS: usize = 3;
-        const LOG_N_RECIPIENTS: usize = 3;
-        const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
-        const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
-        const N_MERGES: usize = 3;
+        let rollup_constants = RollupConstants {
+            log_max_n_users: 3,
+            log_max_n_txs: 3,
+            log_max_n_contracts: 3,
+            log_max_n_variables: 3,
+            log_n_txs: 2,
+            log_n_recipients: 3,
+            log_n_contracts: 3,
+            log_n_variables: 3,
+            n_registrations: 2,
+            n_diffs: 2,
+            n_merges: 2,
+            n_deposits: 2,
+            n_blocks: 2,
+        };
 
         let config = CircuitConfig::standard_recursion_config();
 
         let mut builder = CircuitBuilder::<F, D>::new(config);
         // builder.debug_target_index = Some(36);
 
-        let merge_proof_target: MergeTransitionTarget =
-            MergeTransitionTarget::add_virtual_to::<F, H, D>(
-                &mut builder,
-                LOG_MAX_N_USERS,
-                LOG_MAX_N_TXS,
-                LOG_N_TXS,
-                LOG_N_RECIPIENTS,
-                LOG_N_CONTRACTS + LOG_N_VARIABLES,
-                N_MERGES,
-            );
+        let merge_proof_target = MergeTransitionTarget::add_virtual_to::<F, H, D>(
+            &mut builder,
+            rollup_constants.log_max_n_users,
+            rollup_constants.log_max_n_txs,
+            rollup_constants.log_n_txs,
+            rollup_constants.log_n_recipients,
+            rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
+            rollup_constants.n_merges,
+        );
         builder.register_public_inputs(&merge_proof_target.old_user_asset_root.elements);
         builder.register_public_inputs(&merge_proof_target.new_user_asset_root.elements);
         let data = builder.build::<C>();
+
+        let default_hash = HashOut::ZERO;
 
         let private_key = HashOut {
             elements: [
@@ -769,12 +775,14 @@ mod tests {
             amount: 1111,
         };
 
-        let mut user_asset_tree =
-            UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
+        let mut user_asset_tree = UserAssetTree::<F, H>::new(
+            rollup_constants.log_max_n_txs,
+            rollup_constants.log_max_n_contracts + rollup_constants.log_max_n_variables,
+        );
 
         let mut deposit_tree = TxDiffTree::<F, H>::make_constraints(
-            LOG_N_RECIPIENTS,
-            LOG_N_CONTRACTS + LOG_N_VARIABLES,
+            rollup_constants.log_n_recipients,
+            rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
         );
 
         deposit_tree.insert(asset1).unwrap();
@@ -789,11 +797,11 @@ mod tests {
         let deposit_tx_hash = H::two_to_one(interior_deposit_root, deposit_nonce);
 
         // let diff_tree = TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
-        let diff_tree_inclusion_proof1 = get_merkle_proof::<F, H>(&[deposit_tx_hash], 0, LOG_N_TXS);
+        let diff_tree_inclusion_proof1 =
+            get_merkle_proof::<F, H>(&[deposit_tx_hash], 0, rollup_constants.log_n_txs);
 
-        let default_hash = HashOut::ZERO;
         let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
-        let default_merkle_root = get_merkle_proof::<F, H>(&[], 0, LOG_N_TXS).root;
+        let default_merkle_root = get_merkle_proof::<F, H>(&[], 0, rollup_constants.log_n_txs).root;
         let prev_block_header = BlockHeader {
             block_number: 1,
             prev_block_hash: default_hash,
@@ -852,6 +860,9 @@ mod tests {
             nonce: deposit_nonce,
         };
 
+        // let examples = make_sample_circuit_inputs::<C, D>(rollup_constants);
+        // let sender1_tx = &examples[0].transactions[1].0;
+
         let mut pw = PartialWitness::new();
 
         merge_proof_target.set_witness(
@@ -859,6 +870,8 @@ mod tests {
             &MergeTransition {
                 proofs: vec![merge_proof],
                 old_user_asset_root: merge_inclusion_old_root,
+                // proofs: sender1_tx.merge_witnesses.clone(),
+                // old_user_asset_root: sender1_tx.old_user_asset_root,
             },
         );
 
@@ -872,7 +885,7 @@ mod tests {
 
         let mut pw = PartialWitness::new();
 
-        merge_proof_target.set_witness::<F, H>(
+        merge_proof_target.set_witness::<F, H, Vec<bool>>(
             &mut pw,
             &MergeTransition {
                 proofs: vec![],

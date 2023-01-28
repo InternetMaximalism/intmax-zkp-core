@@ -35,9 +35,9 @@ use super::gadgets::{
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MergeAndPurgeTransition<F: RichField, H: Hasher<F>> {
     pub sender_address: Address<F>,
-    pub merge_witnesses: Vec<MergeProof<F, H, HashOut<F>>>,
-    pub purge_input_witnesses: Vec<PurgeInputProcessProof<F, H, HashOut<F>>>,
-    pub purge_output_witnesses: Vec<PurgeOutputProcessProof<F, H, HashOut<F>>>,
+    pub merge_witnesses: Vec<MergeProof<F, H, Vec<bool>>>,
+    pub purge_input_witnesses: Vec<PurgeInputProcessProof<F, H, Vec<bool>>>,
+    pub purge_output_witnesses: Vec<PurgeOutputProcessProof<F, H, Vec<bool>>>,
     pub nonce: HashOut<F>,
     pub old_user_asset_root: HashOut<F>,
 }
@@ -139,7 +139,7 @@ impl MergeAndPurgeTransitionTarget {
         };
         let middle_user_asset_root = self
             .merge_proof_target
-            .set_witness::<F, H>(pw, &merge_witness);
+            .set_witness::<F, H, _>(pw, &merge_witness);
         let purge_transition = PurgeTransition {
             sender_address: witness.sender_address,
             input_witnesses: witness.purge_input_witnesses.clone(),
@@ -149,7 +149,7 @@ impl MergeAndPurgeTransitionTarget {
         };
         let (new_user_asset_root, diff_root, tx_hash) = self
             .purge_proof_target
-            .set_witness::<F, H, H::Hash>(pw, &purge_transition);
+            .set_witness::<F, H, _>(pw, &purge_transition);
 
         MergeAndPurgeTransitionPublicInputs {
             sender_address: witness.sender_address,

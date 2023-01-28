@@ -489,7 +489,7 @@ mod tests {
     use std::time::Instant;
 
     use plonky2::{
-        field::types::Field,
+        field::{goldilocks_field::GoldilocksField, types::Field},
         hash::hash_types::HashOut,
         iop::witness::PartialWitness,
         plonk::{
@@ -561,7 +561,7 @@ mod tests {
         let asset1 = Transaction {
             to: user_address,
             kind: TokenKind {
-                contract_address: Address(GoldilocksHashOut::from_u128(3).0),
+                contract_address: Address(GoldilocksField(3)),
                 variable_index: 8u8.into(),
             },
             amount: 2,
@@ -570,24 +570,24 @@ mod tests {
         let asset2 = Transaction {
             to: user_address,
             kind: TokenKind {
-                contract_address: Address(GoldilocksHashOut::from_u128(4).0),
+                contract_address: Address(GoldilocksField(4)),
                 variable_index: 8u8.into(),
             },
             amount: 1,
         };
 
         let asset3 = Transaction {
-            to: Address(GoldilocksHashOut::from_u128(407).0),
+            to: Address(GoldilocksField(407)),
             kind: TokenKind {
-                contract_address: Address(GoldilocksHashOut::from_u128(3).0),
+                contract_address: Address(GoldilocksField(3)),
                 variable_index: 8u8.into(),
             },
             amount: 2,
         };
         let asset4 = Transaction {
-            to: Address(GoldilocksHashOut::from_u128(832).0),
+            to: Address(GoldilocksField(832)),
             kind: TokenKind {
-                contract_address: Address(GoldilocksHashOut::from_u128(4).0),
+                contract_address: Address(GoldilocksField(4)),
                 variable_index: 8u8.into(),
             },
             amount: 1,

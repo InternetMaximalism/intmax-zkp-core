@@ -634,7 +634,7 @@ impl<F: RichField> BlockProductionPublicInputs<F> {
     }
 
     pub fn decode(public_inputs: &[F], n_txs: usize, n_deposits: usize) -> Self {
-        assert_eq!(public_inputs.len(), 5 * n_txs + 13 * n_deposits + 28);
+        assert_eq!(public_inputs.len(), 2 * n_txs + 7 * n_deposits + 28);
 
         let mut public_inputs = public_inputs.iter();
 
@@ -727,9 +727,7 @@ impl BlockProductionPublicInputsTarget {
         let flatten_address_list_t = self
             .address_list
             .iter()
-            .flat_map(|v| {
-                vec![v.sender_address.elements.to_vec(), vec![v.is_valid.target]].concat()
-            })
+            .flat_map(|v| vec![vec![v.sender_address.0], vec![v.is_valid.target]].concat())
             .collect::<Vec<Target>>();
         let flatten_deposit_list_t = self
             .deposit_list
@@ -759,14 +757,7 @@ impl BlockProductionPublicInputsTarget {
         let mut public_inputs_t = public_inputs_t.iter();
         let address_list = (0..n_txs)
             .map(|_| TransactionSenderWithValidityTarget {
-                sender_address: HashOutTarget {
-                    elements: [
-                        *public_inputs_t.next().unwrap(),
-                        *public_inputs_t.next().unwrap(),
-                        *public_inputs_t.next().unwrap(),
-                        *public_inputs_t.next().unwrap(),
-                    ],
-                },
+                sender_address: AddressTarget(*public_inputs_t.next().unwrap()),
                 // last_block_number: *public_inputs_t.next().unwrap(),
                 is_valid: BoolTarget::new_unsafe(*public_inputs_t.next().unwrap()),
             })

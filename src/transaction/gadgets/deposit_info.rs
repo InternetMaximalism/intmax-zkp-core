@@ -68,7 +68,7 @@ mod tests {
     fn test_serde_deposit_info() {
         let deposit_info: DepositInfo<GoldilocksField> = DepositInfo::default();
         let _json = serde_json::to_string(&deposit_info).unwrap();
-        let json = "{\"receiver_address\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"contract_address\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"variable_index\":\"0x00\",\"amount\":0}";
+        let json = "{\"receiver_address\":\"0x0000000000000000\",\"contract_address\":\"0x0000000000000000\",\"variable_index\":\"0x00\",\"amount\":0}";
         let decoded_deposit_info: DepositInfo<_> = serde_json::from_str(json).unwrap();
         assert_eq!(decoded_deposit_info, deposit_info);
 

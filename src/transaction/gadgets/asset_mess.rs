@@ -34,7 +34,7 @@ impl TransactionTarget {
     ) -> Self {
         Self {
             recipient: AddressTarget::constant_default(builder),
-            contract_address: AddressTarget(builder.constant_hash(HashOut::ZERO)),
+            contract_address: AddressTarget::constant_default(builder),
             token_id: builder.constant_hash(HashOut::ZERO),
             amount: builder.constant(F::ZERO),
         }
@@ -50,8 +50,7 @@ impl TransactionTarget {
 
     pub fn encode(&self) -> Vec<Target> {
         [
-            self.recipient.0.elements.to_vec(),
-            self.contract_address.0.elements.to_vec(),
+            vec![self.recipient.0, self.contract_address.0],
             self.token_id.elements.to_vec(),
             vec![self.amount],
         ]
@@ -91,17 +90,17 @@ pub fn assets_into_mess<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, con
 /// ただし, asset_id は 0 でないとする.
 fn calc_asset_id<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
-    contract_t: HashOutTarget,
+    contract_t: Target,
     token_id_t: HashOutTarget,
 ) -> HashOutTarget {
     let zero_t = builder.zero();
     let one_t = builder.one();
 
     let inputs = vec![
-        contract_t.elements[0],
-        contract_t.elements[1],
-        contract_t.elements[2],
-        contract_t.elements[3],
+        contract_t,
+        zero_t,
+        zero_t,
+        zero_t,
         token_id_t.elements[0],
         token_id_t.elements[1],
         token_id_t.elements[2],

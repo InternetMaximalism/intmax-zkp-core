@@ -124,7 +124,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     let asset1 = Transaction {
         to: sender1_address,
         kind: TokenKind {
-            contract_address: Address(GoldilocksHashOut::from_u128(305).0),
+            contract_address: Address(GoldilocksField(305)),
             variable_index: 8u8.into(),
         },
         amount: 2053,
@@ -132,7 +132,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     let asset2 = Transaction {
         to: sender1_address,
         kind: TokenKind {
-            contract_address: Address(GoldilocksHashOut::from_u128(471).0),
+            contract_address: Address(GoldilocksField(471)),
             variable_index: 8u8.into(),
         },
         amount: 1111,
@@ -141,7 +141,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     let asset3 = Transaction {
         to: sender1_address,
         kind: TokenKind {
-            contract_address: Address(GoldilocksHashOut::from_u128(305).0),
+            contract_address: Address(GoldilocksField(305)),
             variable_index: 8u8.into(),
         },
         amount: 2053,
@@ -149,7 +149,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     let asset4 = Transaction {
         to: sender1_address,
         kind: TokenKind {
-            contract_address: Address(GoldilocksHashOut::from_u128(471).0),
+            contract_address: Address(GoldilocksField(471)),
             variable_index: 8u8.into(),
         },
         amount: 1111,
@@ -165,7 +165,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
 
     world_state_tree
         .set(
-            sender1_account.address.0.into(),
+            sender1_account.address.to_hash_out().into(),
             sender1_user_asset_tree.get_root().unwrap().into(),
         )
         .unwrap();
@@ -240,7 +240,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     let asset1 = Transaction {
         to: sender2_address,
         kind: TokenKind {
-            contract_address: Address(GoldilocksHashOut::from_u128(305).0),
+            contract_address: Address(GoldilocksField(305)),
             variable_index: 8u8.into(),
         },
         amount: 2053,
@@ -248,7 +248,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     let asset2 = Transaction {
         to: sender2_address,
         kind: TokenKind {
-            contract_address: Address(GoldilocksHashOut::from_u128(471).0),
+            contract_address: Address(GoldilocksField(471)),
             variable_index: 8u8.into(),
         },
         amount: 1111,
@@ -257,7 +257,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     let asset3 = Transaction {
         to: sender2_address,
         kind: TokenKind {
-            contract_address: Address(GoldilocksHashOut::from_u128(305).0),
+            contract_address: Address(GoldilocksField(305)),
             variable_index: 8u8.into(),
         },
         amount: 2053,
@@ -265,7 +265,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     let asset4 = Transaction {
         to: sender2_address,
         kind: TokenKind {
-            contract_address: Address(GoldilocksHashOut::from_u128(471).0),
+            contract_address: Address(GoldilocksField(471)),
             variable_index: 8u8.into(),
         },
         amount: 1111,
@@ -298,7 +298,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
 
     world_state_tree
         .set(
-            sender2_address.0.into(),
+            sender2_address.to_hash_out().into(),
             sender2_user_asset_tree.get_root().unwrap().into(),
         )
         .unwrap();
@@ -485,14 +485,14 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
 
     let sender1_world_state_process_proof = world_state_tree
         .set(
-            sender1_address.0.into(),
+            sender1_address.to_hash_out().into(),
             sender1_user_asset_tree.get_root().unwrap().into(),
         )
         .unwrap();
 
     let sender2_world_state_process_proof = world_state_tree
         .set(
-            sender2_address.0.into(),
+            sender2_address.to_hash_out().into(),
             sender2_user_asset_tree.get_root().unwrap().into(),
         )
         .unwrap();
@@ -519,7 +519,9 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     for (opt_received_signature, user_tx_pis) in stored_transactions {
         let user_address = user_tx_pis.sender_address;
         let (last_block_number, confirmed_user_asset_root) = if !opt_received_signature {
-            let old_block_number = latest_account_tree.get(&user_address.0.into()).unwrap();
+            let old_block_number = latest_account_tree
+                .get(&user_address.to_hash_out().into())
+                .unwrap();
             (
                 old_block_number.to_u32(),
                 user_tx_pis.middle_user_asset_root,
@@ -530,14 +532,14 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         latest_account_tree_process_proofs.push(
             latest_account_tree
                 .set(
-                    user_address.0.into(),
+                    user_address.to_hash_out().into(),
                     GoldilocksHashOut::from_u32(last_block_number),
                 )
                 .unwrap(),
         );
 
         let proof = world_state_tree
-            .set(user_address.0.into(), confirmed_user_asset_root)
+            .set(user_address.to_hash_out().into(), confirmed_user_asset_root)
             .unwrap();
         world_state_revert_proofs.push(proof);
     }

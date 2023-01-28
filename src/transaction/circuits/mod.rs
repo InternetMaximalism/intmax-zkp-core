@@ -24,7 +24,7 @@ use crate::{
         purge::PurgeTransitionTarget,
     },
     utils::{gadgets::hash::poseidon_two_to_one, hash::WrappedHashOut},
-    zkdsa::account::Address,
+    zkdsa::{account::Address, gadgets::account::AddressTarget},
 };
 
 use super::gadgets::{
@@ -195,21 +195,15 @@ where
         targets.purge_proof_target.nonce,
     );
 
-    // let public_inputs = MergeAndPurgeTransitionPublicInputsTarget {
-    //     sender_address: purge_proof_target.sender_address.0,
-    //     old_user_asset_root: merge_proof_target.old_user_asset_root,
-    //     middle_user_asset_root: merge_proof_target.new_user_asset_root,
-    //     new_user_asset_root: purge_proof_target.new_user_asset_root,
-    //     diff_root: purge_proof_target.diff_root,
-    //     tx_hash,
-    // };
-    // builder.register_public_inputs(&public_inputs.encode());
-    builder.register_public_inputs(&targets.merge_proof_target.old_user_asset_root.elements); // public_inputs[0..4]
-    builder.register_public_inputs(&targets.merge_proof_target.new_user_asset_root.elements); // public_inputs[4..8]
-    builder.register_public_inputs(&targets.purge_proof_target.new_user_asset_root.elements); // public_inputs[8..12]
-    builder.register_public_inputs(&targets.purge_proof_target.diff_root.elements); // public_inputs[12..16]
-    builder.register_public_inputs(&targets.purge_proof_target.sender_address.0.elements); // public_inputs[16..20]
-    builder.register_public_inputs(&tx_hash.elements); // public_inputs[20..24]
+    let public_inputs = MergeAndPurgeTransitionPublicInputsTarget {
+        sender_address: targets.purge_proof_target.sender_address,
+        old_user_asset_root: targets.merge_proof_target.old_user_asset_root,
+        middle_user_asset_root: targets.merge_proof_target.new_user_asset_root,
+        new_user_asset_root: targets.purge_proof_target.new_user_asset_root,
+        diff_root: targets.purge_proof_target.diff_root,
+        tx_hash,
+    };
+    builder.register_public_inputs(&public_inputs.encode());
 
     let merge_and_purge_circuit_data = builder.build::<C>();
 
@@ -250,27 +244,27 @@ impl<F: RichField> Default for MergeAndPurgeTransitionPublicInputs<F> {
 impl<F: RichField> MergeAndPurgeTransitionPublicInputs<F> {
     pub fn encode(&self) -> Vec<F> {
         let public_inputs = vec![
-            self.old_user_asset_root.elements,
-            self.middle_user_asset_root.elements,
-            self.new_user_asset_root.elements,
-            self.diff_root.elements,
-            self.sender_address.elements,
-            self.tx_hash.elements,
+            self.old_user_asset_root.elements.to_vec(),
+            self.middle_user_asset_root.elements.to_vec(),
+            self.new_user_asset_root.elements.to_vec(),
+            self.diff_root.elements.to_vec(),
+            vec![self.sender_address.0],
+            self.tx_hash.elements.to_vec(),
         ]
         .concat();
-        assert_eq!(public_inputs.len(), 24);
+        assert_eq!(public_inputs.len(), 21);
 
         public_inputs
     }
 
     pub fn decode(public_inputs: &[F]) -> Self {
-        assert_eq!(public_inputs.len(), 24);
+        assert_eq!(public_inputs.len(), 21);
         let old_user_asset_root = HashOut::from_partial(&public_inputs[0..4]).into();
         let middle_user_asset_root = HashOut::from_partial(&public_inputs[4..8]).into();
         let new_user_asset_root = HashOut::from_partial(&public_inputs[8..12]).into();
         let diff_root = HashOut::from_partial(&public_inputs[12..16]).into();
-        let sender_address = Address(HashOut::from_partial(&public_inputs[16..20]));
-        let tx_hash = HashOut::from_partial(&public_inputs[20..24]).into();
+        let sender_address = Address(public_inputs[16]);
+        let tx_hash = HashOut::from_partial(&public_inputs[17..21]).into();
 
         Self {
             old_user_asset_root,
@@ -285,7 +279,7 @@ impl<F: RichField> MergeAndPurgeTransitionPublicInputs<F> {
 
 #[derive(Clone, Debug)]
 pub struct MergeAndPurgeTransitionPublicInputsTarget {
-    pub sender_address: HashOutTarget,
+    pub sender_address: AddressTarget,
     pub old_user_asset_root: HashOutTarget,
     pub middle_user_asset_root: HashOutTarget,
     pub new_user_asset_root: HashOutTarget,
@@ -297,7 +291,7 @@ impl MergeAndPurgeTransitionPublicInputsTarget {
     pub fn add_virtual_to<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
-        let sender_address = builder.add_virtual_hash();
+        let sender_address = AddressTarget::new(builder);
         let old_user_asset_root = builder.add_virtual_hash();
         let middle_user_asset_root = builder.add_virtual_hash();
         let new_user_asset_root = builder.add_virtual_hash();
@@ -319,7 +313,8 @@ impl MergeAndPurgeTransitionPublicInputsTarget {
         pw: &mut impl Witness<F>,
         public_inputs: &MergeAndPurgeTransitionPublicInputs<F>,
     ) {
-        pw.set_hash_target(self.sender_address, *public_inputs.sender_address);
+        self.sender_address
+            .set_witness(pw, public_inputs.sender_address);
         pw.set_hash_target(self.old_user_asset_root, *public_inputs.old_user_asset_root);
         pw.set_hash_target(
             self.middle_user_asset_root,
@@ -335,7 +330,7 @@ impl MergeAndPurgeTransitionPublicInputsTarget {
         a: &Self,
         b: &Self,
     ) {
-        builder.connect_hashes(a.sender_address, b.sender_address);
+        builder.connect(a.sender_address.0, b.sender_address.0);
         builder.connect_hashes(a.old_user_asset_root, b.old_user_asset_root);
         builder.connect_hashes(a.middle_user_asset_root, b.middle_user_asset_root);
         builder.connect_hashes(a.new_user_asset_root, b.new_user_asset_root);
@@ -345,21 +340,21 @@ impl MergeAndPurgeTransitionPublicInputsTarget {
 
     pub fn encode(&self) -> Vec<Target> {
         let public_inputs_t = vec![
-            self.old_user_asset_root.elements,
-            self.middle_user_asset_root.elements,
-            self.new_user_asset_root.elements,
-            self.diff_root.elements,
-            self.sender_address.elements,
-            self.tx_hash.elements,
+            self.old_user_asset_root.elements.to_vec(),
+            self.middle_user_asset_root.elements.to_vec(),
+            self.new_user_asset_root.elements.to_vec(),
+            self.diff_root.elements.to_vec(),
+            vec![self.sender_address.0],
+            self.tx_hash.elements.to_vec(),
         ]
         .concat();
-        assert_eq!(public_inputs_t.len(), 24);
+        assert_eq!(public_inputs_t.len(), 21);
 
         public_inputs_t
     }
 
     pub fn decode(public_inputs_t: &[Target]) -> Self {
-        assert_eq!(public_inputs_t.len(), 24);
+        assert_eq!(public_inputs_t.len(), 21);
         let old_user_asset_root = HashOutTarget {
             elements: public_inputs_t[0..4].try_into().unwrap(),
         };
@@ -372,11 +367,9 @@ impl MergeAndPurgeTransitionPublicInputsTarget {
         let diff_root = HashOutTarget {
             elements: public_inputs_t[12..16].try_into().unwrap(),
         };
-        let sender_address = HashOutTarget {
-            elements: public_inputs_t[16..20].try_into().unwrap(),
-        };
+        let sender_address = AddressTarget(public_inputs_t[16]);
         let tx_hash = HashOutTarget {
-            elements: public_inputs_t[20..24].try_into().unwrap(),
+            elements: public_inputs_t[17..21].try_into().unwrap(),
         };
 
         MergeAndPurgeTransitionPublicInputsTarget {

@@ -582,6 +582,8 @@ pub fn verify_user_asset_merge_transitions<
 
 #[cfg(test)]
 mod tests {
+    use plonky2::field::goldilocks_field::GoldilocksField;
+
     use crate::{
         config::RollupConstants,
         plonky2::{hash::hash_types::HashOut, plonk::config::Hasher},
@@ -633,7 +635,7 @@ mod tests {
         let asset1 = Transaction {
             to: user_address,
             kind: TokenKind {
-                contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+                contract_address: Address(GoldilocksField(305)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
             },
             amount: 2053,
@@ -641,7 +643,7 @@ mod tests {
         let asset2 = Transaction {
             to: user_address,
             kind: TokenKind {
-                contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+                contract_address: Address(GoldilocksField(471)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
             },
             amount: 1111,
@@ -761,7 +763,7 @@ mod tests {
         let asset1 = Transaction {
             to: user_address,
             kind: TokenKind {
-                contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+                contract_address: Address(GoldilocksField(305)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
             },
             amount: 2053,
@@ -769,7 +771,7 @@ mod tests {
         let asset2 = Transaction {
             to: user_address,
             kind: TokenKind {
-                contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+                contract_address: Address(GoldilocksField(471)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
             },
             amount: 1111,

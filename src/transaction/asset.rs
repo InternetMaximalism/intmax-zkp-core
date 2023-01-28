@@ -97,7 +97,7 @@ pub struct Asset<F: RichField> {
 impl<F: RichField> Asset<F> {
     pub fn encode(&self) -> Vec<F> {
         [
-            self.kind.contract_address.0.elements.to_vec(),
+            vec![self.kind.contract_address.0],
             self.kind.variable_index.to_hash_out().elements.to_vec(),
             vec![F::from_canonical_u64(self.amount)],
         ]
@@ -117,8 +117,7 @@ pub struct Transaction<F: RichField> {
 impl<F: RichField> Transaction<F> {
     pub fn encode(&self) -> Vec<F> {
         [
-            self.to.0.elements.to_vec(),
-            self.kind.contract_address.0.elements.to_vec(),
+            vec![self.to.0, self.kind.contract_address.0],
             self.kind.variable_index.to_hash_out().elements.to_vec(),
             vec![F::from_canonical_u64(self.amount)],
         ]
@@ -209,13 +208,10 @@ pub struct TokenKind<F: RichField> {
 
 #[cfg(test)]
 mod tests {
-
-    use crate::transaction::asset::FromStr;
-    use crate::transaction::asset::TokenKind;
-    use crate::transaction::asset::Transaction;
-    use crate::transaction::asset::VariableIndex;
-    use crate::transaction::gadgets::deposit_info::DepositInfo;
-    use crate::zkdsa::account::Address;
+    use crate::{
+        transaction::asset::{FromStr, TokenKind, Transaction, VariableIndex},
+        zkdsa::account::Address,
+    };
 
     #[test]
     fn test_fmt_variable_index() {
@@ -272,11 +268,6 @@ mod tests {
         let decoded_owned_asset: Transaction<GoldilocksField> =
             serde_json::from_str(&encoded_owned_asset).unwrap();
         assert_eq!(decoded_owned_asset, owned_asset);
-
-        // ContributedAsset は DepositInfo と互換性がある.
-        let decoded_deposit_info: DepositInfo<GoldilocksField> =
-            serde_json::from_str(&encoded_owned_asset).unwrap();
-        assert_eq!(decoded_deposit_info, owned_asset.into());
 
         let encoded_owned_asset = owned_asset.to_string();
         dbg!(&encoded_owned_asset);

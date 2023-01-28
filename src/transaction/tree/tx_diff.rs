@@ -1,9 +1,6 @@
 use std::{collections::HashMap, fmt::Debug};
 
-use plonky2::{
-    hash::hash_types::RichField,
-    plonk::config::{GenericHashOut, Hasher},
-};
+use plonky2::{hash::hash_types::RichField, plonk::config::Hasher};
 
 use crate::{
     merkle_tree::{
@@ -27,7 +24,7 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
     pub fn make_constraints(log_n_recipients: usize, log_n_kinds: usize) -> Self {
         let mut zero_hashes = vec![];
 
-        let zero = vec![F::ZERO; 13];
+        let zero = Transaction::default().encode();
         let node = Node::Leaf::<F, H> { data: zero.clone() };
         let mut h = node.hash();
         zero_hashes.push(h);
@@ -139,7 +136,7 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
         path.append(&mut kind_path);
 
         let leaf_data = asset.encode();
-        debug_assert_eq!(leaf_data.len(), 13);
+        debug_assert_eq!(leaf_data.len(), 7);
         self.nodes
             .insert(path.clone(), Node::Leaf { data: leaf_data }); // path: BE
 
@@ -185,9 +182,9 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
             .iter()
             .find(|v| {
                 if let Node::Leaf { data } = v.1 {
-                    recipient.0.elements == data[0..4]
-                        && token_kind.contract_address.to_hash_out().elements == data[4..8]
-                        && token_kind.variable_index.to_hash_out().elements == data[8..12]
+                    recipient.0 == data[0]
+                        && token_kind.contract_address.0 == data[1]
+                        && token_kind.variable_index.to_hash_out().elements == data[2..6]
                 } else {
                     false
                 }
@@ -251,6 +248,8 @@ fn le_bits_to_usize(bits: &[bool]) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use plonky2::field::goldilocks_field::GoldilocksField;
+
     use crate::plonky2::plonk::config::Hasher;
     use crate::transaction::tree::tx_diff::Transaction;
 
@@ -295,7 +294,7 @@ mod tests {
         let asset1 = Transaction {
             to: user_address,
             kind: TokenKind {
-                contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+                contract_address: Address(GoldilocksField(305)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
             },
             amount: 2053,
@@ -303,7 +302,7 @@ mod tests {
         let asset2 = Transaction {
             to: user_address,
             kind: TokenKind {
-                contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+                contract_address: Address(GoldilocksField(471)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
             },
             amount: 1111,
@@ -369,7 +368,7 @@ mod tests {
         let asset1 = Transaction {
             to: user_address,
             kind: TokenKind {
-                contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+                contract_address: Address(GoldilocksField(305)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
             },
             amount: 2053,
@@ -377,7 +376,7 @@ mod tests {
         let asset2 = Transaction {
             to: user_address,
             kind: TokenKind {
-                contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+                contract_address: Address(GoldilocksField(471)),
                 variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
             },
             amount: 1111,

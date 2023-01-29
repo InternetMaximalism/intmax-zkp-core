@@ -32,6 +32,10 @@ impl AddressTarget {
         pw.set_target(self.0, value.0);
     }
 
+    pub fn encode(&self) -> Vec<Target> {
+        vec![self.0]
+    }
+
     pub fn read(inputs: &mut core::slice::Iter<Target>) -> Self {
         Self(*inputs.next().unwrap())
     }

@@ -341,7 +341,7 @@ impl PurgeTransitionTarget {
                 conditionally_select(builder, proof1_new_root_t, prev_user_asset_root, *enabled_t);
 
             // 取り除いた asset が 2^56 未満の値であること
-            builder.range_check(old_leaf_data_t.amount, 56);
+            builder.range_check(old_leaf_data_t.amount.0, 56);
 
             input_assets_t.push(*old_leaf_data_t);
         }
@@ -378,7 +378,7 @@ impl PurgeTransitionTarget {
                 conditionally_select(builder, proof1_new_root_t, prev_diff_root, *enabled_t);
 
             // 移動する asset の amount が 2^56 未満の値であること
-            builder.range_check(new_leaf_data_t.amount, 56);
+            builder.range_check(new_leaf_data_t.amount.0, 56);
 
             output_assets_t.push(*new_leaf_data_t);
         }

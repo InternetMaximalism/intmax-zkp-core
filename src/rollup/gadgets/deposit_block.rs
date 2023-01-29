@@ -120,7 +120,7 @@ impl DepositBlockProductionTarget {
             );
 
             // deposit する asset の amount が 2^56 未満の値であること
-            builder.range_check(new_leaf_data_t.amount, 56);
+            builder.range_check(new_leaf_data_t.amount.0, 56);
         }
 
         Self {

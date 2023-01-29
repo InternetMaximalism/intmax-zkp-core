@@ -1,7 +1,7 @@
 use plonky2::{
     field::extension::Extendable,
     hash::hash_types::{HashOut, HashOutTarget, RichField},
-    iop::witness::Witness,
+    iop::{target::BoolTarget, witness::Witness},
     plonk::{
         circuit_builder::CircuitBuilder,
         config::{AlgebraicHasher, Hasher},
@@ -12,22 +12,26 @@ use serde::{Deserialize, Serialize};
 use crate::{
     merkle_tree::{
         gadgets::{get_merkle_root_target, MerkleProofTarget},
+        sparse_merkle_tree::SparseMerkleTreeMemory,
         tree::{
             get_merkle_proof_with_zero, get_merkle_root, KeyLike, MerkleProcessProof, MerkleProof,
         },
     },
-    sparse_merkle_tree::gadgets::verify::verify_smt::{
-        SmtInclusionProof, SparseMerkleInclusionProofTarget,
-    },
+    // sparse_merkle_tree::gadgets::verify::verify_smt::{
+    //     SmtInclusionProof, SparseMerkleInclusionProofTarget,
+    // },
     transaction::{
         block_header::BlockHeader,
         gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
     },
-    utils::gadgets::{
-        hash::poseidon_two_to_one,
-        logic::{
-            conditionally_select, enforce_equal_if_enabled, is_equal_hash_out, logical_and_not,
+    utils::{
+        gadgets::{
+            hash::poseidon_two_to_one,
+            logic::{
+                conditionally_select, enforce_equal_if_enabled, is_equal_hash_out, logical_and_not,
+            },
         },
+        hash::WrappedHashOut,
     },
 };
 
@@ -53,13 +57,15 @@ pub struct MergeProof<F: RichField, H: Hasher<F>, K: KeyLike> {
     #[serde(bound(deserialize = "H::Hash: KeyLike, BlockHeader<F>: Deserialize<'de>"))]
     pub diff_tree_inclusion_proof: DiffTreeInclusionProof<F, H>,
     #[serde(bound(
-        deserialize = "MerkleProof<F, H, H::Hash>: Deserialize<'de>, K: Deserialize<'de>"
+        deserialize = "MerkleProcessProof<F, H, K>: Deserialize<'de>, K: Deserialize<'de>"
     ))]
     pub merge_process_proof: MerkleProcessProof<F, H, K>,
 
     /// asset を受け取った block の latest account tree から自身の address に関する inclusion proof を出す
-    #[serde(bound(deserialize = "SmtInclusionProof<F>: Deserialize<'de>"))]
-    pub latest_account_tree_inclusion_proof: SmtInclusionProof<F>,
+    #[serde(bound(
+        deserialize = "MerkleProof<F, H, usize>: Deserialize<'de>, K: Deserialize<'de>"
+    ))]
+    pub latest_account_tree_inclusion_proof: MerkleProof<F, H, usize>,
 
     /// is_deposit が false のとき, 送信者から nonce の値を教えてもらう必要がある
     #[serde(bound(deserialize = "H::Hash: Deserialize<'de>"))]
@@ -91,7 +97,7 @@ impl<F: RichField, H: AlgebraicHasher<F>, K: KeyLike> MergeProof<F, H, K> {
             let receiving_block_number = block_header.block_number;
             let confirmed_block_number = self.latest_account_tree_inclusion_proof.value; // 最後に成功した block number
             assert_eq!(
-                *confirmed_block_number,
+                confirmed_block_number,
                 HashOut::from_partial(&[F::from_canonical_u32(receiving_block_number)]),
             );
         }
@@ -130,7 +136,7 @@ impl<F: RichField, H: AlgebraicHasher<F>, K: KeyLike> MergeProof<F, H, K> {
 
             assert_eq!(
                 block_header.latest_account_digest,
-                *self.latest_account_tree_inclusion_proof.root,
+                self.latest_account_tree_inclusion_proof.root,
             );
         }
 
@@ -158,6 +164,7 @@ impl<F: RichField, H: AlgebraicHasher<F>, K: KeyLike> MergeProof<F, H, K> {
 
 impl<F: RichField, H: AlgebraicHasher<F>> MergeProof<F, H, HashOut<F>> {
     pub fn make_constraints(
+        log_max_n_users: usize,
         log_max_n_txs: usize,
         log_n_txs: usize,
         log_n_recipients: usize,
@@ -179,7 +186,7 @@ impl<F: RichField, H: AlgebraicHasher<F>> MergeProof<F, H, HashOut<F>> {
             default_diff_tree_inclusion_root2,
         );
         let default_diff_tree_inclusion_index1 = Default::default();
-        let default_header = BlockHeader::new(log_n_txs);
+        let default_header = BlockHeader::new(log_n_txs, log_max_n_users);
         let default_merge_inclusion_proof =
             get_merkle_proof_with_zero::<F, H>(&[], 0, log_max_n_txs, zero);
         let default_merge_process_proof = MerkleProcessProof {
@@ -190,7 +197,10 @@ impl<F: RichField, H: AlgebraicHasher<F>> MergeProof<F, H, HashOut<F>> {
             old_root: default_merge_inclusion_proof.root,
             new_root: default_merge_inclusion_proof.root,
         };
-        let default_inclusion_proof = SmtInclusionProof::with_root(Default::default());
+        let latest_account_tree: SparseMerkleTreeMemory<F, H, WrappedHashOut<F>> =
+            SparseMerkleTreeMemory::new(log_max_n_users);
+        let default_inclusion_proof = latest_account_tree.prove_leaf_node(&0);
+        let default_latest_account_root = latest_account_tree.get_root();
 
         Self {
             is_deposit: true,
@@ -206,7 +216,12 @@ impl<F: RichField, H: AlgebraicHasher<F>> MergeProof<F, H, HashOut<F>> {
                 value2: default_diff_tree_leaf2,
             },
             merge_process_proof: default_merge_process_proof,
-            latest_account_tree_inclusion_proof: default_inclusion_proof,
+            latest_account_tree_inclusion_proof: MerkleProof {
+                index: 0,
+                value: HashOut::ZERO,
+                siblings: default_inclusion_proof.siblings,
+                root: default_latest_account_root,
+            },
             nonce: HashOut::ZERO,
         }
     }
@@ -216,8 +231,9 @@ impl<F: RichField, H: AlgebraicHasher<F>> MergeProof<F, H, HashOut<F>> {
 pub struct MergeProofTarget {
     pub diff_tree_inclusion_proof: (BlockHeaderTarget, MerkleProofTarget, MerkleProofTarget),
     pub merge_process_proof: (MerkleProofTarget, MerkleProofTarget), // (old, new)
-    pub latest_account_tree_inclusion_proof: SparseMerkleInclusionProofTarget,
+    pub latest_account_tree_inclusion_proof: MerkleProofTarget,
     pub nonce: HashOutTarget,
+    pub is_deposit: BoolTarget,
 }
 
 impl MergeProofTarget {
@@ -253,9 +269,10 @@ impl MergeProofTarget {
         };
 
         let latest_account_tree_inclusion_proof =
-            SparseMerkleInclusionProofTarget::add_virtual_to::<F, H, D>(builder, log_max_n_users);
+            MerkleProofTarget::add_virtual_to::<F, H, D>(builder, log_max_n_users);
 
         let nonce = builder.add_virtual_hash();
+        let is_deposit = builder.add_virtual_bool_target_safe();
 
         let proof = Self {
             // is_deposit: builder.add_virtual_bool_target_safe(),
@@ -263,6 +280,7 @@ impl MergeProofTarget {
             merge_process_proof,
             latest_account_tree_inclusion_proof,
             nonce,
+            is_deposit,
         };
         verify_user_asset_merge_proof::<F, H, D>(builder, &proof);
 
@@ -305,12 +323,22 @@ impl MergeProofTarget {
         );
 
         // deposit でないときのみ検証する
-        self.latest_account_tree_inclusion_proof.set_witness(
-            pw,
-            &witness.latest_account_tree_inclusion_proof,
-            !witness.is_deposit,
-        );
+        let latest_account_root = self
+            .latest_account_tree_inclusion_proof
+            .set_witness::<_, H, _>(
+                pw,
+                &witness.latest_account_tree_inclusion_proof.index,
+                witness.latest_account_tree_inclusion_proof.value,
+                &witness.latest_account_tree_inclusion_proof.siblings,
+            );
+        if !witness.is_deposit {
+            assert_eq!(
+                latest_account_root,
+                witness.latest_account_tree_inclusion_proof.root
+            );
+        }
         pw.set_hash_target(self.nonce, witness.nonce);
+        pw.set_bool_target(self.is_deposit, witness.is_deposit);
 
         witness.calculate()
     }
@@ -335,9 +363,10 @@ pub fn verify_user_asset_merge_proof<
         diff_tree_inclusion_proof,
         latest_account_tree_inclusion_proof,
         nonce,
+        is_deposit,
     } = proof;
 
-    let is_not_deposit = latest_account_tree_inclusion_proof.enabled;
+    let is_not_deposit = builder.not(*is_deposit);
 
     let old_value_is_zero = is_equal_hash_out(builder, merge_process_proof.0.value, default_hash);
     let new_value_is_zero = is_equal_hash_out(builder, merge_process_proof.1.value, default_hash);
@@ -526,6 +555,7 @@ impl MergeTransitionTarget {
         }
 
         let default_merge_witness = MergeProof::make_constraints(
+            self.log_max_n_users,
             self.log_max_n_txs,
             self.log_n_txs,
             self.log_n_recipients,
@@ -586,11 +616,13 @@ mod tests {
 
     use crate::{
         config::RollupConstants,
+        merkle_tree::{sparse_merkle_tree::SparseMerkleTreeMemory, tree::MerkleProof},
         plonky2::{hash::hash_types::HashOut, plonk::config::Hasher},
         transaction::gadgets::merge::{
             DiffTreeInclusionProof, MergeProof, MergeTransition, MergeTransitionTarget,
             MerkleProcessProof,
         },
+        utils::hash::WrappedHashOut,
     };
 
     #[test]
@@ -696,7 +728,7 @@ mod tests {
 
         use crate::{
             merkle_tree::tree::get_merkle_proof,
-            sparse_merkle_tree::proof::SparseMerkleInclusionProof,
+            // sparse_merkle_tree::proof::SparseMerkleInclusionProof,
             transaction::{
                 asset::{TokenKind, Transaction, VariableIndex},
                 block_header::BlockHeader,
@@ -798,18 +830,10 @@ mod tests {
         let diff_tree_inclusion_proof1 =
             get_merkle_proof::<F, H>(&[deposit_tx_hash], 0, rollup_constants.log_n_txs);
 
-        let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
-        let default_merkle_root = get_merkle_proof::<F, H>(&[], 0, rollup_constants.log_n_txs).root;
-        let prev_block_header = BlockHeader {
-            block_number: 1,
-            prev_block_hash: default_hash,
-            block_headers_digest: default_hash,
-            transactions_digest: default_merkle_root,
-            deposit_digest: diff_tree_inclusion_proof1.root,
-            proposed_world_state_digest: default_hash,
-            approved_world_state_digest: default_hash,
-            latest_account_digest: default_hash,
-        };
+        let mut prev_block_header: BlockHeader<F> =
+            BlockHeader::new(rollup_constants.log_n_txs, rollup_constants.log_max_n_users);
+        prev_block_header.block_number = 1;
+        prev_block_header.deposit_digest = diff_tree_inclusion_proof1.root;
         let block_hash = prev_block_header.get_block_hash();
 
         let deposit_merge_key = H::two_to_one(deposit_tx_hash, block_hash);
@@ -840,6 +864,10 @@ mod tests {
             new_root: merge_inclusion_new_root,
         };
 
+        let latest_account_tree: SparseMerkleTreeMemory<F, H, WrappedHashOut<F>> =
+            SparseMerkleTreeMemory::new(rollup_constants.log_max_n_users);
+        let default_inclusion_proof = latest_account_tree.prove_leaf_node(&0);
+        let default_latest_account_root = latest_account_tree.get_root();
         let merge_proof = MergeProof::<F, H, _> {
             is_deposit: true,
             diff_tree_inclusion_proof: DiffTreeInclusionProof {
@@ -854,7 +882,12 @@ mod tests {
                 value2: diff_tree_inclusion_proof2.value,
             },
             merge_process_proof,
-            latest_account_tree_inclusion_proof: default_inclusion_proof,
+            latest_account_tree_inclusion_proof: MerkleProof {
+                index: 0,
+                value: HashOut::ZERO,
+                siblings: default_inclusion_proof.siblings,
+                root: default_latest_account_root,
+            },
             nonce: deposit_nonce,
         };
 

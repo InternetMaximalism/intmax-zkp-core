@@ -11,8 +11,11 @@ use plonky2::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    merkle_tree::tree::{get_merkle_proof, get_merkle_proof_with_zero},
-    utils::hash::SerializableHashOut,
+    merkle_tree::{
+        sparse_merkle_tree::SparseMerkleTreeMemory,
+        tree::{get_merkle_proof, get_merkle_proof_with_zero},
+    },
+    utils::hash::{SerializableHashOut, WrappedHashOut},
 };
 
 use super::circuits::MergeAndPurgeTransitionPublicInputs;
@@ -44,7 +47,7 @@ pub struct BlockHeader<F: Field> {
 }
 
 impl<F: RichField> BlockHeader<F> {
-    pub fn new(log_num_txs_in_block: usize) -> Self {
+    pub fn new(log_n_txs: usize, log_max_n_users: usize) -> Self {
         let default_hash = HashOut::ZERO;
 
         // transaction tree と deposit tree の深さは同じ.
@@ -52,20 +55,20 @@ impl<F: RichField> BlockHeader<F> {
         let default_deposit_digest = get_merkle_proof_with_zero::<F, PoseidonHash>(
             &[],
             0,
-            log_num_txs_in_block,
+            log_n_txs,
             default_interior_deposit_digest,
         )
         .root;
         let default_tx_hash = MergeAndPurgeTransitionPublicInputs::default().tx_hash;
-        let default_transactions_digest = get_merkle_proof_with_zero::<F, PoseidonHash>(
-            &[],
-            0,
-            log_num_txs_in_block,
-            *default_tx_hash,
-        )
-        .root;
+        let default_transactions_digest =
+            get_merkle_proof_with_zero::<F, PoseidonHash>(&[], 0, log_n_txs, *default_tx_hash).root;
         let default_block_headers_digest =
             get_merkle_proof::<F, PoseidonHash>(&[], 0, LOG_MAX_N_BLOCKS).root;
+
+        let latest_account_tree: SparseMerkleTreeMemory<F, PoseidonHash, WrappedHashOut<F>> =
+            SparseMerkleTreeMemory::new(log_max_n_users);
+        let world_state_tree: SparseMerkleTreeMemory<F, PoseidonHash, WrappedHashOut<F>> =
+            SparseMerkleTreeMemory::new(log_max_n_users);
 
         Self {
             block_number: 0,
@@ -73,9 +76,9 @@ impl<F: RichField> BlockHeader<F> {
             block_headers_digest: default_block_headers_digest,
             transactions_digest: default_transactions_digest,
             deposit_digest: default_deposit_digest,
-            proposed_world_state_digest: default_hash,
-            approved_world_state_digest: default_hash,
-            latest_account_digest: default_hash,
+            proposed_world_state_digest: world_state_tree.get_root(),
+            approved_world_state_digest: world_state_tree.get_root(),
+            latest_account_digest: latest_account_tree.get_root(),
         }
     }
 

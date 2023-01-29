@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     merkle_tree::tree::MerkleProof,
-    sparse_merkle_tree::gadgets::verify::verify_smt::SmtInclusionProof,
+    // sparse_merkle_tree::gadgets::verify::verify_smt::SmtInclusionProof,
     transaction::{block_header::BlockHeader, gadgets::deposit_info::DepositInfo},
     utils::hash::WrappedHashOut,
     zkdsa::account::Address,
@@ -200,17 +200,17 @@ impl<'de, F: RichField> Deserialize<'de> for VariableIndex<F> {
 #[allow(clippy::type_complexity)]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(bound(
-    serialize = "BlockHeader<F>: Serialize, SmtInclusionProof<F>: Serialize, Asset<F>: Serialize",
-    deserialize = "BlockHeader<F>: Deserialize<'de>, SmtInclusionProof<F>: Deserialize<'de>, Asset<F>: Deserialize<'de>"
+    serialize = "BlockHeader<F>: Serialize, MerkleProof<F, H, usize>: Serialize, Asset<F>: Serialize",
+    deserialize = "BlockHeader<F>: Deserialize<'de>, MerkleProof<F, H, usize>: Deserialize<'de>, Asset<F>: Deserialize<'de>"
 ))]
 pub struct ReceivedAssetProof<F: RichField, H: Hasher<F>> {
     pub is_deposit: bool,
     pub diff_tree_inclusion_proof: (
         BlockHeader<F>,
         MerkleProof<F, H, usize>,
-        SmtInclusionProof<F>,
+        MerkleProof<F, H, usize>,
     ),
-    pub latest_account_tree_inclusion_proof: SmtInclusionProof<F>,
+    pub latest_account_tree_inclusion_proof: MerkleProof<F, H, usize>,
     pub assets: Vec<Asset<F>>,
     pub nonce: H::Hash,
 }

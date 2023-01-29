@@ -500,10 +500,10 @@ mod tests {
     };
 
     use crate::{
-        merkle_tree::tree::get_merkle_root,
-        sparse_merkle_tree::goldilocks_poseidon::{
-            NodeDataMemory, PoseidonSparseMerkleTree, RootDataTmp,
-        },
+        merkle_tree::{sparse_merkle_tree::SparseMerkleTreeMemory, tree::get_merkle_root},
+        // sparse_merkle_tree::goldilocks_poseidon::{
+        //     NodeDataMemory, PoseidonSparseMerkleTree, RootDataTmp,
+        // },
         transaction::{
             asset::TokenKind,
             gadgets::purge::{
@@ -512,7 +512,7 @@ mod tests {
             },
             tree::{tx_diff::TxDiffTree, user_asset::UserAssetTree},
         },
-        utils::hash::GoldilocksHashOut,
+        utils::hash::{GoldilocksHashOut, WrappedHashOut},
         zkdsa::account::{private_key_to_account, Address},
     };
 
@@ -522,6 +522,7 @@ mod tests {
         type C = PoseidonGoldilocksConfig;
         type H = <C as GenericConfig<D>>::InnerHasher;
         type F = <C as GenericConfig<D>>::F;
+        const LOG_MAX_N_USERS: usize = 3;
         const LOG_MAX_N_TXS: usize = 3;
         const LOG_MAX_N_CONTRACTS: usize = 3;
         const LOG_MAX_N_VARIABLES: usize = 3;
@@ -591,8 +592,8 @@ mod tests {
             amount: 1,
         };
 
-        let mut world_state_tree =
-            PoseidonSparseMerkleTree::new(NodeDataMemory::default(), RootDataTmp::default());
+        let mut world_state_tree: SparseMerkleTreeMemory<F, H, WrappedHashOut<F>> =
+            SparseMerkleTreeMemory::new(LOG_MAX_N_USERS);
 
         let mut user_asset_tree =
             UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
@@ -608,12 +609,10 @@ mod tests {
             .insert_assets(*merge_key2, vec![asset2])
             .unwrap();
 
-        world_state_tree
-            .set(
-                user_address.to_hash_out().into(),
-                user_asset_tree.get_root().unwrap().into(),
-            )
-            .unwrap();
+        world_state_tree.update(
+            &user_address.to_hash_out(),
+            user_asset_tree.get_root().unwrap().into(),
+        );
 
         let default_leaf_hash = H::hash_or_noop(&Transaction::default().encode());
 

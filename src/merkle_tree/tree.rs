@@ -11,7 +11,9 @@ pub trait KeyLike: Clone + Eq + std::fmt::Debug + Default + std::hash::Hash {
     fn to_bits(&self) -> Vec<bool>;
 }
 
-pub trait ValueLike: Copy + PartialEq + std::fmt::Debug + Default {}
+pub trait ValueLike: Copy + PartialEq + std::fmt::Debug + Default {
+    // fn hash<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(&self) -> HashOut<F>;
+}
 
 pub trait HashLike: Copy + PartialEq + std::fmt::Debug + Default {}
 

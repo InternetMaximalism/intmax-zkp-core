@@ -11,9 +11,9 @@ use super::utils::is_non_zero;
 
 #[derive(Copy, Clone, Debug)]
 pub struct TransactionTarget {
-    pub recipient: AddressTarget,
+    pub to: AddressTarget,
     pub contract_address: AddressTarget,
-    pub token_id: HashOutTarget,
+    pub variable_index: HashOutTarget,
     pub amount: Target,
 }
 
@@ -22,9 +22,9 @@ impl TransactionTarget {
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
         Self {
-            recipient: AddressTarget::new(builder),
+            to: AddressTarget::new(builder),
             contract_address: AddressTarget::new(builder),
-            token_id: builder.add_virtual_hash(),
+            variable_index: builder.add_virtual_hash(),
             amount: builder.add_virtual_target(),
         }
     }
@@ -33,25 +33,25 @@ impl TransactionTarget {
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
         Self {
-            recipient: AddressTarget::constant_default(builder),
+            to: AddressTarget::constant_default(builder),
             contract_address: AddressTarget::constant_default(builder),
-            token_id: builder.constant_hash(HashOut::ZERO),
+            variable_index: builder.constant_hash(HashOut::ZERO),
             amount: builder.constant(F::ZERO),
         }
     }
 
     pub fn set_witness<F: RichField>(&self, pw: &mut impl Witness<F>, value: Transaction<F>) {
-        self.recipient.set_witness(pw, value.to);
+        self.to.set_witness(pw, value.to);
         self.contract_address
             .set_witness(pw, value.kind.contract_address);
-        pw.set_hash_target(self.token_id, value.kind.variable_index.to_hash_out());
+        pw.set_hash_target(self.variable_index, value.kind.variable_index.to_hash_out());
         pw.set_target(self.amount, F::from_canonical_u64(value.amount));
     }
 
     pub fn encode(&self) -> Vec<Target> {
         [
-            vec![self.recipient.0, self.contract_address.0],
-            self.token_id.elements.to_vec(),
+            vec![self.to.0, self.contract_address.0],
+            self.variable_index.elements.to_vec(),
             vec![self.amount],
         ]
         .concat()
@@ -59,9 +59,9 @@ impl TransactionTarget {
 
     pub fn read(inputs: &mut core::slice::Iter<Target>) -> Self {
         Self {
-            recipient: AddressTarget::read(inputs),
+            to: AddressTarget::read(inputs),
             contract_address: AddressTarget::read(inputs),
-            token_id: HashOutTarget {
+            variable_index: HashOutTarget {
                 elements: [
                     *inputs.next().unwrap(),
                     *inputs.next().unwrap(),
@@ -90,7 +90,7 @@ pub fn assets_into_mess<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, con
         total_amount_t = builder.add(target.amount, total_amount_t);
 
         let asset_id_t =
-            calc_asset_id::<F, H, D>(builder, target.contract_address.0, target.token_id);
+            calc_asset_id::<F, H, D>(builder, target.contract_address.0, target.variable_index);
         for i in 0..3 {
             // mess_t.elements[i] += asset_id_t.elements[i] * amount_t
             mess_t.elements[i] =

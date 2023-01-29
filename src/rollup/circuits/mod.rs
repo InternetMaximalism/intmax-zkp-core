@@ -5,7 +5,7 @@ use plonky2::{
         poseidon::PoseidonHash,
     },
     iop::{
-        target::{BoolTarget, Target},
+        target::Target,
         witness::{PartialWitness, Witness},
     },
     plonk::{
@@ -56,7 +56,7 @@ use crate::{
             make_simple_signature_circuit, SimpleSignatureCircuit,
             SimpleSignatureProofWithPublicInputs, SimpleSignaturePublicInputsTarget,
         },
-        gadgets::{account::AddressTarget, signature::SimpleSignature},
+        gadgets::signature::SimpleSignature,
     },
 };
 
@@ -592,12 +592,6 @@ impl<F: RichField> BlockProductionPublicInputs<F> {
             public_inputs.push(F::from_bool(*is_valid));
         }
 
-        // for _ in (0..N_TXS).skip(self.address_list.len()) {
-        //     Address::default().write(&mut public_inputs);
-        //     // public_inputs.push(last_block_number);
-        //     public_inputs.push(F::from_bool(false));
-        // }
-
         for Transaction {
             to,
             kind:
@@ -613,13 +607,6 @@ impl<F: RichField> BlockProductionPublicInputs<F> {
             variable_index.write(&mut public_inputs);
             public_inputs.push(F::from_canonical_u64(*amount));
         }
-
-        // for _ in (0..N_DEPOSITS).skip(self.deposit_list.len()) {
-        //     Address::default().write(&mut public_inputs);
-        //     Address::default().write(&mut public_inputs);
-        //     VariableIndex::from(0u8).write(&mut public_inputs);
-        //     public_inputs.push(F::ZERO);
-        // }
 
         WrappedHashOut::from(self.old_account_tree_root).write(&mut public_inputs);
         WrappedHashOut::from(self.new_account_tree_root).write(&mut public_inputs);
@@ -727,7 +714,7 @@ impl BlockProductionPublicInputsTarget {
         let flatten_address_list_t = self
             .address_list
             .iter()
-            .flat_map(|v| vec![vec![v.sender_address.0], vec![v.is_valid.target]].concat())
+            .flat_map(|v| v.encode())
             .collect::<Vec<Target>>();
         let flatten_deposit_list_t = self
             .deposit_list
@@ -748,35 +735,19 @@ impl BlockProductionPublicInputsTarget {
         ]
         .concat()
 
-        // assert_eq!(public_inputs_t.len(), 5 * N_TXS + 13 * N_DEPOSITS + 28);
+        // assert_eq!(public_inputs_t.len(), 2 * n_txs + 7 * n_deposits + 28);
     }
 
     pub fn decode(public_inputs_t: &[Target], n_txs: usize, n_deposits: usize) -> Self {
-        assert_eq!(public_inputs_t.len(), 5 * n_txs + 13 * n_deposits + 28);
+        assert_eq!(public_inputs_t.len(), 2 * n_txs + 7 * n_deposits + 28);
 
         let mut public_inputs_t = public_inputs_t.iter();
         let address_list = (0..n_txs)
-            .map(|_| TransactionSenderWithValidityTarget {
-                sender_address: AddressTarget(*public_inputs_t.next().unwrap()),
-                // last_block_number: *public_inputs_t.next().unwrap(),
-                is_valid: BoolTarget::new_unsafe(*public_inputs_t.next().unwrap()),
-            })
+            .map(|_| TransactionSenderWithValidityTarget::read(&mut public_inputs_t))
             .collect::<Vec<_>>();
 
         let deposit_list = (0..n_deposits)
-            .map(|_| TransactionTarget {
-                recipient: AddressTarget::read(&mut public_inputs_t),
-                contract_address: AddressTarget::read(&mut public_inputs_t),
-                token_id: HashOutTarget {
-                    elements: [
-                        *public_inputs_t.next().unwrap(),
-                        *public_inputs_t.next().unwrap(),
-                        *public_inputs_t.next().unwrap(),
-                        *public_inputs_t.next().unwrap(),
-                    ],
-                },
-                amount: *public_inputs_t.next().unwrap(),
-            })
+            .map(|_| TransactionTarget::read(&mut public_inputs_t))
             .collect::<Vec<_>>();
 
         let old_account_tree_root = HashOutTarget {
@@ -865,23 +836,6 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
 where
     C::Hasher: AlgebraicHasher<F>,
 {
-    pub fn parse_public_inputs(
-        &self,
-        n_txs: usize,
-        n_deposits: usize,
-    ) -> BlockProductionPublicInputsTarget {
-        let public_inputs_t = self.data.prover_only.public_inputs.clone();
-
-        BlockProductionPublicInputsTarget::decode(&public_inputs_t, n_txs, n_deposits)
-    }
-
-    // pub fn prove(
-    //     &self,
-    //     _inputs: PartialWitness<F>,
-    // ) -> anyhow::Result<BlockProductionProofWithPublicInputs<F, C, D>> {
-    //     unimplemented!("use set_witness_and_prove instead");
-    // }
-
     pub fn set_witness_and_prove(
         &self,
         input: &BlockDetail<F, C, D>,

@@ -56,8 +56,23 @@ impl TransactionTarget {
         ]
         .concat()
     }
-}
 
+    pub fn read(inputs: &mut core::slice::Iter<Target>) -> Self {
+        Self {
+            recipient: AddressTarget::read(inputs),
+            contract_address: AddressTarget::read(inputs),
+            token_id: HashOutTarget {
+                elements: [
+                    *inputs.next().unwrap(),
+                    *inputs.next().unwrap(),
+                    *inputs.next().unwrap(),
+                    *inputs.next().unwrap(),
+                ],
+            },
+            amount: *inputs.next().unwrap(),
+        }
+    }
+}
 /// asset の組み合わせから一意に定まる hash を作成する.
 ///
 /// NOTICE: mess はもとの asset を難読化する目的で用いてはならない.

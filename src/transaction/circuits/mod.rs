@@ -259,12 +259,12 @@ impl<F: RichField> MergeAndPurgeTransitionPublicInputs<F> {
 
     pub fn decode(public_inputs: &[F]) -> Self {
         assert_eq!(public_inputs.len(), 21);
-        let old_user_asset_root = HashOut::from_partial(&public_inputs[0..4]).into();
-        let middle_user_asset_root = HashOut::from_partial(&public_inputs[4..8]).into();
-        let new_user_asset_root = HashOut::from_partial(&public_inputs[8..12]).into();
-        let diff_root = HashOut::from_partial(&public_inputs[12..16]).into();
-        let sender_address = Address(public_inputs[16]);
-        let tx_hash = HashOut::from_partial(&public_inputs[17..21]).into();
+        let old_user_asset_root = HashOut::try_from(&public_inputs[0..4]).unwrap().into();
+        let middle_user_asset_root = HashOut::try_from(&public_inputs[4..8]).unwrap().into();
+        let new_user_asset_root = HashOut::try_from(&public_inputs[8..12]).unwrap().into();
+        let diff_root = HashOut::try_from(&public_inputs[12..16]).unwrap().into();
+        let sender_address = Address::try_from(&public_inputs[16..17]).unwrap();
+        let tx_hash = HashOut::try_from(&public_inputs[17..21]).unwrap().into();
 
         Self {
             old_user_asset_root,
@@ -355,22 +355,12 @@ impl MergeAndPurgeTransitionPublicInputsTarget {
 
     pub fn decode(public_inputs_t: &[Target]) -> Self {
         assert_eq!(public_inputs_t.len(), 21);
-        let old_user_asset_root = HashOutTarget {
-            elements: public_inputs_t[0..4].try_into().unwrap(),
-        };
-        let middle_user_asset_root = HashOutTarget {
-            elements: public_inputs_t[4..8].try_into().unwrap(),
-        };
-        let new_user_asset_root = HashOutTarget {
-            elements: public_inputs_t[8..12].try_into().unwrap(),
-        };
-        let diff_root = HashOutTarget {
-            elements: public_inputs_t[12..16].try_into().unwrap(),
-        };
-        let sender_address = AddressTarget(public_inputs_t[16]);
-        let tx_hash = HashOutTarget {
-            elements: public_inputs_t[17..21].try_into().unwrap(),
-        };
+        let old_user_asset_root = HashOutTarget::try_from(&public_inputs_t[0..4]).unwrap();
+        let middle_user_asset_root = HashOutTarget::try_from(&public_inputs_t[4..8]).unwrap();
+        let new_user_asset_root = HashOutTarget::try_from(&public_inputs_t[8..12]).unwrap();
+        let diff_root = HashOutTarget::try_from(&public_inputs_t[12..16]).unwrap();
+        let sender_address = AddressTarget::try_from(&public_inputs_t[16..17]).unwrap();
+        let tx_hash = HashOutTarget::try_from(&public_inputs_t[17..21]).unwrap();
 
         MergeAndPurgeTransitionPublicInputsTarget {
             sender_address,
@@ -412,12 +402,6 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
 where
     C::Hasher: AlgebraicHasher<F>,
 {
-    pub fn parse_public_inputs(&self) -> MergeAndPurgeTransitionPublicInputsTarget {
-        let public_inputs_t = self.data.prover_only.public_inputs.clone();
-
-        MergeAndPurgeTransitionPublicInputsTarget::decode(&public_inputs_t)
-    }
-
     pub fn prove(
         &self,
         inputs: PartialWitness<F>,

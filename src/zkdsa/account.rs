@@ -115,6 +115,15 @@ impl<F: Field> Address<F> {
     }
 }
 
+impl<F: Field> TryFrom<&[F]> for Address<F> {
+    type Error = anyhow::Error;
+
+    fn try_from(elements: &[F]) -> Result<Self, Self::Error> {
+        anyhow::ensure!(elements.len() == 1);
+        Ok(Self(elements[0]))
+    }
+}
+
 pub fn private_key_to_public_key<F: RichField>(private_key: &SecretKey<F>) -> PublicKey<F> {
     PoseidonHash::hash_no_pad(private_key)
 }
@@ -243,5 +252,12 @@ mod tests {
         assert_eq!(encoded_value.len(), 20); // include 0x-prefix and quotation marks
         let decoded_value: Address<GoldilocksField> = serde_json::from_str(&encoded_value).unwrap();
         assert_eq!(decoded_value, value);
+    }
+
+    #[test]
+    fn test_address_from_vec() {
+        let flat_address = [GoldilocksField(12487169361498783628)];
+        let new_address: Address<GoldilocksField> = Address::try_from(&flat_address[..]).unwrap();
+        assert_eq!(new_address, Address(GoldilocksField(12487169361498783628)));
     }
 }

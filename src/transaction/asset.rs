@@ -51,6 +51,16 @@ impl<F: RichField> VariableIndex<F> {
     }
 }
 
+impl<F: RichField> TryFrom<&[F]> for VariableIndex<F> {
+    type Error = anyhow::Error;
+
+    fn try_from(elements: &[F]) -> Result<Self, Self::Error> {
+        anyhow::ensure!(elements.len() == 4);
+
+        Ok(Self::read(&mut elements.to_vec().iter()))
+    }
+}
+
 impl<F: RichField> std::fmt::Display for VariableIndex<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = serde_json::to_string(self)
@@ -83,12 +93,12 @@ pub struct Asset<F: RichField> {
 
 impl<F: RichField> Asset<F> {
     pub fn encode(&self) -> Vec<F> {
-        [
-            vec![self.kind.contract_address.0],
-            self.kind.variable_index.to_hash_out().elements.to_vec(),
-            vec![F::from_canonical_u64(self.amount)],
-        ]
-        .concat()
+        let mut result = vec![];
+        self.kind.contract_address.write(&mut result);
+        self.kind.variable_index.write(&mut result);
+        result.push(F::from_canonical_u64(self.amount));
+
+        result
     }
 }
 
@@ -103,12 +113,13 @@ pub struct Transaction<F: RichField> {
 
 impl<F: RichField> Transaction<F> {
     pub fn encode(&self) -> Vec<F> {
-        [
-            vec![self.to.0, self.kind.contract_address.0],
-            self.kind.variable_index.to_hash_out().elements.to_vec(),
-            vec![F::from_canonical_u64(self.amount)],
-        ]
-        .concat()
+        let mut result = vec![];
+        self.to.write(&mut result);
+        self.kind.contract_address.write(&mut result);
+        self.kind.variable_index.write(&mut result);
+        result.push(F::from_canonical_u64(self.amount));
+
+        result
     }
 }
 
@@ -221,7 +232,7 @@ pub struct TokenKind<F: RichField> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        transaction::asset::{FromStr, TokenKind, Transaction, VariableIndex},
+        transaction::asset::{Asset, FromStr, TokenKind, Transaction, VariableIndex},
         zkdsa::account::Address,
     };
 
@@ -264,6 +275,20 @@ mod tests {
     }
 
     #[test]
+    fn test_variable_index_from_vec() {
+        use plonky2::{
+            field::{goldilocks_field::GoldilocksField, types::Sample},
+            hash::hash_types::HashOut,
+        };
+
+        let variable_index = VariableIndex::from_hash_out(HashOut::<GoldilocksField>::rand());
+        let flat_variable_index = variable_index.to_hash_out().elements.to_vec();
+        let new_variable_index: VariableIndex<GoldilocksField> =
+            VariableIndex::try_from(&flat_variable_index[..]).unwrap();
+        assert_eq!(new_variable_index, variable_index);
+    }
+
+    #[test]
     fn test_serde_owned_asset() {
         use plonky2::field::goldilocks_field::GoldilocksField;
 
@@ -286,5 +311,53 @@ mod tests {
         let decoded_owned_asset: Transaction<GoldilocksField> =
             Transaction::from_str(&encoded_owned_asset).unwrap();
         assert_eq!(decoded_owned_asset, owned_asset);
+    }
+
+    #[test]
+    fn test_encode_asset() {
+        use plonky2::field::goldilocks_field::GoldilocksField;
+
+        let asset = Asset {
+            kind: TokenKind {
+                contract_address: Address(GoldilocksField(5286999446705332053u64)),
+                variable_index: 320841071u32.into(),
+            },
+            amount: 1003380560037325279,
+        };
+        let encoded_asset = asset.encode();
+        let expected_vec = vec![
+            GoldilocksField(5286999446705332053),
+            GoldilocksField(320841071),
+            GoldilocksField(0),
+            GoldilocksField(0),
+            GoldilocksField(0),
+            GoldilocksField(1003380560037325279),
+        ];
+        assert_eq!(encoded_asset, expected_vec);
+    }
+
+    #[test]
+    fn test_encode_transaction() {
+        use plonky2::field::goldilocks_field::GoldilocksField;
+
+        let transaction = Transaction {
+            to: Address(GoldilocksField(17953406509064499258)),
+            kind: TokenKind {
+                contract_address: Address(GoldilocksField(5286999446705332053u64)),
+                variable_index: 320841071u32.into(),
+            },
+            amount: 1003380560037325279,
+        };
+        let encoded_transaction = transaction.encode();
+        let expected_vec = vec![
+            GoldilocksField(17953406509064499258),
+            GoldilocksField(5286999446705332053),
+            GoldilocksField(320841071),
+            GoldilocksField(0),
+            GoldilocksField(0),
+            GoldilocksField(0),
+            GoldilocksField(1003380560037325279),
+        ];
+        assert_eq!(encoded_transaction, expected_vec);
     }
 }

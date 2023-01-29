@@ -283,35 +283,9 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     }
 }
 
-// pub fn parse_simple_signature_public_inputs(
-//     public_inputs_t: &[Target],
-// ) -> SimpleSignaturePublicInputsTarget {
-//     let message = HashOutTarget {
-//         elements: public_inputs_t[0..4].try_into().unwrap(),
-//     };
-//     let public_key = HashOutTarget {
-//         elements: public_inputs_t[4..8].try_into().unwrap(),
-//     };
-//     let signature = HashOutTarget {
-//         elements: public_inputs_t[8..12].try_into().unwrap(),
-//     };
-
-//     SimpleSignaturePublicInputsTarget {
-//         message,
-//         public_key,
-//         signature,
-//     }
-// }
-
 impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     SimpleSignatureCircuit<F, C, D>
 {
-    pub fn parse_public_inputs(&self, message_len: usize) -> SimpleSignaturePublicInputsTarget {
-        let public_inputs_t = self.data.prover_only.public_inputs.clone();
-
-        SimpleSignaturePublicInputsTarget::decode(&public_inputs_t, message_len)
-    }
-
     pub fn prove(
         &self,
         inputs: PartialWitness<F>,

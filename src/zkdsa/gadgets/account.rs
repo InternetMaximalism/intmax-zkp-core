@@ -32,7 +32,16 @@ impl AddressTarget {
         pw.set_target(self.0, value.0);
     }
 
-    pub fn read(inputs_t: &mut core::slice::Iter<Target>) -> Self {
-        Self(*inputs_t.next().unwrap())
+    pub fn read(inputs: &mut core::slice::Iter<Target>) -> Self {
+        Self(*inputs.next().unwrap())
+    }
+}
+
+impl TryFrom<&[Target]> for AddressTarget {
+    type Error = anyhow::Error;
+
+    fn try_from(elements: &[Target]) -> Result<Self, Self::Error> {
+        anyhow::ensure!(elements.len() == 1);
+        Ok(Self(elements[0]))
     }
 }

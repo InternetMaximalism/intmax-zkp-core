@@ -18,7 +18,7 @@ use crate::{
     },
     transaction::{
         asset::{ContributedAsset, TokenKind},
-        block_header::{get_block_hash, BlockHeader},
+        block_header::BlockHeader,
         circuits::{MergeAndPurgeTransition, MergeAndPurgeTransitionPublicInputs},
         gadgets::{
             deposit_info::DepositInfo,
@@ -114,7 +114,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         rollup_constants.log_max_n_contracts + rollup_constants.log_max_n_variables,
     );
 
-    let mut sender1_tx_diff_tree = TxDiffTree::<_, C::InnerHasher>::new(
+    let mut sender1_tx_diff_tree = TxDiffTree::<_, C::InnerHasher>::make_constraints(
         rollup_constants.log_n_recipients,
         rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
     );
@@ -232,7 +232,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         rollup_constants.log_max_n_contracts + rollup_constants.log_max_n_variables,
     );
 
-    let mut sender2_tx_diff_tree = TxDiffTree::<_, C::InnerHasher>::new(
+    let mut sender2_tx_diff_tree = TxDiffTree::<_, C::InnerHasher>::make_constraints(
         rollup_constants.log_n_recipients,
         rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
     );
@@ -273,7 +273,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
 
     let deposit_list = vec![asset1, asset2];
 
-    let mut block0_deposit_tree = TxDiffTree::<_, C::InnerHasher>::new(
+    let mut block0_deposit_tree = TxDiffTree::<_, C::InnerHasher>::make_constraints(
         rollup_constants.log_n_recipients,
         rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
     );
@@ -311,7 +311,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
     prev_block_header.proposed_world_state_digest = old_world_state_root;
     prev_block_header.approved_world_state_digest = old_world_state_root;
 
-    let prev_block_hash = get_block_hash(&prev_block_header);
+    let prev_block_hash = prev_block_header.get_block_hash();
 
     let mut block_headers: Vec<HashOut<GoldilocksField>> =
         vec![HashOut::ZERO; prev_block_header.block_number as usize];
@@ -570,7 +570,7 @@ pub fn make_sample_circuit_inputs<C: GenericConfig<D, F = GoldilocksField>, cons
         LOG_MAX_N_BLOCKS,
     );
 
-    let mut tx_diff_tree = TxDiffTree::<C::F, C::InnerHasher>::new(
+    let mut tx_diff_tree = TxDiffTree::<C::F, C::InnerHasher>::make_constraints(
         rollup_constants.log_n_recipients,
         rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
     );

@@ -10,7 +10,7 @@ use crate::{
         sparse_merkle_tree::{MerklePath, Node},
         tree::{le_bytes_to_bits, KeyLike, MerkleProof},
     },
-    transaction::asset::{encode_contributed_asset, ContributedAsset, TokenKind, VariableIndex},
+    transaction::asset::{ContributedAsset, TokenKind, VariableIndex},
     zkdsa::account::Address,
 };
 
@@ -150,7 +150,7 @@ impl<F: RichField, H: Hasher<F>> UserAssetTree<F, H> {
     ) -> anyhow::Result<()> {
         for (i, asset) in assets.iter().enumerate() {
             // XXX: `merge_key` does not include in leaf data
-            let new_leaf_data = encode_contributed_asset(asset);
+            let new_leaf_data = asset.encode();
 
             self.insert(merge_key, i, new_leaf_data);
         }
@@ -261,7 +261,7 @@ impl<F: RichField, H: Hasher<F>> UserAssetTree<F, H> {
                 if let (node_path, Node::Leaf { data }) = v {
                     node_path.starts_with(&merge_key_path)
                         && user_address.to_hash_out().elements == data[0..4]
-                        && token_kind.contract_address.to_hash_out().elements == data[4..8]
+                        && token_kind.contract_address.0.elements == data[4..8]
                         && token_kind.variable_index.to_hash_out().elements == data[8..12]
                 } else {
                     false
@@ -310,160 +310,166 @@ impl<F: RichField, H: Hasher<F>> UserAssetTree<F, H> {
     }
 }
 
-#[test]
-fn test_prove_user_asset_tree() {
-    use plonky2::{
-        field::types::Field,
-        plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
-    };
+#[cfg(test)]
+mod tests {
+    use crate::transaction::tree::user_asset::HashOut;
+    use crate::transaction::tree::user_asset::UserAssetTree;
 
-    use crate::{
-        merkle_tree::tree::get_merkle_root,
-        transaction::asset::{ContributedAsset, TokenKind, VariableIndex},
-        utils::hash::GoldilocksHashOut,
-        zkdsa::account::{private_key_to_account, Address},
-    };
+    #[test]
+    fn test_prove_user_asset_tree() {
+        use plonky2::{
+            field::types::Field,
+            plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
+        };
 
-    type C = PoseidonGoldilocksConfig;
-    type H = <C as GenericConfig<D>>::InnerHasher;
-    type F = <C as GenericConfig<D>>::F;
-    const D: usize = 2;
+        use crate::{
+            merkle_tree::tree::get_merkle_root,
+            transaction::asset::{ContributedAsset, TokenKind, VariableIndex},
+            utils::hash::GoldilocksHashOut,
+            zkdsa::account::{private_key_to_account, Address},
+        };
 
-    const LOG_MAX_N_TXS: usize = 3;
-    const LOG_MAX_N_CONTRACTS: usize = 3;
-    const LOG_MAX_N_VARIABLES: usize = 3;
+        type C = PoseidonGoldilocksConfig;
+        type H = <C as GenericConfig<D>>::InnerHasher;
+        type F = <C as GenericConfig<D>>::F;
+        const D: usize = 2;
 
-    let private_key = HashOut {
-        elements: [
-            F::from_canonical_u64(15657143458229430356),
-            F::from_canonical_u64(6012455030006979790),
-            F::from_canonical_u64(4280058849535143691),
-            F::from_canonical_u64(5153662694263190591),
-        ],
-    };
-    let user_account = private_key_to_account(private_key);
-    let user_address = user_account.address;
+        const LOG_MAX_N_TXS: usize = 3;
+        const LOG_MAX_N_CONTRACTS: usize = 3;
+        const LOG_MAX_N_VARIABLES: usize = 3;
 
-    let asset1 = ContributedAsset {
-        receiver_address: user_address,
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 2053,
-    };
-    let asset2 = ContributedAsset {
-        receiver_address: user_address,
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 1111,
-    };
+        let private_key = HashOut {
+            elements: [
+                F::from_canonical_u64(15657143458229430356),
+                F::from_canonical_u64(6012455030006979790),
+                F::from_canonical_u64(4280058849535143691),
+                F::from_canonical_u64(5153662694263190591),
+            ],
+        };
+        let user_account = private_key_to_account(private_key);
+        let user_address = user_account.address;
 
-    let mut user_asset_tree =
-        UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
+        let asset1 = ContributedAsset {
+            receiver_address: user_address,
+            kind: TokenKind {
+                contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+                variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+            },
+            amount: 2053,
+        };
+        let asset2 = ContributedAsset {
+            receiver_address: user_address,
+            kind: TokenKind {
+                contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+                variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+            },
+            amount: 1111,
+        };
 
-    let merge_key = HashOut {
-        elements: [
-            F::from_canonical_u64(10129591887907959457),
-            F::from_canonical_u64(12952496368791909874),
-            F::from_canonical_u64(5623826813413271961),
-            F::from_canonical_u64(13962620032426109816),
-        ],
-    };
+        let mut user_asset_tree =
+            UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
 
-    user_asset_tree
-        .insert_assets(merge_key, vec![asset1, asset2])
-        .unwrap();
+        let merge_key = HashOut {
+            elements: [
+                F::from_canonical_u64(10129591887907959457),
+                F::from_canonical_u64(12952496368791909874),
+                F::from_canonical_u64(5623826813413271961),
+                F::from_canonical_u64(13962620032426109816),
+            ],
+        };
 
-    // let proof = deposit_tree.prove_asset_root(&user_address).unwrap();
-    let proof = user_asset_tree
-        .prove_leaf_node(&merge_key, &user_address, &asset2.kind)
-        .unwrap();
-    let root = get_merkle_root::<_, H, _>(&proof.index, proof.value, &proof.siblings);
-    assert_eq!(root, proof.root);
-}
+        user_asset_tree
+            .insert_assets(merge_key, vec![asset1, asset2])
+            .unwrap();
 
-#[test]
-fn test_user_asset_tree_by_plonky2() {
-    use plonky2::{
-        field::types::Field,
-        plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
-    };
+        // let proof = deposit_tree.prove_asset_root(&user_address).unwrap();
+        let proof = user_asset_tree
+            .prove_leaf_node(&merge_key, &user_address, &asset2.kind)
+            .unwrap();
+        let root = get_merkle_root::<_, H, _>(&proof.index, proof.value, &proof.siblings);
+        assert_eq!(root, proof.root);
+    }
 
-    use crate::{
-        merkle_tree::tree::get_merkle_root,
-        transaction::{
-            asset::{ContributedAsset, TokenKind, VariableIndex},
-            tree::user_asset::UserAssetTree,
-        },
-        utils::hash::GoldilocksHashOut,
-        zkdsa::account::{private_key_to_account, Address},
-    };
+    #[test]
+    fn test_user_asset_tree_by_plonky2() {
+        use plonky2::{
+            field::types::Field,
+            plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
+        };
 
-    type C = PoseidonGoldilocksConfig;
-    type H = <C as GenericConfig<D>>::InnerHasher;
-    type F = <C as GenericConfig<D>>::F;
-    const D: usize = 2;
+        use crate::{
+            merkle_tree::tree::get_merkle_root,
+            transaction::{
+                asset::{ContributedAsset, TokenKind, VariableIndex},
+                tree::user_asset::UserAssetTree,
+            },
+            utils::hash::GoldilocksHashOut,
+            zkdsa::account::{private_key_to_account, Address},
+        };
 
-    const LOG_MAX_N_TXS: usize = 3;
-    const LOG_MAX_N_CONTRACTS: usize = 3;
-    const LOG_MAX_N_VARIABLES: usize = 3;
+        type C = PoseidonGoldilocksConfig;
+        type H = <C as GenericConfig<D>>::InnerHasher;
+        type F = <C as GenericConfig<D>>::F;
+        const D: usize = 2;
 
-    let private_key = HashOut {
-        elements: [
-            F::from_canonical_u64(15657143458229430356),
-            F::from_canonical_u64(6012455030006979790),
-            F::from_canonical_u64(4280058849535143691),
-            F::from_canonical_u64(5153662694263190591),
-        ],
-    };
-    let user_account = private_key_to_account(private_key);
-    let user_address = user_account.address;
+        const LOG_MAX_N_TXS: usize = 3;
+        const LOG_MAX_N_CONTRACTS: usize = 3;
+        const LOG_MAX_N_VARIABLES: usize = 3;
 
-    let asset1 = ContributedAsset {
-        receiver_address: user_address,
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 2053,
-    };
-    let asset2 = ContributedAsset {
-        receiver_address: user_address,
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 1111,
-    };
+        let private_key = HashOut {
+            elements: [
+                F::from_canonical_u64(15657143458229430356),
+                F::from_canonical_u64(6012455030006979790),
+                F::from_canonical_u64(4280058849535143691),
+                F::from_canonical_u64(5153662694263190591),
+            ],
+        };
+        let user_account = private_key_to_account(private_key);
+        let user_address = user_account.address;
 
-    let mut user_asset_tree =
-        UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
+        let asset1 = ContributedAsset {
+            receiver_address: user_address,
+            kind: TokenKind {
+                contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+                variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+            },
+            amount: 2053,
+        };
+        let asset2 = ContributedAsset {
+            receiver_address: user_address,
+            kind: TokenKind {
+                contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+                variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+            },
+            amount: 1111,
+        };
 
-    let deposit_merge_key = HashOut {
-        elements: [
-            F::from_canonical_u64(10129591887907959457),
-            F::from_canonical_u64(12952496368791909874),
-            F::from_canonical_u64(5623826813413271961),
-            F::from_canonical_u64(13962620032426109816),
-        ],
-    };
+        let mut user_asset_tree =
+            UserAssetTree::<F, H>::new(LOG_MAX_N_TXS, LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
 
-    // user asset tree に deposit を merge する.
-    user_asset_tree
-        .insert_assets(deposit_merge_key, vec![asset1, asset2])
-        .unwrap();
+        let deposit_merge_key = HashOut {
+            elements: [
+                F::from_canonical_u64(10129591887907959457),
+                F::from_canonical_u64(12952496368791909874),
+                F::from_canonical_u64(5623826813413271961),
+                F::from_canonical_u64(13962620032426109816),
+            ],
+        };
 
-    let merge_inclusion_proof = user_asset_tree
-        .prove_asset_root(&deposit_merge_key)
-        .unwrap();
+        // user asset tree に deposit を merge する.
+        user_asset_tree
+            .insert_assets(deposit_merge_key, vec![asset1, asset2])
+            .unwrap();
 
-    let root = get_merkle_root::<F, H, _>(
-        &merge_inclusion_proof.index,
-        merge_inclusion_proof.value,
-        &merge_inclusion_proof.siblings,
-    );
-    assert_eq!(merge_inclusion_proof.root, root);
+        let merge_inclusion_proof = user_asset_tree
+            .prove_asset_root(&deposit_merge_key)
+            .unwrap();
+
+        let root = get_merkle_root::<F, H, _>(
+            &merge_inclusion_proof.index,
+            merge_inclusion_proof.value,
+            &merge_inclusion_proof.siblings,
+        );
+        assert_eq!(merge_inclusion_proof.root, root);
+    }
 }

@@ -108,7 +108,7 @@ impl MergeAndPurgeTransitionTarget {
             );
 
         let purge_proof_target: PurgeTransitionTarget =
-            PurgeTransitionTarget::add_virtual_to::<F, H, D>(
+            PurgeTransitionTarget::make_constraints::<F, H, D>(
                 builder,
                 rollup_constants.log_max_n_txs,
                 rollup_constants.log_max_n_contracts + rollup_constants.log_max_n_variables,
@@ -245,40 +245,6 @@ impl<F: RichField> Default for MergeAndPurgeTransitionPublicInputs<F> {
             tx_hash: tx_hash.into(),
         }
     }
-}
-
-#[test]
-fn test_default_user_transaction() {
-    use plonky2::field::{goldilocks_field::GoldilocksField, types::Field};
-
-    type F = GoldilocksField;
-
-    let default_user_transaction = MergeAndPurgeTransitionPublicInputs::<F>::default();
-
-    let tx_hash = WrappedHashOut::from(HashOut {
-        elements: [
-            F::from_canonical_u64(4330397376401421145),
-            F::from_canonical_u64(14124799381142128323),
-            F::from_canonical_u64(8742572140681234676),
-            F::from_canonical_u64(14345658006221440202),
-        ],
-    });
-
-    assert_eq!(default_user_transaction.sender_address, Default::default());
-    assert_eq!(
-        default_user_transaction.old_user_asset_root,
-        Default::default()
-    );
-    assert_eq!(
-        default_user_transaction.middle_user_asset_root,
-        Default::default()
-    );
-    assert_eq!(
-        default_user_transaction.new_user_asset_root,
-        Default::default()
-    );
-    assert_eq!(default_user_transaction.diff_root, Default::default());
-    assert_eq!(default_user_transaction.tx_hash, tx_hash);
 }
 
 impl<F: RichField> MergeAndPurgeTransitionPublicInputs<F> {
@@ -500,12 +466,6 @@ pub fn prove_user_transaction<
 >(
     rollup_constants: RollupConstants,
     witness: &MergeAndPurgeTransition<F, C::InnerHasher>,
-    // sender_address: Address<F>,
-    // merge_witnesses: &[MergeProof<F, C::Hasher, HashOut<F>>],
-    // purge_input_witnesses: &[PurgeInputProcessProof<F, C::Hasher, HashOut<F>>],
-    // purge_output_witnesses: &[PurgeOutputProcessProof<F, C::Hasher, HashOut<F>>],
-    // nonce: HashOut<F>,
-    // old_user_asset_root: HashOut<F>,
 ) -> anyhow::Result<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>>
 where
     C::Hasher: AlgebraicHasher<F>,
@@ -534,45 +494,93 @@ where
     Ok(user_tx_proof)
 }
 
-#[test]
-fn test_prove_user_transaction() {
-    use plonky2::plonk::config::PoseidonGoldilocksConfig;
+#[cfg(test)]
+mod tests {
+    use plonky2::{hash::hash_types::HashOut, plonk::config::GenericConfig};
 
-    const LOG_MAX_N_USERS: usize = 16;
-    const LOG_MAX_N_TXS: usize = 24;
-    const LOG_MAX_N_CONTRACTS: usize = LOG_MAX_N_USERS;
-    const LOG_MAX_N_VARIABLES: usize = 8;
-    const LOG_N_TXS: usize = 4;
-    const LOG_N_RECIPIENTS: usize = LOG_MAX_N_USERS;
-    const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
-    const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
-    const N_REGISTRATIONS: usize = 16;
-    const N_DEPOSITS: usize = 16;
-    const N_MERGES: usize = 16;
-    const N_DIFFS: usize = 16;
-    const N_BLOCKS: usize = 4;
-
-    const D: usize = 2;
-    type C = PoseidonGoldilocksConfig;
-    type F = <C as GenericConfig<D>>::F;
-    let rollup_constants = RollupConstants {
-        log_max_n_users: LOG_MAX_N_USERS,
-        log_max_n_txs: LOG_MAX_N_TXS,
-        log_max_n_contracts: LOG_MAX_N_CONTRACTS,
-        log_max_n_variables: LOG_MAX_N_VARIABLES,
-        log_n_txs: LOG_N_TXS,
-        log_n_recipients: LOG_N_RECIPIENTS,
-        log_n_contracts: LOG_N_CONTRACTS,
-        log_n_variables: LOG_N_VARIABLES,
-        n_registrations: N_REGISTRATIONS,
-        n_diffs: N_DIFFS,
-        n_merges: N_MERGES,
-        n_deposits: N_DEPOSITS,
-        n_blocks: N_BLOCKS,
+    use crate::{
+        config::RollupConstants,
+        transaction::circuits::{
+            prove_user_transaction, MergeAndPurgeTransition, MergeAndPurgeTransitionPublicInputs,
+        },
+        utils::hash::WrappedHashOut,
     };
 
-    let merge_and_purge_transition = MergeAndPurgeTransition::default();
+    #[test]
+    fn test_prove_user_transaction() {
+        use plonky2::plonk::config::PoseidonGoldilocksConfig;
 
-    let _default_user_transaction_proof =
-        prove_user_transaction::<F, C, D>(rollup_constants, &merge_and_purge_transition).unwrap();
+        const LOG_MAX_N_USERS: usize = 16;
+        const LOG_MAX_N_TXS: usize = 24;
+        const LOG_MAX_N_CONTRACTS: usize = LOG_MAX_N_USERS;
+        const LOG_MAX_N_VARIABLES: usize = 8;
+        const LOG_N_TXS: usize = 4;
+        const LOG_N_RECIPIENTS: usize = LOG_MAX_N_USERS;
+        const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
+        const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
+        const N_REGISTRATIONS: usize = 16;
+        const N_DEPOSITS: usize = 16;
+        const N_MERGES: usize = 16;
+        const N_DIFFS: usize = 16;
+        const N_BLOCKS: usize = 4;
+
+        const D: usize = 2;
+        type C = PoseidonGoldilocksConfig;
+        type F = <C as GenericConfig<D>>::F;
+        let rollup_constants: RollupConstants = RollupConstants {
+            log_max_n_users: LOG_MAX_N_USERS,
+            log_max_n_txs: LOG_MAX_N_TXS,
+            log_max_n_contracts: LOG_MAX_N_CONTRACTS,
+            log_max_n_variables: LOG_MAX_N_VARIABLES,
+            log_n_txs: LOG_N_TXS,
+            log_n_recipients: LOG_N_RECIPIENTS,
+            log_n_contracts: LOG_N_CONTRACTS,
+            log_n_variables: LOG_N_VARIABLES,
+            n_registrations: N_REGISTRATIONS,
+            n_diffs: N_DIFFS,
+            n_merges: N_MERGES,
+            n_deposits: N_DEPOSITS,
+            n_blocks: N_BLOCKS,
+        };
+
+        let merge_and_purge_transition = MergeAndPurgeTransition::default();
+
+        let _default_user_transaction_proof =
+            prove_user_transaction::<F, C, D>(rollup_constants, &merge_and_purge_transition)
+                .unwrap();
+    }
+
+    #[test]
+    fn test_default_user_transaction() {
+        use plonky2::field::{goldilocks_field::GoldilocksField, types::Field};
+
+        type F = GoldilocksField;
+
+        let default_user_transaction = MergeAndPurgeTransitionPublicInputs::<F>::default();
+
+        let tx_hash = WrappedHashOut::from(HashOut {
+            elements: [
+                F::from_canonical_u64(4330397376401421145),
+                F::from_canonical_u64(14124799381142128323),
+                F::from_canonical_u64(8742572140681234676),
+                F::from_canonical_u64(14345658006221440202),
+            ],
+        });
+
+        assert_eq!(default_user_transaction.sender_address, Default::default());
+        assert_eq!(
+            default_user_transaction.old_user_asset_root,
+            Default::default()
+        );
+        assert_eq!(
+            default_user_transaction.middle_user_asset_root,
+            Default::default()
+        );
+        assert_eq!(
+            default_user_transaction.new_user_asset_root,
+            Default::default()
+        );
+        assert_eq!(default_user_transaction.diff_root, Default::default());
+        assert_eq!(default_user_transaction.tx_hash, tx_hash);
+    }
 }

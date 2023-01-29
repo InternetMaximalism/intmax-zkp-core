@@ -116,10 +116,10 @@ impl ProposalBlockProductionTarget {
                 w.fnc,
                 w.old_value,
                 w.new_value,
-                u.old_user_asset_root, // XXX: middle?
+                u.old_user_asset_root,
                 u.new_user_asset_root,
             )
-            .unwrap(); // XXX
+            .unwrap();
         }
 
         assert!(world_state_process_proofs.len() <= self.world_state_process_transitions.len());
@@ -322,14 +322,6 @@ mod tests {
                 &examples[0].world_state_process_proofs,
                 &examples[0].approval_block.user_transactions,
                 examples[0].old_world_state_root.into(),
-                // &examples.world_state_process_proofs,
-                // &examples.user_transactions,
-                // examples
-                //     .world_state_process_proofs
-                //     .first()
-                //     .unwrap()
-                //     .old_root
-                //     .into(),
             );
 
         println!("start proving: block_proof");

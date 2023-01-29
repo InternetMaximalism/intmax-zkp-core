@@ -10,7 +10,7 @@ use crate::{
         sparse_merkle_tree::{MerklePath, Node},
         tree::{le_bytes_to_bits, MerkleProof},
     },
-    transaction::asset::{encode_contributed_asset, ContributedAsset, TokenKind},
+    transaction::asset::{ContributedAsset, TokenKind},
     zkdsa::account::Address,
 };
 
@@ -24,7 +24,7 @@ pub struct TxDiffTree<F: RichField, H: Hasher<F>> {
 }
 
 impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
-    pub fn new(log_n_recipients: usize, log_n_kinds: usize) -> Self {
+    pub fn make_constraints(log_n_recipients: usize, log_n_kinds: usize) -> Self {
         let mut zero_hashes = vec![];
 
         let zero = vec![F::ZERO; 13];
@@ -138,7 +138,7 @@ impl<F: RichField, H: Hasher<F>> TxDiffTree<F, H> {
         let mut path = recipient_path;
         path.append(&mut kind_path);
 
-        let leaf_data = encode_contributed_asset(&asset);
+        let leaf_data = asset.encode();
         debug_assert_eq!(leaf_data.len(), 13);
         self.nodes
             .insert(path.clone(), Node::Leaf { data: leaf_data }); // path: BE
@@ -249,163 +249,173 @@ fn le_bits_to_usize(bits: &[bool]) -> usize {
     value
 }
 
-#[test]
-fn test_prove_tx_diff_tree() {
-    use plonky2::{
-        field::types::Field,
-        hash::hash_types::HashOut,
-        plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
-    };
+#[cfg(test)]
+mod tests {
+    use crate::plonky2::plonk::config::Hasher;
+    use crate::transaction::tree::tx_diff::ContributedAsset;
 
-    use crate::{
-        merkle_tree::tree::get_merkle_root,
-        transaction::{
-            asset::{TokenKind, VariableIndex},
-            tree::tx_diff::TxDiffTree,
-        },
-        utils::hash::GoldilocksHashOut,
-        zkdsa::account::{private_key_to_account, Address},
-    };
+    #[test]
+    fn test_prove_tx_diff_tree() {
+        use plonky2::{
+            field::types::Field,
+            hash::hash_types::HashOut,
+            plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
+        };
 
-    type C = PoseidonGoldilocksConfig;
-    type H = <C as GenericConfig<D>>::InnerHasher;
-    type F = <C as GenericConfig<D>>::F;
-    const D: usize = 2;
+        use crate::{
+            merkle_tree::tree::get_merkle_root,
+            transaction::{
+                asset::{TokenKind, VariableIndex},
+                tree::tx_diff::TxDiffTree,
+            },
+            utils::hash::GoldilocksHashOut,
+            zkdsa::account::{private_key_to_account, Address},
+        };
 
-    const LOG_N_RECIPIENTS: usize = 3;
-    const LOG_N_CONTRACTS: usize = 3;
-    const LOG_N_VARIABLES: usize = 3;
+        type C = PoseidonGoldilocksConfig;
+        type H = <C as GenericConfig<D>>::InnerHasher;
+        type F = <C as GenericConfig<D>>::F;
+        const D: usize = 2;
 
-    let private_key = HashOut {
-        elements: [
-            F::from_canonical_u64(15657143458229430356),
-            F::from_canonical_u64(6012455030006979790),
-            F::from_canonical_u64(4280058849535143691),
-            F::from_canonical_u64(5153662694263190591),
-        ],
-    };
-    let user_account = private_key_to_account(private_key);
-    let user_address = user_account.address;
+        const LOG_N_RECIPIENTS: usize = 3;
+        const LOG_N_CONTRACTS: usize = 3;
+        const LOG_N_VARIABLES: usize = 3;
 
-    let asset1 = ContributedAsset {
-        receiver_address: user_address,
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 2053,
-    };
-    let asset2 = ContributedAsset {
-        receiver_address: user_address,
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 1111,
-    };
+        let private_key = HashOut {
+            elements: [
+                F::from_canonical_u64(15657143458229430356),
+                F::from_canonical_u64(6012455030006979790),
+                F::from_canonical_u64(4280058849535143691),
+                F::from_canonical_u64(5153662694263190591),
+            ],
+        };
+        let user_account = private_key_to_account(private_key);
+        let user_address = user_account.address;
 
-    let mut deposit_tree =
-        TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
+        let asset1 = ContributedAsset {
+            receiver_address: user_address,
+            kind: TokenKind {
+                contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+                variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+            },
+            amount: 2053,
+        };
+        let asset2 = ContributedAsset {
+            receiver_address: user_address,
+            kind: TokenKind {
+                contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+                variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+            },
+            amount: 1111,
+        };
 
-    deposit_tree.insert(asset1).unwrap();
-    deposit_tree.insert(asset2).unwrap();
+        let mut deposit_tree = TxDiffTree::<F, H>::make_constraints(
+            LOG_N_RECIPIENTS,
+            LOG_N_CONTRACTS + LOG_N_VARIABLES,
+        );
 
-    // let proof = deposit_tree.prove_asset_root(&user_address).unwrap();
-    let proof = deposit_tree
-        .prove_leaf_node(&user_address, &asset2.kind)
-        .unwrap();
-    let root = get_merkle_root::<_, H, _>(&proof.index, proof.value, &proof.siblings);
-    assert_eq!(root, proof.root);
-}
+        deposit_tree.insert(asset1).unwrap();
+        deposit_tree.insert(asset2).unwrap();
 
-#[test]
-fn test_tx_diff_tree_by_plonky2() {
-    use plonky2::{
-        field::types::Field,
-        hash::hash_types::HashOut,
-        plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
-    };
+        // let proof = deposit_tree.prove_asset_root(&user_address).unwrap();
+        let proof = deposit_tree
+            .prove_leaf_node(&user_address, &asset2.kind)
+            .unwrap();
+        let root = get_merkle_root::<_, H, _>(&proof.index, proof.value, &proof.siblings);
+        assert_eq!(root, proof.root);
+    }
 
-    use crate::{
-        merkle_tree::tree::{get_merkle_proof, get_merkle_root},
-        transaction::{
-            asset::{TokenKind, VariableIndex},
-            tree::tx_diff::TxDiffTree,
-        },
-        utils::hash::GoldilocksHashOut,
-        zkdsa::account::{private_key_to_account, Address},
-    };
+    #[test]
+    fn test_tx_diff_tree_by_plonky2() {
+        use plonky2::{
+            field::types::Field,
+            hash::hash_types::HashOut,
+            plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
+        };
 
-    type C = PoseidonGoldilocksConfig;
-    type H = <C as GenericConfig<D>>::InnerHasher;
-    type F = <C as GenericConfig<D>>::F;
-    const D: usize = 2;
+        use crate::{
+            merkle_tree::tree::{get_merkle_proof, get_merkle_root},
+            transaction::{
+                asset::{TokenKind, VariableIndex},
+                tree::tx_diff::TxDiffTree,
+            },
+            utils::hash::GoldilocksHashOut,
+            zkdsa::account::{private_key_to_account, Address},
+        };
 
-    const LOG_N_TXS: usize = 3;
-    const LOG_MAX_N_CONTRACTS: usize = 3;
-    const LOG_MAX_N_VARIABLES: usize = 3;
-    const LOG_N_RECIPIENTS: usize = 3;
-    const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
-    const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
+        type C = PoseidonGoldilocksConfig;
+        type H = <C as GenericConfig<D>>::InnerHasher;
+        type F = <C as GenericConfig<D>>::F;
+        const D: usize = 2;
 
-    let private_key = HashOut {
-        elements: [
-            F::from_canonical_u64(15657143458229430356),
-            F::from_canonical_u64(6012455030006979790),
-            F::from_canonical_u64(4280058849535143691),
-            F::from_canonical_u64(5153662694263190591),
-        ],
-    };
-    let user_account = private_key_to_account(private_key);
-    let user_address = user_account.address;
+        const LOG_N_TXS: usize = 3;
+        const LOG_MAX_N_CONTRACTS: usize = 3;
+        const LOG_MAX_N_VARIABLES: usize = 3;
+        const LOG_N_RECIPIENTS: usize = 3;
+        const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
+        const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
 
-    let asset1 = ContributedAsset {
-        receiver_address: user_address,
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(305)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 2053,
-    };
-    let asset2 = ContributedAsset {
-        receiver_address: user_address,
-        kind: TokenKind {
-            contract_address: Address(*GoldilocksHashOut::from_u128(471)),
-            variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
-        },
-        amount: 1111,
-    };
+        let private_key = HashOut {
+            elements: [
+                F::from_canonical_u64(15657143458229430356),
+                F::from_canonical_u64(6012455030006979790),
+                F::from_canonical_u64(4280058849535143691),
+                F::from_canonical_u64(5153662694263190591),
+            ],
+        };
+        let user_account = private_key_to_account(private_key);
+        let user_address = user_account.address;
 
-    let mut deposit_tree =
-        TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
+        let asset1 = ContributedAsset {
+            receiver_address: user_address,
+            kind: TokenKind {
+                contract_address: Address(*GoldilocksHashOut::from_u128(305)),
+                variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+            },
+            amount: 2053,
+        };
+        let asset2 = ContributedAsset {
+            receiver_address: user_address,
+            kind: TokenKind {
+                contract_address: Address(*GoldilocksHashOut::from_u128(471)),
+                variable_index: VariableIndex::from_hash_out(*GoldilocksHashOut::from_u128(8012)),
+            },
+            amount: 1111,
+        };
 
-    deposit_tree.insert(asset1).unwrap();
-    deposit_tree.insert(asset2).unwrap();
+        let mut deposit_tree = TxDiffTree::<F, H>::make_constraints(
+            LOG_N_RECIPIENTS,
+            LOG_N_CONTRACTS + LOG_N_VARIABLES,
+        );
 
-    // let deposit_tree: PoseidonSparseMerkleTree<_, _> = deposit_tree.into();
+        deposit_tree.insert(asset1).unwrap();
+        deposit_tree.insert(asset2).unwrap();
 
-    let diff_tree_inclusion_proof2 = deposit_tree.prove_asset_root(&user_address).unwrap();
-    let interior_deposit_root = deposit_tree.get_root().unwrap();
-    assert_eq!(interior_deposit_root, diff_tree_inclusion_proof2.root);
+        // let deposit_tree: PoseidonSparseMerkleTree<_, _> = deposit_tree.into();
 
-    let deposit_nonce = HashOut::ZERO;
-    let deposit_tx_hash = H::two_to_one(interior_deposit_root, deposit_nonce);
+        let diff_tree_inclusion_proof2 = deposit_tree.prove_asset_root(&user_address).unwrap();
+        let interior_deposit_root = deposit_tree.get_root().unwrap();
+        assert_eq!(interior_deposit_root, diff_tree_inclusion_proof2.root);
 
-    // let diff_tree = TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
-    let diff_tree_inclusion_proof1 = get_merkle_proof::<F, H>(&[deposit_tx_hash], 0, LOG_N_TXS);
-    dbg!(&diff_tree_inclusion_proof1);
+        let deposit_nonce = HashOut::ZERO;
+        let deposit_tx_hash = H::two_to_one(interior_deposit_root, deposit_nonce);
 
-    let root = get_merkle_root::<F, H, _>(
-        &diff_tree_inclusion_proof2.index,
-        diff_tree_inclusion_proof2.value,
-        &diff_tree_inclusion_proof2.siblings,
-    );
-    assert_eq!(diff_tree_inclusion_proof2.root, root);
+        // let diff_tree = TxDiffTree::<F, H>::new(LOG_N_RECIPIENTS, LOG_N_CONTRACTS + LOG_N_VARIABLES);
+        let diff_tree_inclusion_proof1 = get_merkle_proof::<F, H>(&[deposit_tx_hash], 0, LOG_N_TXS);
+        dbg!(&diff_tree_inclusion_proof1);
 
-    let root = get_merkle_root::<F, H, _>(
-        &diff_tree_inclusion_proof1.index,
-        diff_tree_inclusion_proof1.value,
-        &diff_tree_inclusion_proof1.siblings,
-    );
-    assert_eq!(diff_tree_inclusion_proof1.root, root);
+        let root = get_merkle_root::<F, H, _>(
+            &diff_tree_inclusion_proof2.index,
+            diff_tree_inclusion_proof2.value,
+            &diff_tree_inclusion_proof2.siblings,
+        );
+        assert_eq!(diff_tree_inclusion_proof2.root, root);
+
+        let root = get_merkle_root::<F, H, _>(
+            &diff_tree_inclusion_proof1.index,
+            diff_tree_inclusion_proof1.value,
+            &diff_tree_inclusion_proof1.siblings,
+        );
+        assert_eq!(diff_tree_inclusion_proof1.root, root);
+    }
 }

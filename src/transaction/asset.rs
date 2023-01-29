@@ -9,11 +9,12 @@ use serde::{Deserialize, Serialize};
 use crate::{
     merkle_tree::tree::MerkleProof,
     sparse_merkle_tree::gadgets::verify::verify_smt::SmtInclusionProof,
-    transaction::block_header::BlockHeader, utils::hash::WrappedHashOut, zkdsa::account::Address,
+    transaction::{block_header::BlockHeader, gadgets::deposit_info::DepositInfo},
+    utils::hash::WrappedHashOut,
+    zkdsa::account::Address,
 };
 
-use super::gadgets::deposit_info::DepositInfo;
-
+/// `TokenKind` で、トークンの種類を記述するのに使われる構造体
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct VariableIndex<F>(pub u8, core::marker::PhantomData<F>);
@@ -64,27 +65,6 @@ impl<F: RichField> FromStr for VariableIndex<F> {
     }
 }
 
-#[test]
-fn test_fmt_variable_index() {
-    use plonky2::field::goldilocks_field::GoldilocksField;
-
-    let value = VariableIndex::from(20u8);
-    let encoded_value = format!("{}", value);
-    assert_eq!(encoded_value, "0x14");
-    let decoded_value: VariableIndex<GoldilocksField> = VariableIndex::from_str("0x14").unwrap();
-    assert_eq!(decoded_value, value);
-}
-
-// #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-// #[repr(transparent)]
-// pub struct SerializableVariableIndex(#[serde(with = "SerHex::<StrictPfx>")] pub u8);
-
-// impl<F: RichField> From<SerializableVariableIndex> for VariableIndex<F> {
-//     fn from(value: SerializableVariableIndex) -> Self {
-//         value.0.into()
-//     }
-// }
-
 impl<'de, F: RichField> Deserialize<'de> for VariableIndex<F> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let raw = String::deserialize(deserializer)?;
@@ -104,61 +84,6 @@ impl<'de, F: RichField> Deserialize<'de> for VariableIndex<F> {
     }
 }
 
-// impl<F: RichField> From<VariableIndex<F>> for SerializableVariableIndex {
-//     fn from(value: VariableIndex<F>) -> Self {
-//         SerializableVariableIndex(value.0)
-//     }
-// }
-
-impl<F: RichField> Serialize for VariableIndex<F> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let bytes = [self.0];
-        let raw = format!("0x{}", hex::encode(bytes));
-
-        raw.serialize(serializer)
-    }
-}
-
-#[test]
-fn test_serde_variable_index() {
-    use plonky2::field::goldilocks_field::GoldilocksField;
-
-    let value: VariableIndex<GoldilocksField> = 20u8.into();
-    let encoded = serde_json::to_string(&value).unwrap();
-    let decoded: VariableIndex<GoldilocksField> = serde_json::from_str(&encoded).unwrap();
-    assert_eq!(decoded, value);
-}
-
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct TokenKind<F: RichField> {
-    #[serde(bound(
-        serialize = "Address<F>: Serialize",
-        deserialize = "Address<F>: Deserialize<'de>"
-    ))]
-    pub contract_address: Address<F>,
-    #[serde(bound(
-        serialize = "VariableIndex<F>: Serialize",
-        deserialize = "VariableIndex<F>: Deserialize<'de>"
-    ))]
-    pub variable_index: VariableIndex<F>,
-}
-
-#[test]
-fn test_serde_token_kind() {
-    use plonky2::{
-        field::{goldilocks_field::GoldilocksField, types::Sample},
-        hash::hash_types::HashOut,
-    };
-
-    let kind: TokenKind<GoldilocksField> = TokenKind {
-        contract_address: Address::rand(),
-        variable_index: VariableIndex::from_hash_out(HashOut::<GoldilocksField>::rand()),
-    };
-    let encoded_kind = serde_json::to_string(&kind).unwrap();
-    let decoded_kind: TokenKind<GoldilocksField> = serde_json::from_str(&encoded_kind).unwrap();
-    assert_eq!(decoded_kind, kind);
-}
-
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Asset<F: RichField> {
     #[serde(bound(
@@ -171,17 +96,13 @@ pub struct Asset<F: RichField> {
 
 impl<F: RichField> Asset<F> {
     pub fn encode(&self) -> Vec<F> {
-        encode_asset(self)
+        [
+            self.kind.contract_address.0.elements.to_vec(),
+            self.kind.variable_index.to_hash_out().elements.to_vec(),
+            vec![F::from_canonical_u64(self.amount)],
+        ]
+        .concat()
     }
-}
-
-pub fn encode_asset<F: RichField>(asset: &Asset<F>) -> Vec<F> {
-    [
-        asset.kind.contract_address.0.elements.to_vec(),
-        asset.kind.variable_index.to_hash_out().elements.to_vec(),
-        vec![F::from_canonical_u64(asset.amount)],
-    ]
-    .concat()
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -202,18 +123,14 @@ pub struct ContributedAsset<F: RichField> {
 
 impl<F: RichField> ContributedAsset<F> {
     pub fn encode(&self) -> Vec<F> {
-        encode_contributed_asset(self)
+        [
+            self.receiver_address.0.elements.to_vec(),
+            self.kind.contract_address.0.elements.to_vec(),
+            self.kind.variable_index.to_hash_out().elements.to_vec(),
+            vec![F::from_canonical_u64(self.amount)],
+        ]
+        .concat()
     }
-}
-
-pub fn encode_contributed_asset<F: RichField>(asset: &ContributedAsset<F>) -> Vec<F> {
-    [
-        asset.receiver_address.0.elements.to_vec(),
-        asset.kind.contract_address.0.elements.to_vec(),
-        asset.kind.variable_index.to_hash_out().elements.to_vec(),
-        vec![F::from_canonical_u64(asset.amount)],
-    ]
-    .concat()
 }
 
 impl<F: RichField> FromStr for ContributedAsset<F> {
@@ -256,34 +173,13 @@ impl<F: RichField> From<DepositInfo<F>> for ContributedAsset<F> {
     }
 }
 
-#[test]
-fn test_serde_owned_asset() {
-    use plonky2::field::goldilocks_field::GoldilocksField;
+impl<F: RichField> Serialize for VariableIndex<F> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let bytes = [self.0];
+        let raw = format!("0x{}", hex::encode(bytes));
 
-    let owned_asset: ContributedAsset<GoldilocksField> = ContributedAsset {
-        receiver_address: Address::rand(),
-        kind: TokenKind {
-            contract_address: Address::rand(),
-            variable_index: 1u8.into(),
-        },
-        amount: 10,
-    };
-
-    let encoded_owned_asset = serde_json::to_string(&owned_asset).unwrap();
-    let decoded_owned_asset: ContributedAsset<GoldilocksField> =
-        serde_json::from_str(&encoded_owned_asset).unwrap();
-    assert_eq!(decoded_owned_asset, owned_asset);
-
-    // ContributedAsset は DepositInfo と互換性がある.
-    let decoded_deposit_info: DepositInfo<GoldilocksField> =
-        serde_json::from_str(&encoded_owned_asset).unwrap();
-    assert_eq!(decoded_deposit_info, owned_asset.into());
-
-    let encoded_owned_asset = owned_asset.to_string();
-    dbg!(&encoded_owned_asset);
-    let decoded_owned_asset: ContributedAsset<GoldilocksField> =
-        ContributedAsset::from_str(&encoded_owned_asset).unwrap();
-    assert_eq!(decoded_owned_asset, owned_asset);
+        raw.serialize(serializer)
+    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -302,4 +198,97 @@ pub struct ReceivedAssetProof<F: RichField, H: Hasher<F>> {
     pub latest_account_tree_inclusion_proof: SmtInclusionProof<F>,
     pub assets: Vec<Asset<F>>,
     pub nonce: H::Hash,
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TokenKind<F: RichField> {
+    #[serde(bound(
+        serialize = "Address<F>: Serialize",
+        deserialize = "Address<F>: Deserialize<'de>"
+    ))]
+    pub contract_address: Address<F>,
+    #[serde(bound(
+        serialize = "VariableIndex<F>: Serialize",
+        deserialize = "VariableIndex<F>: Deserialize<'de>"
+    ))]
+    pub variable_index: VariableIndex<F>,
+}
+
+#[cfg(test)]
+mod tests {
+
+    use crate::transaction::asset::ContributedAsset;
+    use crate::transaction::asset::FromStr;
+    use crate::transaction::asset::TokenKind;
+    use crate::transaction::asset::VariableIndex;
+    use crate::transaction::gadgets::deposit_info::DepositInfo;
+    use crate::zkdsa::account::Address;
+
+    #[test]
+    fn test_fmt_variable_index() {
+        use plonky2::field::goldilocks_field::GoldilocksField;
+
+        let value = VariableIndex::from(20u8);
+        let encoded_value = format!("{}", value);
+        assert_eq!(encoded_value, "0x14");
+        let decoded_value: VariableIndex<GoldilocksField> =
+            VariableIndex::from_str("0x14").unwrap();
+        assert_eq!(decoded_value, value);
+    }
+
+    #[test]
+    fn test_serde_variable_index() {
+        use plonky2::field::goldilocks_field::GoldilocksField;
+
+        let value: VariableIndex<GoldilocksField> = 20u8.into();
+        let encoded = serde_json::to_string(&value).unwrap();
+        let decoded: VariableIndex<GoldilocksField> = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, value);
+    }
+
+    #[test]
+    fn test_serde_token_kind() {
+        use plonky2::{
+            field::{goldilocks_field::GoldilocksField, types::Sample},
+            hash::hash_types::HashOut,
+        };
+
+        let kind: TokenKind<GoldilocksField> = TokenKind {
+            contract_address: Address::rand(),
+            variable_index: VariableIndex::from_hash_out(HashOut::<GoldilocksField>::rand()),
+        };
+        let encoded_kind = serde_json::to_string(&kind).unwrap();
+        let decoded_kind: TokenKind<GoldilocksField> = serde_json::from_str(&encoded_kind).unwrap();
+        assert_eq!(decoded_kind, kind);
+    }
+
+    #[test]
+    fn test_serde_owned_asset() {
+        use plonky2::field::goldilocks_field::GoldilocksField;
+
+        let owned_asset: ContributedAsset<GoldilocksField> = ContributedAsset {
+            receiver_address: Address::rand(),
+            kind: TokenKind {
+                contract_address: Address::rand(),
+                variable_index: 1u8.into(),
+            },
+            amount: 10,
+        };
+
+        let encoded_owned_asset = serde_json::to_string(&owned_asset).unwrap();
+        let decoded_owned_asset: ContributedAsset<GoldilocksField> =
+            serde_json::from_str(&encoded_owned_asset).unwrap();
+        assert_eq!(decoded_owned_asset, owned_asset);
+
+        // ContributedAsset は DepositInfo と互換性がある.
+        let decoded_deposit_info: DepositInfo<GoldilocksField> =
+            serde_json::from_str(&encoded_owned_asset).unwrap();
+        assert_eq!(decoded_deposit_info, owned_asset.into());
+
+        let encoded_owned_asset = owned_asset.to_string();
+        dbg!(&encoded_owned_asset);
+        let decoded_owned_asset: ContributedAsset<GoldilocksField> =
+            ContributedAsset::from_str(&encoded_owned_asset).unwrap();
+        assert_eq!(decoded_owned_asset, owned_asset);
+    }
 }

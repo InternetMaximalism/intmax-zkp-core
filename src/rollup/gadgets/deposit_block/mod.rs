@@ -34,7 +34,8 @@ pub struct DepositBlockProduction<F: RichField, H: Hasher<F>, K: KeyLike> {
 
 impl<F: RichField, H: Hasher<F>, K: KeyLike> DepositBlockProduction<F, H, K> {
     pub fn calculate(&self) -> anyhow::Result<H::Hash> {
-        let deposit_tree = TxDiffTree::<_, H>::new(self.log_n_recipients, self.log_n_kinds);
+        let deposit_tree =
+            TxDiffTree::<_, H>::make_constraints(self.log_n_recipients, self.log_n_kinds);
 
         let mut prev_deposit_root = deposit_tree.get_root().unwrap();
         for process_proof in self.deposit_process_proofs.iter() {
@@ -69,7 +70,7 @@ impl DepositBlockProductionTarget {
         let n_deposits = 1 << n_levels;
         let deposit_process_proofs = (0..n_deposits)
             .map(|_| {
-                PurgeOutputProcessProofTarget::add_virtual_to::<_, H, D>(
+                PurgeOutputProcessProofTarget::make_constraints::<_, H, D>(
                     builder,
                     log_n_recipients,
                     log_n_kinds,
@@ -275,29 +276,9 @@ mod tests {
 
         assert_eq!(circuit_data.common.degree_bits(), 15);
 
-        // let sender2_private_key = HashOut {
-        //     elements: [
-        //         F::from_canonical_u64(15657143458229430356),
-        //         F::from_canonical_u64(6012455030006979790),
-        //         F::from_canonical_u64(4280058849535143691),
-        //         F::from_canonical_u64(5153662694263190591),
-        //     ],
-        // };
-        // let sender2_account = private_key_to_account(sender2_private_key);
-        // let sender2_address = sender2_account.address.0;
-
-        // let deposit_list = vec![ContributedAsset {
-        //     receiver_address: Address(sender2_address),
-        //     kind: TokenKind {
-        //         contract_address: Address(*WrappedHashOut::from_u128(1)),
-        //         variable_index: 0u8.into(),
-        //     },
-        //     amount: 1,
-        // }];
-
         let deposit_list = &examples[0].deposit_list;
 
-        let mut tx_diff_tree = TxDiffTree::<F, H>::new(
+        let mut tx_diff_tree = TxDiffTree::<F, H>::make_constraints(
             rollup_constants.log_n_recipients,
             rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
         );

@@ -12,7 +12,7 @@ use super::super::account::Address;
 pub struct AddressTarget(pub HashOutTarget);
 
 impl AddressTarget {
-    pub fn add_virtual_to<F: RichField + Extendable<D>, const D: usize>(
+    pub fn new<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
         let target = builder.add_virtual_hash();

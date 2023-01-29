@@ -243,18 +243,6 @@ mod tests {
     type F = <C as GenericConfig<D>>::F;
     type H = PoseidonHash;
 
-    // fn usize_to_vec(x: usize, length: usize) -> Vec<bool> {
-    //     let mut x = x;
-    //     let mut v = vec![];
-    //     for _ in 0..length {
-    //         v.push((x & 1) == 1);
-    //         x >>= 1;
-    //     }
-    //     v.reverse();
-
-    //     v
-    // }
-
     #[test]
     fn test_merkle_inclusion_proof() {
         let mut rng = rand::thread_rng();

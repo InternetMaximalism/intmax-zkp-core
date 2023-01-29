@@ -22,7 +22,7 @@ use crate::{
     config::RollupConstants,
     merkle_tree::{
         gadgets::{get_merkle_root_target_from_leaves, MerkleProofTarget},
-        tree::{get_merkle_proof, get_merkle_root},
+        tree::{get_merkle_proof, get_merkle_root, MerkleProcessProof},
     },
     recursion::gadgets::RecursiveProofTarget,
     rollup::{
@@ -35,7 +35,7 @@ use crate::{
             proposal_block::ProposalBlockProductionTarget,
         },
     },
-    sparse_merkle_tree::gadgets::process::process_smt::SmtProcessProof,
+    // sparse_merkle_tree::gadgets::process::process_smt::SmtProcessProof,
     transaction::{
         asset::{TokenKind, Transaction, VariableIndex},
         block_header::BlockHeader,
@@ -67,10 +67,10 @@ pub struct BlockDetail<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>,
     pub block_number: u32,
     pub user_tx_proofs: Vec<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>>,
     pub deposit_process_proofs: DepositBlockProduction<F, C::InnerHasher, Vec<bool>>,
-    pub world_state_process_proofs: Vec<SmtProcessProof<F>>,
-    pub world_state_revert_proofs: Vec<SmtProcessProof<F>>,
+    pub world_state_process_proofs: Vec<MerkleProcessProof<F, C::InnerHasher, HashOut<F>>>,
+    pub world_state_revert_proofs: Vec<MerkleProcessProof<F, C::InnerHasher, Vec<bool>>>,
     pub received_signature_proofs: Vec<Option<SimpleSignatureProofWithPublicInputs<F, C, D>>>,
-    pub latest_account_process_proofs: Vec<SmtProcessProof<F>>,
+    pub latest_account_process_proofs: Vec<MerkleProcessProof<F, C::InnerHasher, Vec<bool>>>,
     pub block_headers_proof_siblings: Vec<HashOut<F>>,
     pub prev_block_header: BlockHeader<F>,
 }
@@ -86,8 +86,13 @@ pub struct BlockDetail<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>,
 impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     BlockDetail<F, C, D>
 {
-    pub fn new(log_num_txs_in_block: usize, log_n_recipients: usize, log_n_kinds: usize) -> Self {
-        let prev_block_header = BlockHeader::new(log_num_txs_in_block);
+    pub fn new(
+        log_n_txs: usize,
+        log_n_recipients: usize,
+        log_n_kinds: usize,
+        log_max_n_users: usize,
+    ) -> Self {
+        let prev_block_header = BlockHeader::new(log_n_txs, log_max_n_users);
         let prev_block_hash = prev_block_header.get_block_hash();
         let prev_block_number = prev_block_header.block_number;
         let mut block_headers: Vec<HashOut<F>> = vec![HashOut::ZERO; prev_block_number as usize];
@@ -147,11 +152,11 @@ impl<const D: usize> BlockProductionTarget<D> {
         user_tx_proofs: &[MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>],
         default_user_tx_proof: &MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>,
         deposit_process_proofs: &DepositBlockProduction<F, C::InnerHasher, Vec<bool>>,
-        world_state_process_proofs: &[SmtProcessProof<F>],
-        world_state_revert_proofs: &[SmtProcessProof<F>],
+        world_state_process_proofs: &[MerkleProcessProof<F, C::InnerHasher, HashOut<F>>],
+        world_state_revert_proofs: &[MerkleProcessProof<F, C::InnerHasher, Vec<bool>>],
         received_signature_proofs: &[Option<SimpleSignatureProofWithPublicInputs<F, C, D>>],
         default_simple_signature_proof: &SimpleSignatureProofWithPublicInputs<F, C, D>,
-        latest_account_process_proofs: &[SmtProcessProof<F>],
+        latest_account_process_proofs: &[MerkleProcessProof<F, C::InnerHasher, Vec<bool>>],
         block_headers_proof_siblings: &[HashOut<F>],
         prev_block_header: BlockHeader<F>,
     ) -> BlockProductionPublicInputs<F>
@@ -278,8 +283,8 @@ impl<const D: usize> BlockProductionTarget<D> {
             transactions_digest,
             deposit_digest,
             proposed_world_state_digest,
-            approved_world_state_digest: *approved_world_state_digest,
-            latest_account_digest: *latest_account_digest,
+            approved_world_state_digest,
+            latest_account_digest,
             block_headers_digest,
         };
 
@@ -1028,6 +1033,7 @@ mod tests {
             n_txs,
             rollup_constants.log_n_recipients,
             rollup_constants.log_max_n_contracts + rollup_constants.log_max_n_variables,
+            rollup_constants.log_max_n_users,
         );
         let _default_block_production_proof =
             prove_block_production::<F, C, D>(rollup_constants, &default_block_details).unwrap();

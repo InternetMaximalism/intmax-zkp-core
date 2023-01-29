@@ -23,7 +23,7 @@ use crate::{
         merge::{MergeProof, MergeTransitionTarget},
         purge::PurgeTransitionTarget,
     },
-    utils::{gadgets::hash::poseidon_two_to_one, hash::WrappedHashOut},
+    utils::gadgets::hash::poseidon_two_to_one,
     zkdsa::{account::Address, gadgets::account::AddressTarget},
 };
 
@@ -34,8 +34,7 @@ use super::gadgets::{
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MergeAndPurgeTransition<F: RichField, H: Hasher<F>> {
-    pub sender_address: Address<F>,
-    pub merge_witnesses: Vec<MergeProof<F, H, Vec<bool>>>,
+    pub merge_witnesses: Vec<MergeProof<F, H>>,
     pub purge_input_witnesses: Vec<PurgeInputProcessProof<F, H, Vec<bool>>>,
     pub purge_output_witnesses: Vec<PurgeOutputProcessProof<F, H, Vec<bool>>>,
     pub nonce: HashOut<F>,
@@ -68,9 +67,9 @@ impl<F: RichField, H: AlgebraicHasher<F>> MergeAndPurgeTransition<F, H> {
         };
         let middle_user_asset_root = merge_witness.calculate();
         let purge_transition = PurgeTransition {
-            sender_address: self.sender_address,
-            input_witnesses: self.purge_input_witnesses.clone(),
-            output_witnesses: self.purge_output_witnesses.clone(),
+            from: self.sender_address,
+            to,
+            process_proof: self.purge_input_witnesses.clone(),
             old_user_asset_root: middle_user_asset_root,
             nonce: self.nonce,
         };
@@ -217,11 +216,11 @@ where
 #[serde(bound = "F: RichField")]
 pub struct MergeAndPurgeTransitionPublicInputs<F: RichField> {
     pub sender_address: Address<F>,
-    pub old_user_asset_root: WrappedHashOut<F>,
-    pub middle_user_asset_root: WrappedHashOut<F>,
-    pub new_user_asset_root: WrappedHashOut<F>,
-    pub diff_root: WrappedHashOut<F>,
-    pub tx_hash: WrappedHashOut<F>,
+    pub old_user_asset_root: HashOut<F>,
+    pub middle_user_asset_root: HashOut<F>,
+    pub new_user_asset_root: HashOut<F>,
+    pub diff_root: HashOut<F>,
+    pub tx_hash: HashOut<F>,
 }
 
 impl<F: RichField> Default for MergeAndPurgeTransitionPublicInputs<F> {
@@ -315,14 +314,14 @@ impl MergeAndPurgeTransitionPublicInputsTarget {
     ) {
         self.sender_address
             .set_witness(pw, public_inputs.sender_address);
-        pw.set_hash_target(self.old_user_asset_root, *public_inputs.old_user_asset_root);
+        pw.set_hash_target(self.old_user_asset_root, public_inputs.old_user_asset_root);
         pw.set_hash_target(
             self.middle_user_asset_root,
-            *public_inputs.middle_user_asset_root,
+            public_inputs.middle_user_asset_root,
         );
-        pw.set_hash_target(self.new_user_asset_root, *public_inputs.new_user_asset_root);
-        pw.set_hash_target(self.diff_root, *public_inputs.diff_root);
-        pw.set_hash_target(self.tx_hash, *public_inputs.tx_hash);
+        pw.set_hash_target(self.new_user_asset_root, public_inputs.new_user_asset_root);
+        pw.set_hash_target(self.diff_root, public_inputs.diff_root);
+        pw.set_hash_target(self.tx_hash, public_inputs.tx_hash);
     }
 
     pub fn connect<F: RichField + Extendable<D>, const D: usize>(
@@ -480,7 +479,6 @@ mod tests {
         transaction::circuits::{
             prove_user_transaction, MergeAndPurgeTransition, MergeAndPurgeTransitionPublicInputs,
         },
-        utils::hash::WrappedHashOut,
     };
 
     #[test]
@@ -535,14 +533,14 @@ mod tests {
 
         let default_user_transaction = MergeAndPurgeTransitionPublicInputs::<F>::default();
 
-        let tx_hash = WrappedHashOut::from(HashOut {
+        let tx_hash = HashOut {
             elements: [
                 F::from_canonical_u64(4330397376401421145),
                 F::from_canonical_u64(14124799381142128323),
                 F::from_canonical_u64(8742572140681234676),
                 F::from_canonical_u64(14345658006221440202),
             ],
-        });
+        };
 
         assert_eq!(default_user_transaction.sender_address, Default::default());
         assert_eq!(

@@ -10,7 +10,7 @@ use crate::{
     utils::gadgets::{hash::poseidon_two_to_one, logic::conditionally_reverse},
 };
 
-use super::tree::get_merkle_root;
+use super::tree::{get_merkle_root, MerkleProcessProof};
 
 #[derive(Clone, Debug)]
 pub struct MerkleProofTarget {
@@ -63,7 +63,7 @@ impl MerkleProofTarget {
             pw.set_hash_target(sibling_t, sibling);
         }
 
-        get_merkle_root::<F, H, Vec<bool>>(&index, value, siblings)
+        get_merkle_root::<F, H, _, _>(&index, value, siblings)
     }
 }
 
@@ -73,18 +73,18 @@ pub fn get_merkle_root_target<
     const D: usize,
 >(
     builder: &mut CircuitBuilder<F, D>,
-    index_t: &[BoolTarget],
-    value_t: HashOutTarget,
-    siblings_t: &[HashOutTarget],
+    index: &[BoolTarget],
+    leaf_hash: HashOutTarget,
+    siblings: &[HashOutTarget],
 ) -> HashOutTarget {
-    let mut root_t = value_t;
-    assert_eq!(index_t.len(), siblings_t.len());
-    for (sibling_t, lr_bit_t) in siblings_t.iter().zip(index_t.iter()) {
-        let (left, right) = conditionally_reverse(builder, root_t, *sibling_t, *lr_bit_t);
-        root_t = poseidon_two_to_one::<F, H, D>(builder, left, right);
+    let mut root = leaf_hash;
+    assert_eq!(index.len(), siblings.len());
+    for (sibling, lr_bit) in siblings.iter().zip(index.iter()) {
+        let (left, right) = conditionally_reverse(builder, root, *sibling, *lr_bit);
+        root = poseidon_two_to_one::<F, H, D>(builder, left, right);
     }
 
-    root_t
+    root
 }
 
 pub fn get_merkle_root_target_from_leaves<
@@ -110,6 +110,74 @@ pub fn get_merkle_root_target_from_leaves<
     layer[0]
 }
 
+#[derive(Clone, Debug)]
+pub struct MerkleProcessProofTarget {
+    pub index: Vec<BoolTarget>,
+    pub old_value: HashOutTarget,
+    pub new_value: HashOutTarget,
+    pub siblings: Vec<HashOutTarget>,
+    pub old_root: HashOutTarget,
+    pub new_root: HashOutTarget,
+    // pub enabled: BoolTarget
+}
+
+impl MerkleProcessProofTarget {
+    pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+        n_levels: usize,
+    ) -> Self {
+        let index = (0..n_levels)
+            .map(|_| builder.add_virtual_bool_target_safe())
+            .collect::<Vec<_>>();
+        let old_value = builder.add_virtual_hash();
+        let new_value = builder.add_virtual_hash();
+        let siblings = (0..n_levels)
+            .map(|_| builder.add_virtual_hash())
+            .collect::<Vec<_>>();
+        let old_root = get_merkle_root_target::<F, H, D>(builder, &index, old_value, &siblings);
+        let new_root = get_merkle_root_target::<F, H, D>(builder, &index, new_value, &siblings);
+
+        Self {
+            index,
+            old_value,
+            new_value,
+            siblings,
+            old_root,
+            new_root,
+        }
+    }
+
+    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>, K: KeyLike>(
+        &self,
+        pw: &mut impl Witness<F>,
+        proof: &MerkleProcessProof<F, H, K, HashOut<F>>,
+    ) -> (HashOut<F>, HashOut<F>) {
+        let mut index = proof.index.to_bits();
+        index.resize(self.index.len(), false);
+        for (target, value) in self.index.iter().zip(index.iter()) {
+            pw.set_bool_target(*target, *value);
+        }
+
+        pw.set_hash_target(self.old_value, proof.old_value);
+        pw.set_hash_target(self.new_value, proof.new_value);
+
+        assert_eq!(self.siblings.len(), proof.siblings.len());
+        for (sibling_t, sibling) in self
+            .siblings
+            .iter()
+            .cloned()
+            .zip(proof.siblings.iter().cloned())
+        {
+            pw.set_hash_target(sibling_t, sibling);
+        }
+
+        let old_root = get_merkle_root::<F, H, _, _>(&index, proof.old_value, &proof.siblings);
+        let new_root = get_merkle_root::<F, H, _, _>(&index, proof.new_value, &proof.siblings);
+
+        (old_root, new_root)
+    }
+}
+
 #[test]
 fn test_verify_merkle_proof_by_plonky2() {
     use std::time::Instant;
@@ -125,7 +193,7 @@ fn test_verify_merkle_proof_by_plonky2() {
         },
     };
 
-    use super::tree::{get_merkle_proof, MerkleProof};
+    use super::tree::get_merkle_proof;
 
     const D: usize = 2;
     type C = PoseidonGoldilocksConfig;
@@ -147,7 +215,9 @@ fn test_verify_merkle_proof_by_plonky2() {
         })
         .collect::<Vec<_>>();
     let index = leaves.len() - 1;
-    let MerkleProof { siblings, root, .. } = get_merkle_proof::<F, H>(&leaves, index, N_LEVELS);
+    let merkle_proof = get_merkle_proof::<F, H>(&leaves, index, N_LEVELS);
+    let siblings = merkle_proof.siblings;
+    let root = merkle_proof.root();
 
     let mut pw = PartialWitness::new();
     targets.set_witness::<_, H, _>(&mut pw, &index, leaves[index], &siblings);

@@ -6,6 +6,8 @@ use plonky2::{
 };
 use serde::{Deserialize, Serialize};
 
+use super::sparse_merkle_tree::Leafable;
+
 pub trait KeyLike: Clone + Eq + std::fmt::Debug + Default + std::hash::Hash {
     /// little endian
     fn to_bits(&self) -> Vec<bool>;
@@ -41,15 +43,17 @@ impl<F: RichField> KeyLike for HashOut<F> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound(deserialize = "H::Hash: Deserialize<'de>, K: Deserialize<'de>"))]
-pub struct MerkleProof<F: RichField, H: Hasher<F>, K: Clone> {
+#[serde(bound(
+    deserialize = "H::Hash: Deserialize<'de>, K: Deserialize<'de>, V: Deserialize<'de>"
+))]
+pub struct MerkleProof<F: RichField, H: Hasher<F>, K, V> {
     pub index: K,
-    pub value: H::Hash,
+    pub value: V,
     pub siblings: Vec<H::Hash>,
-    pub root: H::Hash,
+    // pub root: H::Hash,
 }
 
-impl<F: RichField, H: AlgebraicHasher<F>> MerkleProof<F, H, usize> {
+impl<F: RichField, H: AlgebraicHasher<F>> MerkleProof<F, H, usize, H::Hash> {
     pub fn new(depth: usize) -> Self {
         let index = Default::default();
         let value = Default::default();
@@ -69,7 +73,7 @@ pub fn get_merkle_proof_with_zero<F: RichField, H: Hasher<F>>(
     index: usize,
     depth: usize,
     zero: H::Hash,
-) -> MerkleProof<F, H, usize> {
+) -> MerkleProof<F, H, usize, H::Hash> {
     let mut nodes = if leaves.is_empty() {
         vec![zero]
     } else {
@@ -112,7 +116,7 @@ pub fn get_merkle_proof_with_zero<F: RichField, H: Hasher<F>>(
         index,
         value,
         siblings,
-        root,
+        // root,
     }
 }
 
@@ -120,17 +124,17 @@ pub fn get_merkle_proof<F: RichField, H: AlgebraicHasher<F>>(
     leaves: &[HashOut<F>],
     index: usize,
     depth: usize,
-) -> MerkleProof<F, H, usize> {
+) -> MerkleProof<F, H, usize, HashOut<F>> {
     get_merkle_proof_with_zero(leaves, index, depth, HashOut::ZERO)
 }
 
 /// 与えられた leaf `(index, value)` と `siblings` から Merkle root を計算する.
-pub fn get_merkle_root<F: RichField, H: Hasher<F>, K: KeyLike>(
+pub fn get_merkle_root<F: RichField, H: Hasher<F>, K: KeyLike, V: Leafable<F, H>>(
     index: &K,
-    value: H::Hash,
+    value: V,
     siblings: &[H::Hash],
 ) -> H::Hash {
-    let mut root = value;
+    let mut root = value.hash();
     let mut index = index.to_bits();
     index.resize(siblings.len(), false);
     for (lr_bit, sibling) in index.iter().zip(siblings) {
@@ -144,6 +148,12 @@ pub fn get_merkle_root<F: RichField, H: Hasher<F>, K: KeyLike>(
     }
 
     root
+}
+
+impl<F: RichField, H: Hasher<F>, K: KeyLike, V: Leafable<F, H>> MerkleProof<F, H, K, V> {
+    pub fn root(&self) -> H::Hash {
+        get_merkle_root::<F, H, K, V>(&self.index, self.value, &self.siblings)
+    }
 }
 
 #[test]
@@ -166,7 +176,7 @@ fn test_get_block_hash_tree_proofs() {
     let index = leaves.len() - 1;
     let MerkleProof {
         siblings,
-        root: _old_root,
+        // root: _old_root,
         ..
     } = get_merkle_proof::<F, H>(&leaves, index, N_LEVELS);
 
@@ -174,16 +184,15 @@ fn test_get_block_hash_tree_proofs() {
     let new_leaf = HashOut {
         elements: [F::from_canonical_u32(50), F::ZERO, F::ZERO, F::ZERO],
     };
-    let new_root = get_merkle_root::<_, PoseidonHash, _>(&index, new_leaf, &siblings);
+    let new_root = get_merkle_root::<F, H, _, _>(&index, new_leaf, &siblings);
 
     leaves[index] = new_leaf;
     let MerkleProof {
         siblings: actual_siblings,
-        root: actual_new_root,
+        // root: actual_new_root,
         ..
     } = get_merkle_proof::<F, H>(&leaves, index, N_LEVELS);
     assert_eq!(siblings, actual_siblings);
-    assert_eq!(new_root, actual_new_root);
 }
 
 #[test]
@@ -209,12 +218,24 @@ fn test_get_block_hash_tree_proofs2() {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound(deserialize = "H::Hash: Deserialize<'de>, K: Deserialize<'de>"))]
-pub struct MerkleProcessProof<F: RichField, H: Hasher<F>, K: Clone + std::fmt::Debug + Eq> {
+#[serde(bound(
+    deserialize = "H::Hash: Deserialize<'de>, K: Deserialize<'de>, V: Deserialize<'de>"
+))]
+pub struct MerkleProcessProof<F: RichField, H: Hasher<F>, K: KeyLike, V: Leafable<F, H>> {
     pub index: K,
     pub siblings: Vec<H::Hash>,
-    pub old_value: H::Hash,
-    pub new_value: H::Hash,
-    pub old_root: H::Hash,
-    pub new_root: H::Hash,
+    pub old_value: V,
+    pub new_value: V,
+    // pub old_root: H::Hash,
+    // pub new_root: H::Hash,
+}
+
+impl<F: RichField, H: Hasher<F>, K: KeyLike, V: Leafable<F, H>> MerkleProcessProof<F, H, K, V> {
+    /// Returns `(old_root, new_root)`
+    pub fn calculate(&self) -> (H::Hash, H::Hash) {
+        let old_root = get_merkle_root::<F, H, _, _>(&self.index, self.old_value, &self.siblings);
+        let new_root = get_merkle_root::<F, H, _, _>(&self.index, self.new_value, &self.siblings);
+
+        (old_root, new_root)
+    }
 }

@@ -9,9 +9,10 @@ use plonky2::{
 };
 
 use crate::{
-    sparse_merkle_tree::gadgets::process::process_smt::{
-        SmtProcessProof, SparseMerkleProcessProofTarget,
-    },
+    merkle_tree::{gadgets::MerkleProcessProofTarget, tree::MerkleProcessProof},
+    // sparse_merkle_tree::gadgets::process::process_smt::{
+    //     SmtProcessProof, SparseMerkleProcessProofTarget,
+    // },
     transaction::circuits::{
         MergeAndPurgeTransitionPublicInputs, MergeAndPurgeTransitionPublicInputsTarget,
     },
@@ -31,31 +32,31 @@ pub struct SignedMessage<F: RichField> {
 
 #[derive(Clone)]
 pub struct WorldStateRevertTransitionTarget {
-    pub world_state_revert_proof: SparseMerkleProcessProofTarget,
+    pub world_state_revert_proof: MerkleProcessProofTarget,
 
     pub user_transaction: MergeAndPurgeTransitionPublicInputsTarget,
 
     pub received_signature: (SimpleSignaturePublicInputsTarget, BoolTarget),
 
-    pub latest_account_process_proof: SparseMerkleProcessProofTarget,
+    pub latest_account_process_proof: MerkleProcessProofTarget,
 
     pub enabled: BoolTarget,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApprovalBlockProduction<F: RichField> {
+pub struct ApprovalBlockProduction<F: RichField, H: AlgebraicHasher<F>> {
     pub current_block_number: u32,
-    pub world_state_revert_proofs: Vec<SmtProcessProof<F>>,
+    pub world_state_revert_proofs: Vec<MerkleProcessProof<F, H, HashOut<F>>>,
     pub user_transactions: Vec<MergeAndPurgeTransitionPublicInputs<F>>,
     pub received_signatures: Vec<Option<SimpleSignaturePublicInputs<F>>>,
-    pub latest_account_tree_process_proofs: Vec<SmtProcessProof<F>>,
-    pub old_world_state_root: WrappedHashOut<F>,
-    pub old_latest_account_root: WrappedHashOut<F>,
+    pub latest_account_tree_process_proofs: Vec<MerkleProcessProof<F, H, HashOut<F>>>,
+    pub old_world_state_root: HashOut<F>,
+    pub old_latest_account_root: HashOut<F>,
 }
 
-impl<F: RichField> ApprovalBlockProduction<F> {
+impl<F: RichField, H: AlgebraicHasher<F>> ApprovalBlockProduction<F, H> {
     /// Returns `(new_world_state_root, new_latest_account_root)`
-    pub fn calculate(&self) -> (WrappedHashOut<F>, WrappedHashOut<F>) {
+    pub fn calculate(&self) -> (HashOut<F>, HashOut<F>) {
         let mut prev_world_state_root = self.old_world_state_root;
         let mut prev_latest_account_root = self.old_latest_account_root;
         for (world_state_revert_proof, latest_account_process_proof) in self
@@ -90,12 +91,12 @@ impl<F: RichField> ApprovalBlockProduction<F> {
                 // signature が特定のメッセージに署名している時のみ有効である.
                 assert_eq!(
                     signature.message,
-                    self.old_world_state_root.0.elements.to_vec()
+                    self.old_world_state_root.elements.to_vec()
                 );
                 // signature が提出された時, user asset root は変わらない.
                 assert_eq!(w.new_value, u.new_user_asset_root);
 
-                WrappedHashOut::from_u32(self.current_block_number)
+                *WrappedHashOut::from_u32(self.current_block_number)
             } else {
                 // signature がない時は, user asset root が merge 直後の状態 `u.middle_user_asset_root` に更新される
                 assert_eq!(w.new_value, u.middle_user_asset_root);
@@ -138,13 +139,13 @@ impl ApprovalBlockProductionTarget {
         let mut world_state_revert_transitions = vec![];
         for _ in 0..n_txs {
             let world_state_revert_proof =
-                SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder, log_max_n_users);
+                MerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder, log_max_n_users);
             let user_transaction =
                 MergeAndPurgeTransitionPublicInputsTarget::add_virtual_to(builder);
             let signature = SimpleSignaturePublicInputsTarget::add_virtual_to(builder);
             let validity = builder.add_virtual_bool_target_safe();
             let latest_account_process_proof =
-                SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder, log_max_n_users);
+                MerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder, log_max_n_users);
             let enabled = builder.add_virtual_bool_target_safe();
             world_state_revert_transitions.push(WorldStateRevertTransitionTarget {
                 world_state_revert_proof,
@@ -179,19 +180,19 @@ impl ApprovalBlockProductionTarget {
 
     /// Returns `(new_world_state_root, new_latest_account_root)`.
     #[allow(clippy::too_many_arguments)]
-    pub fn set_witness<F: RichField + Extendable<D>, const D: usize>(
+    pub fn set_witness<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         &self,
         pw: &mut impl Witness<F>,
-        witness: &ApprovalBlockProduction<F>,
-    ) -> (WrappedHashOut<F>, WrappedHashOut<F>) {
+        witness: &ApprovalBlockProduction<F, H>,
+    ) -> (HashOut<F>, HashOut<F>) {
         // assert!(!user_transactions.is_empty());
 
         let (new_world_state_root, new_latest_account_root) = witness.calculate();
 
-        pw.set_hash_target(self.old_world_state_root, *witness.old_world_state_root);
+        pw.set_hash_target(self.old_world_state_root, witness.old_world_state_root);
         pw.set_hash_target(
             self.old_latest_account_root,
-            *witness.old_latest_account_root,
+            witness.old_latest_account_root,
         );
 
         pw.set_target(
@@ -206,13 +207,18 @@ impl ApprovalBlockProductionTarget {
             t.world_state_revert_proof.set_witness(pw, w);
         }
 
-        let default_proof = SmtProcessProof::with_root(new_world_state_root);
+        let default_proof = MerkleProcessProof::<F, H, Vec<bool>> {
+            index: vec![false; self.log_max_n_users],
+            old_value: Default::default(),
+            new_value: Default::default(),
+            siblings: vec![HashOut::ZERO; self.log_max_n_users],
+        };
         for t in self
             .world_state_revert_transitions
             .iter()
             .skip(witness.world_state_revert_proofs.len())
         {
-            t.world_state_revert_proof.set_witness(pw, &default_proof);
+            let (old_root, new_root) = t.world_state_revert_proof.set_witness(pw, &default_proof);
         }
 
         for (t, u) in self
@@ -272,10 +278,9 @@ impl ApprovalBlockProductionTarget {
             .iter()
             .zip(witness.latest_account_tree_process_proofs.iter())
         {
-            t.latest_account_process_proof.set_witness(pw, a);
+            t.latest_account_process_proof.set_witness(pw, &a);
         }
 
-        let default_proof = SmtProcessProof::with_root(new_latest_account_root);
         for t in self
             .world_state_revert_transitions
             .iter()
@@ -430,7 +435,7 @@ mod tests {
         let circuit_data = builder.build::<C>();
 
         let mut pw = PartialWitness::new();
-        approval_block_target.set_witness::<F, D>(&mut pw, &examples[0].approval_block);
+        approval_block_target.set_witness::<F, H, D>(&mut pw, &examples[0].approval_block);
 
         println!("start proving: block_proof");
         let start = Instant::now();

@@ -61,7 +61,7 @@ impl<F: RichField> BlockHeader<F> {
         .root;
         let default_tx_hash = MergeAndPurgeTransitionPublicInputs::default().tx_hash;
         let default_transactions_digest =
-            get_merkle_proof_with_zero::<F, PoseidonHash>(&[], 0, log_n_txs, *default_tx_hash).root;
+            get_merkle_proof_with_zero::<F, PoseidonHash>(&[], 0, log_n_txs, default_tx_hash).root;
         let default_block_headers_digest =
             get_merkle_proof::<F, PoseidonHash>(&[], 0, LOG_MAX_N_BLOCKS).root;
 

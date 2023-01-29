@@ -10,27 +10,29 @@ use plonky2::{
 };
 
 use crate::{
-    merkle_tree::{gadgets::get_merkle_root_target_from_leaves, tree::get_merkle_proof_with_zero},
-    sparse_merkle_tree::{
-        gadgets::process::{
-            process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
-            utils::{
-                get_process_merkle_proof_role, verify_layered_smt_target_connection,
-                ProcessMerkleProofRoleTarget,
-            },
-        },
-        layered_tree::verify_layered_smt_connection,
-        proof::ProcessMerkleProofRole,
+    merkle_tree::{
+        gadgets::{get_merkle_root_target_from_leaves, MerkleProcessProofTarget},
+        tree::{get_merkle_proof_with_zero, MerkleProcessProof},
     },
+    // sparse_merkle_tree::{
+    //     gadgets::process::{
+    //         process_smt::{SmtProcessProof, SparseMerkleProcessProofTarget},
+    //         utils::{
+    //             get_process_merkle_proof_role, verify_layered_smt_target_connection,
+    //             ProcessMerkleProofRoleTarget,
+    //         },
+    //     },
+    //     layered_tree::verify_layered_smt_connection,
+    //     proof::ProcessMerkleProofRole,
+    // },
     transaction::circuits::{
         MergeAndPurgeTransitionPublicInputs, MergeAndPurgeTransitionPublicInputsTarget,
     },
-    utils::{gadgets::logic::logical_or, hash::WrappedHashOut},
 };
 
 #[derive(Clone)]
 pub struct WorldStateProcessTransitionTarget {
-    pub world_state_process_proof: SparseMerkleProcessProofTarget,
+    pub world_state_process_proof: MerkleProcessProofTarget,
 
     pub user_transaction: MergeAndPurgeTransitionPublicInputsTarget,
 
@@ -62,7 +64,7 @@ impl ProposalBlockProductionTarget {
         let mut world_state_process_transitions = vec![];
         for _ in 0..n_txs {
             let world_state_process_proof =
-                SparseMerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder, log_max_n_users); // XXX: row: 529
+                MerkleProcessProofTarget::add_virtual_to::<F, H, D>(builder, log_max_n_users); // XXX: row: 529
             let user_transaction =
                 MergeAndPurgeTransitionPublicInputsTarget::add_virtual_to(builder);
             let enabled = builder.add_virtual_bool_target_safe();
@@ -91,35 +93,22 @@ impl ProposalBlockProductionTarget {
     }
 
     /// Returns `(transactions_digest, new_world_state_root)`.
-    pub fn set_witness<F: RichField + Extendable<D>, const D: usize>(
+    pub fn set_witness<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         &self,
         pw: &mut impl Witness<F>,
-        world_state_process_proofs: &[SmtProcessProof<F>],
+        world_state_process_proofs: &[MerkleProcessProof<F, H, HashOut<F>>],
         user_transactions: &[MergeAndPurgeTransitionPublicInputs<F>],
-        old_world_state_root: WrappedHashOut<F>,
+        old_world_state_root: HashOut<F>,
     ) -> (HashOut<F>, HashOut<F>) {
         let n_txs = self.world_state_process_transitions.len();
-        pw.set_hash_target(self.old_world_state_root, *old_world_state_root);
+        pw.set_hash_target(self.old_world_state_root, old_world_state_root);
 
         for (w, u) in world_state_process_proofs
             .iter()
             .zip(user_transactions.iter())
         {
-            // double spending 防止用のフラグが付いているので u.new_user_asset_root は 0 にならない.
-            assert_ne!(
-                w.fnc,
-                ProcessMerkleProofRole::ProcessDelete,
-                "not allowed removing nodes in world state tree"
-            );
-
-            verify_layered_smt_connection(
-                w.fnc,
-                w.old_value,
-                w.new_value,
-                u.old_user_asset_root,
-                u.new_user_asset_root,
-            )
-            .unwrap();
+            assert_eq!(w.old_value, u.old_user_asset_root);
+            assert_eq!(w.new_value, u.new_user_asset_root);
         }
 
         assert!(world_state_process_proofs.len() <= self.world_state_process_transitions.len());
@@ -135,7 +124,12 @@ impl ProposalBlockProductionTarget {
         }
         let new_world_state_root = prev_world_state_root;
 
-        let default_proof = SmtProcessProof::with_root(new_world_state_root);
+        let default_proof = MerkleProcessProof::<F, H, Vec<bool>> {
+            index: vec![false; self.log_max_n_users],
+            old_value: Default::default(),
+            new_value: Default::default(),
+            siblings: vec![HashOut::ZERO; self.log_max_n_users],
+        };
         for p_t in self
             .world_state_process_transitions
             .iter()
@@ -167,7 +161,7 @@ impl ProposalBlockProductionTarget {
 
         let mut transaction_hashes = vec![];
         for u in user_transactions {
-            transaction_hashes.push(*u.tx_hash);
+            transaction_hashes.push(u.tx_hash);
         }
 
         let default_tx_hash = MergeAndPurgeTransitionPublicInputs::<F>::default().tx_hash;
@@ -179,11 +173,11 @@ impl ProposalBlockProductionTarget {
             &transaction_hashes,
             0,
             log_n_txs,
-            *default_tx_hash,
+            default_tx_hash,
         )
         .root;
 
-        (transactions_digest, *new_world_state_root)
+        (transactions_digest, new_world_state_root)
     }
 }
 
@@ -222,34 +216,15 @@ pub fn verify_valid_proposal_block<
         enabled,
     } in world_state_process_transitions
     {
-        let ProcessMerkleProofRoleTarget {
-            is_no_op,
-            is_remove_op,
-            ..
-        } = get_process_merkle_proof_role(builder, w.fnc);
-
-        // If user transaction is not enabled, corresponding process proof is for noop process.
-        let is_no_op_or_enabled = logical_or(builder, is_no_op, *enabled);
-        builder.connect(is_no_op_or_enabled.target, constant_true.target);
-
-        // double spending 防止用のフラグが付いているので u.new_user_asset_root は 0 にならない.
-        builder.connect(is_remove_op.target, constant_false.target);
-
-        verify_layered_smt_target_connection(
-            builder,
-            w.fnc,
-            w.old_value,
-            w.new_value,
-            u.old_user_asset_root,
-            u.new_user_asset_root,
-        );
+        builder.connect_hashes(w.old_value, u.old_user_asset_root);
+        builder.connect_hashes(w.new_value, u.new_user_asset_root);
     }
 
-    // block tx root は block_txs から生まれる Merkle tree の root である.
-    let mut transaction_hashes = vec![];
-    for t in world_state_process_transitions {
-        transaction_hashes.push(t.user_transaction.tx_hash);
-    }
+    // transactions digest は transaction hash たちから生まれる Merkle tree の root である.
+    let transaction_hashes = world_state_process_transitions
+        .iter()
+        .map(|t| t.user_transaction.tx_hash)
+        .collect::<Vec<_>>();
 
     let transactions_digest =
         get_merkle_root_target_from_leaves::<F, H, D>(builder, transaction_hashes);
@@ -317,7 +292,7 @@ mod tests {
 
         let mut pw = PartialWitness::new();
         let (transactions_digest, new_world_state_root) = proposal_block_target
-            .set_witness::<F, D>(
+            .set_witness::<F, H, D>(
                 &mut pw,
                 &examples[0].world_state_process_proofs,
                 &examples[0].approval_block.user_transactions,

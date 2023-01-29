@@ -1,6 +1,9 @@
 use num::{BigUint, Integer, Zero};
 use plonky2::{
-    hash::{hash_types::RichField, merkle_proofs::MerkleProof},
+    hash::{
+        hash_types::{HashOut, RichField},
+        merkle_proofs::MerkleProof,
+    },
     plonk::config::{AlgebraicHasher, Hasher},
 };
 
@@ -10,6 +13,12 @@ use crate::{merkle_tree::tree::KeyLike, utils::hash::WrappedHashOut};
 
 pub trait Leafable<F: RichField, H: Hasher<F>>: Clone + Default + Eq {
     fn hash(&self) -> H::Hash;
+}
+
+impl<F: RichField, H: Hasher<F>> Leafable<F, H> for HashOut<F> {
+    fn hash(&self) -> H::Hash {
+        H::hash_or_noop(&self.elements)
+    }
 }
 
 impl<F: RichField, H: Hasher<F>> Leafable<F, H> for WrappedHashOut<F> {
@@ -62,7 +71,7 @@ impl<F: RichField, H: AlgebraicHasher<F>, V: Leafable<F, H>> SparseMerkleTreeMem
 
         // TODO: 改善の余地あり
         for (index, leaf_data) in partial_leaves.into_iter().enumerate() {
-            tree.update(&index, leaf_data);
+            tree.insert(&index, leaf_data);
         }
 
         tree
@@ -101,7 +110,7 @@ impl<F: RichField, H: AlgebraicHasher<F>, V: Leafable<F, H>> SparseMerkleTreeMem
         self.get_node_hash(&path)
     }
 
-    pub fn update<K: KeyLike>(&mut self, index: &K, leaf_data: V) -> V {
+    pub fn insert<K: KeyLike>(&mut self, index: &K, leaf_data: V) -> V {
         let mut path = index.to_bits();
         path.resize(self.height, false);
         // assert_eq!(path.len(), self.height);
@@ -132,17 +141,7 @@ impl<F: RichField, H: AlgebraicHasher<F>, V: Leafable<F, H>> SparseMerkleTreeMem
     }
 
     pub fn remove<K: KeyLike>(&mut self, index: &K) -> V {
-        self.update(index, V::default())
-    }
-
-    pub fn insert<K: KeyLike>(&mut self, index: &K, leaf_data: V) -> anyhow::Result<()> {
-        let old_leaf_data = self.update(index, leaf_data);
-        anyhow::ensure!(
-            old_leaf_data == V::default(),
-            "specified index was already used"
-        );
-
-        Ok(())
+        self.insert(index, V::default())
     }
 
     pub fn prove(&self, path: &MerklePath) -> MerkleProof<F, H> {
@@ -272,7 +271,7 @@ mod tests {
         for _ in 0..100 {
             let leaf_index = BigUint::from_bytes_le(&[(); 32].map(|_| rng.gen_range(0..=255)));
             let new_leaf_data = WrappedHashOut::rand();
-            let _old_leaf = tree.update(&leaf_index, new_leaf_data);
+            let _old_leaf = tree.insert(&leaf_index, new_leaf_data);
             indices.push(leaf_index.clone());
             let proof = tree.prove_leaf_node(&leaf_index);
             assert_eq!(tree.get_leaf_data(&leaf_index), new_leaf_data.clone());
@@ -312,7 +311,7 @@ mod tests {
 
         let mut tree = SparseMerkleTreeMemory::<F, H, WrappedHashOut<F>>::new(height);
         for (index, leaf_data) in leaves.into_iter().enumerate() {
-            tree.update(&index, leaf_data);
+            tree.insert(&index, leaf_data);
         }
         let expected_root = tree.get_root();
         assert_eq!(expected_root, actual_root);

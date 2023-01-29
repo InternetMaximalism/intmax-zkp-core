@@ -14,6 +14,8 @@ use crate::{
     zkdsa::account::Address,
 };
 
+use super::tree::tx_diff::TransactionWithNullifier;
+
 /// `TokenKind` で、トークンの種類を記述するのに使われる構造体
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[repr(transparent)]
@@ -82,11 +84,8 @@ impl<F: RichField> FromStr for VariableIndex<F> {
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Asset<F: RichField> {
-    #[serde(bound(
-        serialize = "TokenKind<F>: Serialize",
-        deserialize = "TokenKind<F>: Deserialize<'de>"
-    ))]
+pub struct Asset<F> {
+    #[serde(bound = "F: RichField")]
     pub kind: TokenKind<F>,
     pub amount: u64,
 }
@@ -199,33 +198,22 @@ impl<'de, F: RichField> Deserialize<'de> for VariableIndex<F> {
 
 #[allow(clippy::type_complexity)]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(bound(
-    serialize = "BlockHeader<F>: Serialize, MerkleProof<F, H, usize>: Serialize, Asset<F>: Serialize",
-    deserialize = "BlockHeader<F>: Deserialize<'de>, MerkleProof<F, H, usize>: Deserialize<'de>, Asset<F>: Deserialize<'de>"
-))]
+#[serde(bound = "F: RichField")]
 pub struct ReceivedAssetProof<F: RichField, H: Hasher<F>> {
     pub is_deposit: bool,
     pub diff_tree_inclusion_proof: (
         BlockHeader<F>,
-        MerkleProof<F, H, usize>,
-        MerkleProof<F, H, usize>,
+        MerkleProof<F, H, usize, TransactionWithNullifier<F, H>>,
     ),
-    pub latest_account_tree_inclusion_proof: MerkleProof<F, H, usize>,
+    pub latest_account_tree_inclusion_proof: MerkleProof<F, H, usize, H::Hash>,
     pub assets: Vec<Asset<F>>,
     pub nonce: H::Hash,
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct TokenKind<F: RichField> {
-    #[serde(bound(
-        serialize = "Address<F>: Serialize",
-        deserialize = "Address<F>: Deserialize<'de>"
-    ))]
+#[serde(bound = "F: RichField")]
+pub struct TokenKind<F> {
     pub contract_address: Address<F>,
-    #[serde(bound(
-        serialize = "VariableIndex<F>: Serialize",
-        deserialize = "VariableIndex<F>: Deserialize<'de>"
-    ))]
     pub variable_index: VariableIndex<F>,
 }
 

@@ -20,7 +20,7 @@ pub type PublicKey<F> = HashOut<F>;
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct Address<F: Field>(pub F);
+pub struct Address<F>(pub F);
 
 impl<F: RichField> std::fmt::Display for Address<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -1,6 +1,6 @@
 use super::{
     account::{Address, AddressTarget},
-    asset::TokenKind,
+    asset::{TokenKind, TokenKindTarget},
     block::UINT256,
     traits::{HashableTarget, Leafable},
 };
@@ -13,9 +13,10 @@ use plonky2::{
 };
 use plonky2_ecdsa::gadgets::biguint::BigUintTarget;
 
-/// Transaction which specifies a reciever, a token kind, and an amount.
+/// Transaction which specifies a sender, a reciever, a token kind, and an amount.
 /// `amount` should be below `MAX_AMOUNT`
 pub struct Transaction<F: RichField> {
+    pub from: Address<F>,
     pub to: Address<F>,
     pub kind: TokenKind<F>,
     pub amount: BigUint,
@@ -33,8 +34,9 @@ impl<F: RichField> Leafable<F> for Transaction<F> {
 }
 
 pub struct TransactionTarget {
+    pub from: AddressTarget,
     pub to: AddressTarget,
-    pub kind: Target,
+    pub kind: TokenKindTarget,
     pub amount: BigUintTarget,
     pub nonce: [Target; 4],
 }
@@ -52,4 +54,11 @@ pub struct DepositTransaction {
     pub amount: UINT256,
     /// To avoid collision of tx_hash
     pub block_number: UINT256,
+}
+
+impl DepositTransaction {
+    // This hash logic should be verifiable on Solidity
+    pub fn solidity_hash(&self) -> UINT256 {
+        todo!()
+    }
 }

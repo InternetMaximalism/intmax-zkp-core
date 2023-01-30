@@ -6,7 +6,10 @@ use plonky2::{
 
 /// Can be a leaf of Merkl trees.
 pub(crate) trait Leafable<F: RichField> {
+    /// Default value which indicates empty value.
     fn default(&self) -> Self;
+
+    /// Hash of its value.
     fn hash(&self) -> HashOut<F>;
 }
 

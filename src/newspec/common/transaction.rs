@@ -1,8 +1,7 @@
-use crate::zkdsa::gadgets::account::AddressTarget;
-
 use super::{
-    account::Address,
+    account::{Address, AddressTarget},
     asset::TokenKind,
+    block::UINT256,
     traits::{HashableTarget, Leafable},
 };
 use num::BigUint;
@@ -44,4 +43,13 @@ impl<F: RichField + Extendable<D>, const D: usize> HashableTarget<F, D> for Tran
     fn hash(&self, _builder: &mut CircuitBuilder<F, D>) -> HashOutTarget {
         todo!()
     }
+}
+
+/// Deposit tx from L1
+pub struct DepositTransaction {
+    pub to: UINT256,
+    pub kind: UINT256,
+    pub amount: UINT256,
+    /// To avoid collision of tx_hash
+    pub block_number: UINT256,
 }

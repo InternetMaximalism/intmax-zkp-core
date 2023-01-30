@@ -34,8 +34,8 @@ pub struct BlockHeader<F: RichField> {
     /// The root of tx tree.
     pub tx_root: HashOut<F>,
 
-    /// The root of deposit tx tree.
-    pub deposit_root: HashOut<F>,
+    /// The root of deposit tx tree from L1.
+    pub deposit_root: UINT256,
 }
 
 pub type UINT256 = [u64; 4];

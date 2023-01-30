@@ -37,3 +37,34 @@ pub struct BlockHeader<F: RichField> {
     /// The root of deposit tx tree.
     pub deposit_root: HashOut<F>,
 }
+
+pub type UINT256 = [u64; 4];
+
+/// Solidity version of BlockHeader which is posted to L1 Verifier contract.
+pub struct SolidityBlockHeader {
+    pub block_number: UINT256,
+    pub previous_block: UINT256,
+    pub world_state_root: UINT256,
+    pub partial_world_state_root: UINT256,
+    pub last_activity_root: UINT256,
+    pub tx_senders: Vec<UINT256>,
+    pub block_hash_root: UINT256,
+    pub tx_root: UINT256,
+    pub deposit_root: UINT256,
+}
+
+impl SolidityBlockHeader {
+    // This hash logic should be verifiable on Solidity
+    pub fn solidity_hash(&self) -> UINT256 {
+        todo!()
+    }
+}
+
+impl<F: RichField> BlockHeader<F> {
+    pub fn hash(&self) -> UINT256 {
+        self.to_solidity_blockheader().solidity_hash()
+    }
+    pub fn to_solidity_blockheader(&self) -> SolidityBlockHeader {
+        todo!()
+    }
+}

@@ -7,6 +7,7 @@ pub struct TokenKind<F: RichField> {
     pub variable_index: F,
 }
 
+/// `amount` should be below `MAX_AMOUNT`
 pub struct Asset<F: RichField> {
     pub kind: TokenKind<F>,
     pub amount: BigUint,

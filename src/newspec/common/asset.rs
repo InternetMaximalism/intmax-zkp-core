@@ -1,9 +1,9 @@
 use num::BigUint;
 use plonky2::{
     field::extension::Extendable,
-    hash::hash_types::{HashOut, HashOutTarget, RichField},
+    hash::hash_types::{HashOutTarget, RichField},
     iop::target::Target,
-    plonk::circuit_builder::CircuitBuilder,
+    plonk::{circuit_builder::CircuitBuilder, config::Hasher},
 };
 use plonky2_ecdsa::gadgets::biguint::BigUintTarget;
 
@@ -24,11 +24,11 @@ pub struct Asset<F: RichField> {
     pub amount: BigUint,
 }
 
-impl<F: RichField> Leafable<F> for Asset<F> {
-    fn default(&self) -> Self {
+impl<F: RichField, H: Hasher<F>> Leafable<F, H> for Asset<F> {
+    fn default_hash(&self) -> H::Hash {
         todo!()
     }
-    fn hash(&self) -> HashOut<F> {
+    fn hash(&self) -> H::Hash {
         todo!()
     }
 }

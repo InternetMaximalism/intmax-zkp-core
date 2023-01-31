@@ -1,7 +1,7 @@
 use plonky2::{
     field::extension::Extendable,
     hash::hash_types::{HashOut, HashOutTarget, RichField},
-    plonk::circuit_builder::CircuitBuilder,
+    plonk::{circuit_builder::CircuitBuilder, config::Hasher},
 };
 
 use super::traits::{HashableTarget, Leafable};
@@ -12,11 +12,12 @@ pub struct UserState<F: RichField> {
     pub public_key: HashOut<F>,
 }
 
-impl<F: RichField> Leafable<F> for UserState<F> {
-    fn default(&self) -> Self {
+impl<F: RichField, H: Hasher<F>> Leafable<F, H> for UserState<F> {
+    fn hash(&self) -> H::Hash {
         todo!()
     }
-    fn hash(&self) -> HashOut<F> {
+
+    fn default_hash(&self) -> H::Hash {
         todo!()
     }
 }

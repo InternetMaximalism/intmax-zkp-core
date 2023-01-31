@@ -8,9 +8,9 @@ use super::{
 };
 use plonky2::{
     field::extension::Extendable,
-    hash::hash_types::{HashOut, HashOutTarget, RichField},
+    hash::hash_types::{HashOutTarget, RichField},
     iop::target::Target,
-    plonk::circuit_builder::CircuitBuilder,
+    plonk::{circuit_builder::CircuitBuilder, config::Hasher},
 };
 
 /// Transaction which specifies a sender, a reciever, an asset.
@@ -23,11 +23,12 @@ pub struct Transaction<F: RichField> {
     pub nonce: [F; 4],
 }
 
-impl<F: RichField> Leafable<F> for Transaction<F> {
-    fn default(&self) -> Self {
+impl<F: RichField, H: Hasher<F>> Leafable<F, H> for Transaction<F> {
+    fn hash(&self) -> H::Hash {
         todo!()
     }
-    fn hash(&self) -> HashOut<F> {
+
+    fn default_hash(&self) -> H::Hash {
         todo!()
     }
 }

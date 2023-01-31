@@ -141,6 +141,25 @@ fn usize_to_vec(x: usize, length: usize) -> Vec<bool> {
     v
 }
 
+pub fn get_merkle_root<F: RichField, H: Hasher<F>>(
+    index: usize,
+    leaf_data: &Vec<F>,
+    proof: &MerkleProof<F, H>,
+) -> H::Hash {
+    let mut index = index;
+    let mut current_digest = H::hash_or_noop(leaf_data);
+    for &sibling_digest in proof.siblings.iter() {
+        let bit = index & 1;
+        index >>= 1;
+        current_digest = if bit == 1 {
+            H::two_to_one(sibling_digest, current_digest)
+        } else {
+            H::two_to_one(current_digest, sibling_digest)
+        }
+    }
+    current_digest
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,6 +188,7 @@ mod tests {
             tree.update(index, new_leaf.clone());
             let proof = tree.prove(index);
             assert_eq!(tree.get_leaf(index), new_leaf.clone());
+            assert_eq!(tree.get_root(), get_merkle_root(index, &new_leaf, &proof));
             verify_merkle_proof(new_leaf, index, tree.get_root(), &proof).unwrap();
         }
 
@@ -176,6 +196,7 @@ mod tests {
             let index = rng.gen_range(0..1 << height);
             let leaf = tree.get_leaf(index);
             let proof = tree.prove(index);
+            assert_eq!(tree.get_root(), get_merkle_root(index, &leaf, &proof));
             verify_merkle_proof(leaf, index, tree.get_root(), &proof).unwrap();
         }
     }

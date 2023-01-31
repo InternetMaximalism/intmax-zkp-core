@@ -10,7 +10,6 @@ pub struct BlockHeader<F: RichField> {
     /// The block number of intmax's L2 block
     pub block_number: F,
 
-    /// previous_block_hash
     pub previous_block_hash: HashOut<F>,
 
     /// Current `world_state_root`
@@ -41,7 +40,8 @@ pub struct BlockHeader<F: RichField> {
     pub deposit_root: UINT256,
 }
 
-pub type UINT256 = [u64; 4];
+/// Store 32bit per one field.
+pub type UINT256 = [u32; 8];
 pub type UINT256Target = [Target; 8];
 
 /// Solidity version of BlockHeader which is posted to L1 Verifier contract.

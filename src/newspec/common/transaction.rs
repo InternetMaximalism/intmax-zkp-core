@@ -3,7 +3,7 @@ use crate::transaction::asset::Asset;
 use super::{
     account::{Address, AddressTarget},
     asset::AssetTarget,
-    block::UINT256,
+    block_header::UINT256,
     traits::{HashableTarget, Leafable},
 };
 use plonky2::{

@@ -9,6 +9,8 @@ use plonky2_ecdsa::gadgets::biguint::BigUintTarget;
 
 use super::traits::{HashableTarget, Leafable};
 
+/// Ethereum address is wether 20bytes or 32bytes (256bit)
+/// Store 32bit per one field.
 pub struct ContractAddress<F: RichField>([F; 8]);
 
 pub struct TokenKind<F: RichField> {

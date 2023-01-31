@@ -2,18 +2,16 @@ use crate::transaction::asset::Asset;
 
 use super::{
     account::{Address, AddressTarget},
-    asset::{AssetTarget, TokenKind, TokenKindTarget},
+    asset::AssetTarget,
     block::UINT256,
     traits::{HashableTarget, Leafable},
 };
-use num::BigUint;
 use plonky2::{
     field::extension::Extendable,
     hash::hash_types::{HashOut, HashOutTarget, RichField},
     iop::target::Target,
     plonk::circuit_builder::CircuitBuilder,
 };
-use plonky2_ecdsa::gadgets::biguint::BigUintTarget;
 
 /// Transaction which specifies a sender, a reciever, an asset.
 /// `amount` should be below `MAX_AMOUNT`

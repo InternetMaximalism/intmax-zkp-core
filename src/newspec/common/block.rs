@@ -66,9 +66,9 @@ impl SolidityBlockHeader {
 
 impl<F: RichField> BlockHeader<F> {
     pub fn hash(&self) -> UINT256 {
-        self.to_solidity_blockheader().solidity_hash()
+        self.to_solidity_block_header().solidity_hash()
     }
-    pub fn to_solidity_blockheader(&self) -> SolidityBlockHeader {
+    pub fn to_solidity_block_header(&self) -> SolidityBlockHeader {
         todo!()
     }
 }

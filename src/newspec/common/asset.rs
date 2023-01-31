@@ -11,21 +11,24 @@ use super::traits::{HashableTarget, Leafable};
 
 /// Ethereum address is wether 20bytes or 32bytes (256bit)
 /// Store 32bit per one field.
+#[derive(Clone)]
 pub struct ContractAddress<F: RichField>([F; 8]);
 
+#[derive(Clone)]
 pub struct TokenKind<F: RichField> {
     pub contract_address: ContractAddress<F>,
     pub variable_index: F,
 }
 
 /// `amount` should be below `MAX_AMOUNT`
+#[derive(Clone)]
 pub struct Asset<F: RichField> {
     pub kind: TokenKind<F>,
     pub amount: BigUint,
 }
 
 impl<F: RichField, H: Hasher<F>> Leafable<F, H> for Asset<F> {
-    fn default_hash(&self) -> H::Hash {
+    fn default_hash() -> H::Hash {
         todo!()
     }
     fn hash(&self) -> H::Hash {

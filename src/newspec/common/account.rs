@@ -4,6 +4,7 @@ use plonky2::{
 };
 
 /// Address of user account. This corresponds to the index of the world state tree.
+#[derive(Clone)]
 pub struct Address<F: RichField>(pub F);
 
 pub struct Account<F: RichField> {

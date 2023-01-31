@@ -15,6 +15,7 @@ use plonky2::{
 
 /// Transaction which specifies a sender, a reciever, an asset.
 /// `amount` should be below `MAX_AMOUNT`
+#[derive(Clone)]
 pub struct Transaction<F: RichField> {
     pub from: Address<F>,
     pub to: Address<F>,
@@ -28,7 +29,7 @@ impl<F: RichField, H: Hasher<F>> Leafable<F, H> for Transaction<F> {
         todo!()
     }
 
-    fn default_hash(&self) -> H::Hash {
+    fn default_hash() -> H::Hash {
         todo!()
     }
 }

@@ -6,6 +6,7 @@ use plonky2::{
 
 use super::traits::{HashableTarget, Leafable};
 
+#[derive(Clone)]
 pub struct UserState<F: RichField> {
     pub asset_root: HashOut<F>,
     pub nullifier_hash_root: HashOut<F>,
@@ -17,7 +18,7 @@ impl<F: RichField, H: Hasher<F>> Leafable<F, H> for UserState<F> {
         todo!()
     }
 
-    fn default_hash(&self) -> H::Hash {
+    fn default_hash() -> H::Hash {
         todo!()
     }
 }

@@ -5,9 +5,9 @@ use plonky2::{
 };
 
 /// Can be a leaf of Merkl trees.
-pub trait Leafable<F: RichField, H: Hasher<F>> {
+pub trait Leafable<F: RichField, H: Hasher<F>>: Clone {
     /// Default hash which indicates empty value.
-    fn default_hash(&self) -> H::Hash;
+    fn default_hash() -> H::Hash;
 
     /// Hash of its value.
     fn hash(&self) -> H::Hash;

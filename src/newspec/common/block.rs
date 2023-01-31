@@ -10,8 +10,8 @@ pub struct BlockHeader<F: RichField> {
     /// The block number of intmax's L2 block
     pub block_number: F,
 
-    /// previous_block
-    pub previous_block: HashOut<F>,
+    /// previous_block_hash
+    pub previous_block_hash: HashOut<F>,
 
     /// Current `world_state_root`
     pub world_state_root: HashOut<F>,

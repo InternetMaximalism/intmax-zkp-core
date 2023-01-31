@@ -91,13 +91,9 @@ impl<F: RichField, H: Hasher<F>, V: Leafable<F, H>> MerkleTree<F, H, V> {
     pub fn prove(&self, index: usize) -> MerkleProof<F, H> {
         let mut path = usize_to_vec(index, self.height);
         let mut siblings = vec![];
-        loop {
+        while !path.is_empty() {
             siblings.push(self.get_sibling_hash(&path));
-            if path.len() == 1 {
-                break;
-            } else {
-                path.pop();
-            }
+            path.pop();
         }
         MerkleProof { siblings }
     }
@@ -115,13 +111,13 @@ fn usize_to_vec(x: usize, length: usize) -> Vec<bool> {
     v
 }
 
-pub fn get_merkle_root<F: RichField, H: Hasher<F>>(
+pub fn get_merkle_root<F: RichField, H: Hasher<F>, V: Leafable<F, H>>(
     index: usize,
-    leaf_data: &Vec<F>,
+    leaf: &V,
     proof: &MerkleProof<F, H>,
 ) -> H::Hash {
     let mut index = index;
-    let mut current_digest = H::hash_or_noop(leaf_data);
+    let mut current_digest = leaf.hash();
     for &sibling_digest in proof.siblings.iter() {
         let bit = index & 1;
         index >>= 1;
@@ -140,7 +136,7 @@ mod tests {
     use plonky2::{
         field::types::{Field, Sample},
         hash::{merkle_proofs::verify_merkle_proof, poseidon::PoseidonHash},
-        plonk::config::{AlgebraicHasher, GenericConfig, PoseidonGoldilocksConfig},
+        plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
     };
     use rand::Rng;
 
@@ -150,7 +146,7 @@ mod tests {
     type H = PoseidonHash;
     type V = Vec<F>;
 
-    impl<F: RichField, H: Hasher<F>> Leafable<F, H> for V {
+    impl<F: RichField, H: Hasher<F>> Leafable<F, H> for Vec<F> {
         /// Default hash which indicates empty value.
         fn default_hash() -> H::Hash {
             H::hash_no_pad(&[])
@@ -182,9 +178,17 @@ mod tests {
         // for _ in 0..100 {
         //     let index = rng.gen_range(0..1 << height);
         //     let leaf = tree.get_leaf(index);
-        //     let proof = tree.prove(index);
-        //     assert_eq!(tree.get_root(), get_merkle_root(index, &leaf, &proof));
-        //     verify_merkle_proof(leaf, index, tree.get_root(), &proof).unwrap();
+        //     match leaf {
+        //         Some(leaf) => {
+        //             let proof = tree.prove(index);
+        //             verify_merkle_proof(leaf, index, tree.get_root(), &proof).unwrap();
+        //         }
+        //         None => {
+        //             let exclusion_proof = tree.prove(index);
+        //             verify_merkle_proof(vec![], index, tree.get_root(), &exclusion_proof).unwrap();
+        //         }
+        //     }
+
         // }
     }
 }

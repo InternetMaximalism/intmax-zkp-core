@@ -1,6 +1,8 @@
+use crate::transaction::asset::Asset;
+
 use super::{
     account::{Address, AddressTarget},
-    asset::{TokenKind, TokenKindTarget},
+    asset::{AssetTarget, TokenKind, TokenKindTarget},
     block::UINT256,
     traits::{HashableTarget, Leafable},
 };
@@ -13,13 +15,12 @@ use plonky2::{
 };
 use plonky2_ecdsa::gadgets::biguint::BigUintTarget;
 
-/// Transaction which specifies a sender, a reciever, a token kind, and an amount.
+/// Transaction which specifies a sender, a reciever, an asset.
 /// `amount` should be below `MAX_AMOUNT`
 pub struct Transaction<F: RichField> {
     pub from: Address<F>,
     pub to: Address<F>,
-    pub kind: TokenKind<F>,
-    pub amount: BigUint,
+    pub asset: Asset<F>,
     /// Random value which randomize tx_hash
     pub nonce: [F; 4],
 }
@@ -36,8 +37,7 @@ impl<F: RichField> Leafable<F> for Transaction<F> {
 pub struct TransactionTarget {
     pub from: AddressTarget,
     pub to: AddressTarget,
-    pub kind: TokenKindTarget,
-    pub amount: BigUintTarget,
+    pub asset: AssetTarget,
     pub nonce: [Target; 4],
 }
 

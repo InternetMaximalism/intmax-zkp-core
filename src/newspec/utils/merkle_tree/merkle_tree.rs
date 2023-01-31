@@ -114,6 +114,10 @@ impl<F: RichField, H: Hasher<F>> MerkleTree<F, H> {
         }
     }
 
+    pub fn remove(&mut self, index: usize) {
+        self.update(index, self.zero.clone())
+    }
+
     pub fn prove(&self, index: usize) -> MerkleProof<F, H> {
         let mut path = usize_to_vec(index, self.height);
         let mut siblings = vec![];

@@ -53,6 +53,7 @@ impl<F: RichField + Extendable<D>, const D: usize> LeafableTarget<F, D> for Tran
 }
 
 /// Deposit tx from L1
+#[derive(Clone)]
 pub struct DepositTransaction {
     pub to: UINT256,
     pub kind: UINT256,
@@ -64,6 +65,16 @@ pub struct DepositTransaction {
 impl DepositTransaction {
     // This hash logic should be verifiable on Solidity
     pub fn solidity_hash(&self) -> UINT256 {
+        todo!()
+    }
+}
+
+impl<F: RichField, H: Hasher<F>> Leafable<F, H> for DepositTransaction {
+    fn empty_leaf() -> Self {
+        todo!()
+    }
+
+    fn hash(&self) -> H::Hash {
         todo!()
     }
 }
@@ -82,6 +93,7 @@ impl DepositTransactionTarget {
     }
 }
 
+#[derive(Clone)]
 /// Withdraw tx from L2
 pub struct WithdrawTransaction {
     pub to: UINT256,
@@ -92,6 +104,16 @@ pub struct WithdrawTransaction {
 impl WithdrawTransaction {
     // This hash logic should be verifiable on Solidity
     pub fn solidity_hash(&self) -> UINT256 {
+        todo!()
+    }
+}
+
+impl<F: RichField, H: Hasher<F>> Leafable<F, H> for WithdrawTransaction {
+    fn empty_leaf() -> Self {
+        todo!()
+    }
+
+    fn hash(&self) -> H::Hash {
         todo!()
     }
 }

@@ -5,6 +5,6 @@ use plonky2::{
 
 use crate::newspec::utils::merkle_tree::merkle_tree::MerkleTree;
 
-pub struct BlockHashTree<F: RichField, H: Hasher<F, Hash = HashOut<F>>> {
+pub struct TransactionTree<F: RichField, H: Hasher<F, Hash = HashOut<F>>> {
     pub merkle_tree: MerkleTree<F, H, HashOut<F>>,
 }

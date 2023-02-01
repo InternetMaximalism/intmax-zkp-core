@@ -4,7 +4,7 @@ use plonky2::{
     plonk::{circuit_builder::CircuitBuilder, config::Hasher},
 };
 
-use super::traits::{HashableTarget, Leafable};
+use super::traits::{Leafable, LeafableTarget};
 
 #[derive(Clone)]
 pub struct UserState<F: RichField> {
@@ -29,8 +29,12 @@ pub struct UserStateTarget {
     pub public_key: HashOutTarget,
 }
 
-impl<F: RichField + Extendable<D>, const D: usize> HashableTarget<F, D> for UserStateTarget {
+impl<F: RichField + Extendable<D>, const D: usize> LeafableTarget<F, D> for UserStateTarget {
     fn hash(&self, _builder: &mut CircuitBuilder<F, D>) -> HashOutTarget {
+        todo!()
+    }
+
+    fn empty_leaf(&self, _builder: &mut CircuitBuilder<F, D>) -> HashOutTarget {
         todo!()
     }
 }

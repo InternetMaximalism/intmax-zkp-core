@@ -7,7 +7,7 @@ use plonky2::{
 };
 use plonky2_ecdsa::gadgets::biguint::BigUintTarget;
 
-use super::traits::{HashableTarget, Leafable};
+use super::traits::{Leafable, LeafableTarget};
 
 /// Ethereum address is wether 20bytes or 32bytes (256bit)
 /// Store 32bit per one field.
@@ -48,8 +48,12 @@ pub struct AssetTarget {
     pub amount: BigUintTarget,
 }
 
-impl<F: RichField + Extendable<D>, const D: usize> HashableTarget<F, D> for AssetTarget {
+impl<F: RichField + Extendable<D>, const D: usize> LeafableTarget<F, D> for AssetTarget {
     fn hash(&self, _builder: &mut CircuitBuilder<F, D>) -> HashOutTarget {
+        todo!()
+    }
+
+    fn empty_leaf(&self, _builder: &mut CircuitBuilder<F, D>) -> HashOutTarget {
         todo!()
     }
 }

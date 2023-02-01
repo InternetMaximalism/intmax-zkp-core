@@ -13,6 +13,7 @@ pub trait Leafable<F: RichField, H: Hasher<F>>: Clone {
     fn hash(&self) -> H::Hash;
 }
 
-pub(crate) trait HashableTarget<F: RichField + Extendable<D>, const D: usize> {
+pub(crate) trait LeafableTarget<F: RichField + Extendable<D>, const D: usize> {
+    fn empty_leaf(&self, builder: &mut CircuitBuilder<F, D>) -> HashOutTarget;
     fn hash(&self, builder: &mut CircuitBuilder<F, D>) -> HashOutTarget;
 }

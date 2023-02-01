@@ -4,7 +4,7 @@ use super::{
     account::{Address, AddressTarget},
     asset::AssetTarget,
     block_header::{UINT256Target, UINT256},
-    traits::{HashableTarget, Leafable},
+    traits::{Leafable, LeafableTarget},
 };
 use plonky2::{
     field::extension::Extendable,
@@ -42,8 +42,12 @@ pub struct TransactionTarget {
     pub nonce: [Target; 4],
 }
 
-impl<F: RichField + Extendable<D>, const D: usize> HashableTarget<F, D> for TransactionTarget {
+impl<F: RichField + Extendable<D>, const D: usize> LeafableTarget<F, D> for TransactionTarget {
     fn hash(&self, _builder: &mut CircuitBuilder<F, D>) -> HashOutTarget {
+        todo!()
+    }
+
+    fn empty_leaf(&self, _builder: &mut CircuitBuilder<F, D>) -> HashOutTarget {
         todo!()
     }
 }

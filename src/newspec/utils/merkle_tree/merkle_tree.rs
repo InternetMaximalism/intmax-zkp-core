@@ -13,15 +13,14 @@ pub struct MerkleTree<F: RichField, H: Hasher<F>, V: Leafable<F, H>> {
     height: usize,
     node_hashes: HashMap<Vec<bool>, H::Hash>,
     leaves: HashMap<usize, V>,
-    zero: V,
     zero_hashes: Vec<H::Hash>,
 }
 
 impl<F: RichField, H: Hasher<F>, V: Leafable<F, H>> MerkleTree<F, H, V> {
-    pub fn new(height: usize, zero: V) -> Self {
+    pub fn new(height: usize) -> Self {
         // zero_hashes = reverse([H(zero_leaf), H(H(zero_leaf), H(zero_leaf)), ...])
         let mut zero_hashes = vec![];
-        let mut h = V::default_hash();
+        let mut h = V::empty_leaf().hash();
         zero_hashes.push(h);
         for _ in 0..height {
             h = H::two_to_one(h, h);
@@ -36,7 +35,6 @@ impl<F: RichField, H: Hasher<F>, V: Leafable<F, H>> MerkleTree<F, H, V> {
             height,
             node_hashes,
             leaves,
-            zero,
             zero_hashes,
         }
     }
@@ -69,9 +67,9 @@ impl<F: RichField, H: Hasher<F>, V: Leafable<F, H>> MerkleTree<F, H, V> {
         let mut path = usize_to_vec(index, self.height);
 
         self.leaves.insert(index, leaf.clone());
-        self.node_hashes.insert(path.clone(), leaf.hash());
 
         let mut h = leaf.hash();
+        self.node_hashes.insert(path.clone(), h);
 
         while !path.is_empty() {
             let sibling = self.get_sibling_hash(&path);
@@ -85,7 +83,7 @@ impl<F: RichField, H: Hasher<F>, V: Leafable<F, H>> MerkleTree<F, H, V> {
     }
 
     pub fn remove(&mut self, index: usize) {
-        self.update(index, self.zero.clone())
+        self.update(index, V::empty_leaf())
     }
 
     pub fn prove(&self, index: usize) -> MerkleProof<F, H> {
@@ -134,7 +132,7 @@ pub fn get_merkle_root<F: RichField, H: Hasher<F>, V: Leafable<F, H>>(
 mod tests {
     use super::*;
     use plonky2::{
-        field::types::{Field, Sample},
+        field::types::Sample,
         hash::{merkle_proofs::verify_merkle_proof, poseidon::PoseidonHash},
         plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
     };
@@ -148,10 +146,9 @@ mod tests {
 
     impl<F: RichField, H: Hasher<F>> Leafable<F, H> for Vec<F> {
         /// Default hash which indicates empty value.
-        fn default_hash() -> H::Hash {
-            H::hash_no_pad(&[])
+        fn empty_leaf() -> Self {
+            vec![]
         }
-
         /// Hash of its value.
         fn hash(&self) -> H::Hash {
             H::hash_or_noop(self)
@@ -162,8 +159,8 @@ mod tests {
     fn tree_test() {
         let mut rng = rand::thread_rng();
         let height = 10;
-        let default_leaf = vec![F::ZERO];
-        let mut tree = MerkleTree::<F, H, V>::new(height, default_leaf);
+
+        let mut tree = MerkleTree::<F, H, V>::new(height);
         let index = 0;
         let proof = tree.prove(index);
         verify_merkle_proof(vec![], index, tree.get_root(), &proof).unwrap();

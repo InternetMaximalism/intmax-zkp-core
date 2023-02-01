@@ -28,7 +28,7 @@ pub struct Asset<F: RichField> {
 }
 
 impl<F: RichField, H: Hasher<F>> Leafable<F, H> for Asset<F> {
-    fn default_hash() -> H::Hash {
+    fn empty_leaf() -> Self {
         todo!()
     }
     fn hash(&self) -> H::Hash {

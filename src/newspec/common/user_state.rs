@@ -18,7 +18,7 @@ impl<F: RichField, H: Hasher<F>> Leafable<F, H> for UserState<F> {
         todo!()
     }
 
-    fn default_hash() -> H::Hash {
+    fn empty_leaf() -> Self {
         todo!()
     }
 }

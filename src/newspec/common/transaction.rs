@@ -30,7 +30,7 @@ impl<F: RichField, H: Hasher<F>> Leafable<F, H> for Transaction<F> {
         todo!()
     }
 
-    fn default_hash() -> H::Hash {
+    fn empty_leaf() -> Self {
         todo!()
     }
 }

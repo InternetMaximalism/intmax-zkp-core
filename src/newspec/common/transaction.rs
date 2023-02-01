@@ -3,7 +3,7 @@ use crate::transaction::asset::Asset;
 use super::{
     account::{Address, AddressTarget},
     asset::AssetTarget,
-    block_header::UINT256,
+    block_header::{UINT256Target, UINT256},
     traits::{HashableTarget, Leafable},
 };
 use plonky2::{
@@ -12,6 +12,7 @@ use plonky2::{
     iop::target::Target,
     plonk::{circuit_builder::CircuitBuilder, config::Hasher},
 };
+use plonky2_ecdsa::gadgets::biguint::BigUintTarget;
 
 /// Transaction which specifies a sender, a reciever, an asset.
 /// `amount` should be below `MAX_AMOUNT`
@@ -63,6 +64,20 @@ impl DepositTransaction {
     }
 }
 
+pub struct DepositTransactionTarget {
+    pub to: AddressTarget,
+    pub kind: UINT256Target,
+    pub amount: BigUintTarget,
+    pub block_number: UINT256Target,
+}
+
+impl DepositTransactionTarget {
+    // This hash logic should be verifiable on Solidity
+    pub fn solidity_hash(&self) -> UINT256 {
+        todo!()
+    }
+}
+
 /// Withdraw tx from L2
 pub struct WithdrawTransaction {
     pub to: UINT256,
@@ -71,6 +86,19 @@ pub struct WithdrawTransaction {
 }
 
 impl WithdrawTransaction {
+    // This hash logic should be verifiable on Solidity
+    pub fn solidity_hash(&self) -> UINT256 {
+        todo!()
+    }
+}
+
+pub struct WithdrawTransactionTarget {
+    pub to: UINT256Target,
+    pub kind: UINT256Target,
+    pub amount: UINT256Target,
+}
+
+impl WithdrawTransactionTarget {
     // This hash logic should be verifiable on Solidity
     pub fn solidity_hash(&self) -> UINT256 {
         todo!()

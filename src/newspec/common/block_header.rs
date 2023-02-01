@@ -1,4 +1,7 @@
-use super::{account::Address, transaction::WithdrawTransaction};
+use super::{
+    account::Address,
+    transaction::{WithdrawTransaction, WithdrawTransactionTarget},
+};
 use plonky2::{
     hash::hash_types::{HashOut, RichField},
     iop::target::Target,
@@ -57,6 +60,7 @@ pub struct SolidityBlockHeader {
     pub block_hash_root: UINT256,
     pub tx_root: UINT256,
     pub deposit_root: UINT256,
+    pub withdraw_tx: Vec<WithdrawTransaction>,
 }
 
 impl SolidityBlockHeader {
@@ -85,4 +89,5 @@ pub struct SolidityBlockHeaderTarget {
     pub block_hash_root: UINT256Target,
     pub tx_root: UINT256Target,
     pub deposit_root: UINT256Target,
+    pub withdraw_tx: Vec<WithdrawTransactionTarget>,
 }

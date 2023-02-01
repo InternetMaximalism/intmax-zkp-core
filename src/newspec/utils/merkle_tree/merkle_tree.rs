@@ -159,7 +159,7 @@ mod tests {
     }
 
     #[test]
-    fn tree_test() {
+    fn test_merkle_tree() {
         let mut rng = rand::thread_rng();
         let height = 10;
 

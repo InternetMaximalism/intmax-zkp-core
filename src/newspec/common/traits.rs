@@ -1,6 +1,6 @@
 use plonky2::{
     field::extension::Extendable,
-    hash::hash_types::{HashOutTarget, RichField},
+    hash::hash_types::{HashOut, HashOutTarget, RichField},
     plonk::{circuit_builder::CircuitBuilder, config::Hasher},
 };
 
@@ -13,7 +13,17 @@ pub trait Leafable<F: RichField, H: Hasher<F>>: Clone {
     fn hash(&self) -> H::Hash;
 }
 
-pub(crate) trait LeafableTarget<F: RichField + Extendable<D>, const D: usize> {
+pub trait LeafableTarget<F: RichField + Extendable<D>, const D: usize> {
     fn empty_leaf(&self, builder: &mut CircuitBuilder<F, D>) -> HashOutTarget;
     fn hash(&self, builder: &mut CircuitBuilder<F, D>) -> HashOutTarget;
+}
+
+impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> Leafable<F, H> for HashOut<F> {
+    fn empty_leaf() -> Self {
+        HashOut::ZERO
+    }
+
+    fn hash(&self) -> H::Hash {
+        *self
+    }
 }

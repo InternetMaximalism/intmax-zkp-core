@@ -1,11 +1,19 @@
 use plonky2::{
-    hash::{hash_types::RichField, merkle_proofs::MerkleProof},
-    plonk::config::Hasher,
+    field::extension::Extendable,
+    hash::{
+        hash_types::{HashOut, HashOutTarget, RichField},
+        merkle_proofs::{verify_merkle_proof, MerkleProof, MerkleProofTarget},
+    },
+    iop::target::Target,
+    plonk::{
+        circuit_builder::CircuitBuilder,
+        config::{AlgebraicHasher, Hasher},
+    },
 };
 
 use std::collections::HashMap;
 
-use crate::newspec::common::traits::Leafable;
+use crate::newspec::common::traits::{Leafable, LeafableTarget};
 
 /// Sparse Merkle Tree which is compatible to the native plonky2 Merkle Tree.
 #[derive(Debug)]
@@ -131,12 +139,47 @@ pub fn get_merkle_root<F: RichField, H: Hasher<F>, V: Leafable<F, H>>(
     current_digest
 }
 
+pub fn verify_merkle_proof_with_leaf<
+    F: RichField,
+    H: Hasher<F, Hash = HashOut<F>>,
+    V: Leafable<F, H>,
+>(
+    leaf_data: V,
+    leaf_index: usize,
+    merkle_root: H::Hash,
+    proof: &MerkleProof<F, H>,
+) -> anyhow::Result<()> {
+    verify_merkle_proof(
+        leaf_data.hash().elements.to_vec(),
+        leaf_index,
+        merkle_root,
+        proof,
+    )
+}
+
+pub fn verify_merkle_proof_with_leaf_target<
+    F: RichField + Extendable<D>,
+    H: AlgebraicHasher<F>,
+    VT: LeafableTarget<F, D>,
+    const D: usize,
+>(
+    builder: &mut CircuitBuilder<F, D>,
+    leaf_data: VT,
+    leaf_index: Target,
+    merkle_root: HashOutTarget,
+    proof: &MerkleProofTarget,
+) {
+    let index_bits = builder.split_le(leaf_index, proof.siblings.len());
+    let leaf_hash = leaf_data.hash(builder).elements.to_vec();
+    builder.verify_merkle_proof::<H>(leaf_hash, &index_bits, merkle_root, proof);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use plonky2::{
         field::types::Sample,
-        hash::{merkle_proofs::verify_merkle_proof, poseidon::PoseidonHash},
+        hash::poseidon::PoseidonHash,
         plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
     };
     use rand::Rng;
@@ -154,7 +197,7 @@ mod tests {
         }
         /// Hash of its value.
         fn hash(&self) -> H::Hash {
-            H::hash_or_noop(self)
+            H::hash_no_pad(self)
         }
     }
 
@@ -177,7 +220,9 @@ mod tests {
             let proof = tree.prove(index);
             assert_eq!(tree.get_leaf(index), leaf.clone());
             assert_eq!(tree.get_root(), get_merkle_root(index, &leaf, &proof));
-            verify_merkle_proof(leaf, index, tree.get_root(), &proof).unwrap();
+            let h = Leafable::<F, H>::hash(&leaf);
+            verify_merkle_proof_with_leaf(h, index, tree.get_root(), &proof).unwrap();
+            verify_merkle_proof_with_leaf(leaf, index, tree.get_root(), &proof).unwrap();
         }
     }
 }

@@ -59,8 +59,11 @@ impl<F: RichField, H: Hasher<F>, V: Leafable<F, H>> MerkleTree<F, H, V> {
         self.get_node_hash(&vec![])
     }
 
-    pub fn get_leaf(&self, index: usize) -> Option<V> {
-        self.leaves.get(&index).cloned()
+    pub fn get_leaf(&self, index: usize) -> V {
+        match self.leaves.get(&index) {
+            Some(leaf) => leaf.clone(),
+            None => V::empty_leaf(),
+        }
     }
 
     pub fn update(&mut self, index: usize, leaf: V) {
@@ -170,7 +173,7 @@ mod tests {
             let new_leaf = F::rand_vec(4);
             tree.update(index, new_leaf.clone());
             let proof = tree.prove(index);
-            assert_eq!(tree.get_leaf(index).unwrap(), new_leaf.clone());
+            assert_eq!(tree.get_leaf(index), new_leaf.clone());
             assert_eq!(tree.get_root(), get_merkle_root(index, &new_leaf, &proof));
             dbg!(&proof);
             verify_merkle_proof(new_leaf, index, tree.get_root(), &proof).unwrap();
@@ -179,16 +182,8 @@ mod tests {
         for _ in 0..100 {
             let index = rng.gen_range(0..1 << height);
             let leaf = tree.get_leaf(index);
-            match leaf {
-                Some(leaf) => {
-                    let proof = tree.prove(index);
-                    verify_merkle_proof(leaf, index, tree.get_root(), &proof).unwrap();
-                }
-                None => {
-                    let exclusion_proof = tree.prove(index);
-                    verify_merkle_proof(vec![], index, tree.get_root(), &exclusion_proof).unwrap();
-                }
-            }
+            let proof = tree.prove(index);
+            verify_merkle_proof(leaf, index, tree.get_root(), &proof).unwrap();
         }
     }
 }

@@ -154,16 +154,19 @@ mod tests {
 
         /// Hash of its value.
         fn hash(&self) -> H::Hash {
-            H::hash_no_pad(self)
+            H::hash_or_noop(self)
         }
     }
 
     #[test]
     fn tree_test() {
         let mut rng = rand::thread_rng();
-        let height = 100;
+        let height = 10;
         let default_leaf = vec![F::ZERO];
         let mut tree = MerkleTree::<F, H, V>::new(height, default_leaf);
+        let index = 0;
+        let proof = tree.prove(index);
+        verify_merkle_proof(vec![], index, tree.get_root(), &proof).unwrap();
 
         for _ in 0..100 {
             let index = rng.gen_range(0..1 << height);
@@ -172,23 +175,23 @@ mod tests {
             let proof = tree.prove(index);
             assert_eq!(tree.get_leaf(index).unwrap(), new_leaf.clone());
             assert_eq!(tree.get_root(), get_merkle_root(index, &new_leaf, &proof));
+            dbg!(&proof);
             verify_merkle_proof(new_leaf, index, tree.get_root(), &proof).unwrap();
         }
 
-        // for _ in 0..100 {
-        //     let index = rng.gen_range(0..1 << height);
-        //     let leaf = tree.get_leaf(index);
-        //     match leaf {
-        //         Some(leaf) => {
-        //             let proof = tree.prove(index);
-        //             verify_merkle_proof(leaf, index, tree.get_root(), &proof).unwrap();
-        //         }
-        //         None => {
-        //             let exclusion_proof = tree.prove(index);
-        //             verify_merkle_proof(vec![], index, tree.get_root(), &exclusion_proof).unwrap();
-        //         }
-        //     }
-
-        // }
+        for _ in 0..100 {
+            let index = rng.gen_range(0..1 << height);
+            let leaf = tree.get_leaf(index);
+            match leaf {
+                Some(leaf) => {
+                    let proof = tree.prove(index);
+                    verify_merkle_proof(leaf, index, tree.get_root(), &proof).unwrap();
+                }
+                None => {
+                    let exclusion_proof = tree.prove(index);
+                    verify_merkle_proof(vec![], index, tree.get_root(), &exclusion_proof).unwrap();
+                }
+            }
+        }
     }
 }

@@ -62,3 +62,17 @@ impl DepositTransaction {
         todo!()
     }
 }
+
+/// Withdraw tx from L2
+pub struct WithdrawTransaction {
+    pub to: UINT256,
+    pub kind: UINT256,
+    pub amount: UINT256,
+}
+
+impl WithdrawTransaction {
+    // This hash logic should be verifiable on Solidity
+    pub fn solidity_hash(&self) -> UINT256 {
+        todo!()
+    }
+}

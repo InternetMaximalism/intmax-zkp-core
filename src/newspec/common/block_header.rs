@@ -1,4 +1,4 @@
-use super::account::Address;
+use super::{account::Address, transaction::WithdrawTransaction};
 use plonky2::{
     hash::hash_types::{HashOut, RichField},
     iop::target::Target,
@@ -38,6 +38,8 @@ pub struct BlockHeader<F: RichField> {
 
     /// The root of deposit tx tree from L1.
     pub deposit_root: UINT256,
+
+    pub withdraw_tx: Vec<WithdrawTransaction>,
 }
 
 /// Store 32bit per one field.

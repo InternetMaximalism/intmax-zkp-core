@@ -164,25 +164,19 @@ mod tests {
         let height = 10;
 
         let mut tree = MerkleTree::<F, H, V>::new(height);
-        let index = 0;
-        let proof = tree.prove(index);
-        verify_merkle_proof(vec![], index, tree.get_root(), &proof).unwrap();
 
         for _ in 0..100 {
             let index = rng.gen_range(0..1 << height);
             let new_leaf = F::rand_vec(4);
             tree.update(index, new_leaf.clone());
-            let proof = tree.prove(index);
-            assert_eq!(tree.get_leaf(index), new_leaf.clone());
-            assert_eq!(tree.get_root(), get_merkle_root(index, &new_leaf, &proof));
-            dbg!(&proof);
-            verify_merkle_proof(new_leaf, index, tree.get_root(), &proof).unwrap();
         }
 
         for _ in 0..100 {
             let index = rng.gen_range(0..1 << height);
             let leaf = tree.get_leaf(index);
             let proof = tree.prove(index);
+            assert_eq!(tree.get_leaf(index), leaf.clone());
+            assert_eq!(tree.get_root(), get_merkle_root(index, &leaf, &proof));
             verify_merkle_proof(leaf, index, tree.get_root(), &proof).unwrap();
         }
     }

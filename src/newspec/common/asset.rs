@@ -16,9 +16,11 @@ use plonky2_u32::{
 
 use super::traits::{Leafable, LeafableTarget};
 
+pub const CONTRACT_ADDRESS_LIMBS: usize = 8;
+
 /// Ethereum address is wether 20bytes or 32bytes (256bit)
 #[derive(Copy, Clone, Debug, Default)]
-pub struct ContractAddress([u32; 8]);
+pub struct ContractAddress([u32; CONTRACT_ADDRESS_LIMBS]);
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct TokenKind<F: RichField> {
@@ -44,13 +46,13 @@ impl<F: RichField> TokenKind<F> {
 #[derive(Clone, Debug, Default)]
 pub struct Asset<F: RichField> {
     pub kind: TokenKind<F>,
-    pub amount: BigUint, // num_limbs: 8
+    pub amount: BigUint, // num_limbs: CONTRACT_ADDRESS_LIMBS
 }
 
 impl<F: RichField> Asset<F> {
     pub(crate) fn to_vec(&self) -> Vec<F> {
         let mut amount = self.amount.to_u32_digits();
-        amount.resize(8, 0);
+        amount.resize(CONTRACT_ADDRESS_LIMBS, 0);
 
         vec![
             self.kind.to_vec(),
@@ -74,13 +76,13 @@ impl<F: RichField, H: Hasher<F>> Leafable<F, H> for Asset<F> {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct ContractAddressTarget([U32Target; 8]);
+pub struct ContractAddressTarget([U32Target; CONTRACT_ADDRESS_LIMBS]);
 
 impl ContractAddressTarget {
     pub fn make_constraints<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
-        let targets = builder.add_virtual_u32_targets(8);
+        let targets = builder.add_virtual_u32_targets(CONTRACT_ADDRESS_LIMBS);
         for target in targets.iter() {
             builder.range_check(target.0, 32);
         }
@@ -154,7 +156,7 @@ impl TokenKindTarget {
 #[derive(Clone, Debug)]
 pub struct AssetTarget {
     pub kind: TokenKindTarget,
-    pub amount: BigUintTarget, // num_limbs: 8
+    pub amount: BigUintTarget, // num_limbs: CONTRACT_ADDRESS_LIMBS
 }
 
 impl AssetTarget {
@@ -162,7 +164,7 @@ impl AssetTarget {
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
         let kind = TokenKindTarget::make_constraints(builder);
-        let amount = builder.add_virtual_biguint_target(8);
+        let amount = builder.add_virtual_biguint_target(CONTRACT_ADDRESS_LIMBS);
 
         Self { kind, amount }
     }

@@ -24,6 +24,8 @@ use crate::{
     },
 };
 
+pub const AMOUNT_LIMBS: usize = 8;
+
 /// Assetの消去と、追加をbatchして行う処理
 #[derive(Clone, Debug)]
 pub struct PurgeTransition<F: RichField, H: AlgebraicHasher<F>> {
@@ -38,7 +40,7 @@ pub struct PurgeTransition<F: RichField, H: AlgebraicHasher<F>> {
 impl<F: RichField, H: AlgebraicHasher<F>> PurgeTransition<F, H> {
     /// Returns `(old_user_state_hash, new_user_state_hash, tx_hash)`
     pub fn calculate(&self) -> anyhow::Result<(HashOut<F>, HashOut<F>, HashOut<F>)> {
-        let max_amount = BigUint::from_u8(1).unwrap() << 256;
+        let max_amount = BigUint::from_u8(1).unwrap() << (AMOUNT_LIMBS * 4);
         anyhow::ensure!(self.old_amount < max_amount);
         anyhow::ensure!(self.transaction.asset.amount <= self.old_amount);
 
@@ -106,7 +108,7 @@ impl PurgeTransitionTarget {
         let transaction = TransactionTarget::make_constraints(builder);
         let old_user_state = UserStateTarget::make_constraints(builder);
         let token_index = builder.add_virtual_target();
-        let old_amount = builder.add_virtual_biguint_target(8);
+        let old_amount = builder.add_virtual_biguint_target(AMOUNT_LIMBS);
         let user_asset_inclusion_proof = MerkleProofTarget {
             siblings: builder.add_virtual_hashes(log_max_n_kinds),
         };

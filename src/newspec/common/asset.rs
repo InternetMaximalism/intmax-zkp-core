@@ -45,7 +45,7 @@ impl<F: RichField> TokenKind<F> {
 /// `amount` should be below `MAX_AMOUNT`
 #[derive(Clone, Debug, Default)]
 pub struct Asset<F: RichField> {
-    pub kind: TokenKind<F>,
+    pub asset_id: F,
     pub amount: BigUint, // num_limbs: CONTRACT_ADDRESS_LIMBS
 }
 
@@ -55,7 +55,7 @@ impl<F: RichField> Asset<F> {
         amount.resize(CONTRACT_ADDRESS_LIMBS, 0);
 
         vec![
-            self.kind.to_vec(),
+            vec![self.asset_id],
             amount
                 .into_iter()
                 .map(F::from_canonical_u32)
@@ -155,7 +155,7 @@ impl TokenKindTarget {
 
 #[derive(Clone, Debug)]
 pub struct AssetTarget {
-    pub kind: TokenKindTarget,
+    pub asset_id: Target,
     pub amount: BigUintTarget, // num_limbs: CONTRACT_ADDRESS_LIMBS
 }
 
@@ -163,14 +163,14 @@ impl AssetTarget {
     pub fn make_constraints<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
-        let kind = TokenKindTarget::make_constraints(builder);
+        let asset_id = builder.add_virtual_target();
         let amount = builder.add_virtual_biguint_target(CONTRACT_ADDRESS_LIMBS);
 
-        Self { kind, amount }
+        Self { asset_id, amount }
     }
 
     pub fn set_witness<F: RichField>(&self, pw: &mut impl Witness<F>, asset: &Asset<F>) {
-        self.kind.set_witness(pw, asset.kind);
+        pw.set_target(self.asset_id, asset.asset_id);
         pw.set_biguint_target(&self.amount, &asset.amount);
     }
 
@@ -179,14 +179,14 @@ impl AssetTarget {
         value: Asset<F>,
     ) -> Self {
         Self {
-            kind: TokenKindTarget::constant(builder, value.kind),
+            asset_id: builder.constant(value.asset_id),
             amount: builder.constant_biguint(&value.amount),
         }
     }
 
     pub(crate) fn to_vec(&self) -> Vec<Target> {
         [
-            self.kind.to_vec(),
+            vec![self.asset_id],
             self.amount.limbs.iter().map(|v| v.0).collect::<Vec<_>>(),
         ]
         .concat()

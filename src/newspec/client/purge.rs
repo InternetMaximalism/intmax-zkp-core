@@ -45,7 +45,7 @@ impl<F: RichField, H: AlgebraicHasher<F>> PurgeTransition<F, H> {
         anyhow::ensure!(self.transaction.asset.amount <= self.old_amount);
 
         let old_asset = Asset {
-            kind: self.transaction.asset.kind,
+            asset_id: self.transaction.asset.asset_id,
             amount: self.old_amount.clone(),
         };
         let calculated_old_asset_root = get_merkle_root(
@@ -56,7 +56,7 @@ impl<F: RichField, H: AlgebraicHasher<F>> PurgeTransition<F, H> {
         anyhow::ensure!(calculated_old_asset_root == self.old_user_state.asset_root);
 
         let new_asset = Asset {
-            kind: self.transaction.asset.kind,
+            asset_id: self.transaction.asset.asset_id,
             amount: self.old_amount.clone() - self.transaction.asset.amount.clone(),
         };
         let new_asset_root = get_merkle_root(
@@ -118,7 +118,7 @@ impl PurgeTransitionTarget {
         let token_index_bits = builder.split_le(token_index, log_max_n_kinds);
         let old_asset_hash = LeafableTarget::<F, H, D>::hash(
             &AssetTarget {
-                kind: transaction.asset.kind,
+                asset_id: transaction.asset.asset_id,
                 amount: old_amount.clone(),
             },
             builder,
@@ -134,7 +134,7 @@ impl PurgeTransitionTarget {
         let new_amount = builder.sub_biguint(&old_amount, &transaction.asset.amount);
         let new_asset_hash = LeafableTarget::<F, H, D>::hash(
             &AssetTarget {
-                kind: transaction.asset.kind,
+                asset_id: transaction.asset.asset_id,
                 amount: new_amount,
             },
             builder,

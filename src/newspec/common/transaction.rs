@@ -39,8 +39,8 @@ impl<F: RichField> Transaction<F> {
     }
 }
 
-impl<F: RichField, H: Hasher<F>> Leafable<F, H> for Transaction<F> {
-    fn hash(&self) -> H::Hash {
+impl<F: RichField> Leafable<F> for Transaction<F> {
+    fn hash<H: Hasher<F>>(&self) -> H::Hash {
         H::hash_no_pad(&self.to_vec())
     }
 
@@ -114,15 +114,18 @@ impl TransactionTarget {
     }
 }
 
-impl<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize> LeafableTarget<F, H, D>
-    for TransactionTarget
-{
-    fn hash(&self, builder: &mut CircuitBuilder<F, D>) -> HashOutTarget {
-        builder.hash_n_to_hash_no_pad::<H>(self.to_vec())
+impl LeafableTarget for TransactionTarget {
+    fn hash<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+        &self,
+        builder: &mut CircuitBuilder<F, D>,
+    ) -> HashOutTarget {
+        builder.hash_or_noop::<H>(self.to_vec())
     }
 
-    fn empty_leaf(builder: &mut CircuitBuilder<F, D>) -> Self {
-        let empty_leaf = Leafable::<F, H>::empty_leaf();
+    fn empty_leaf<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+    ) -> Self {
+        let empty_leaf = Leafable::<F>::empty_leaf();
 
         Self::constant::<F, D>(builder, empty_leaf)
     }
@@ -145,12 +148,12 @@ impl DepositTransaction {
     }
 }
 
-impl<F: RichField, H: Hasher<F>> Leafable<F, H> for DepositTransaction {
+impl<F: RichField> Leafable<F> for DepositTransaction {
     fn empty_leaf() -> Self {
         todo!()
     }
 
-    fn hash(&self) -> H::Hash {
+    fn hash<H: Hasher<F>>(&self) -> H::Hash {
         todo!()
     }
 }
@@ -184,12 +187,12 @@ impl WithdrawTransaction {
     }
 }
 
-impl<F: RichField, H: Hasher<F>> Leafable<F, H> for WithdrawTransaction {
+impl<F: RichField> Leafable<F> for WithdrawTransaction {
     fn empty_leaf() -> Self {
         todo!()
     }
 
-    fn hash(&self) -> H::Hash {
+    fn hash<H: Hasher<F>>(&self) -> H::Hash {
         todo!()
     }
 }

@@ -28,8 +28,8 @@ impl<F: RichField> UserState<F> {
     }
 }
 
-impl<F: RichField, H: Hasher<F>> Leafable<F, H> for UserState<F> {
-    fn hash(&self) -> H::Hash {
+impl<F: RichField> Leafable<F> for UserState<F> {
+    fn hash<H: Hasher<F>>(&self) -> H::Hash {
         H::hash_no_pad(&self.to_vec())
     }
 
@@ -87,15 +87,18 @@ impl UserStateTarget {
     }
 }
 
-impl<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize> LeafableTarget<F, H, D>
-    for UserStateTarget
-{
-    fn hash(&self, builder: &mut CircuitBuilder<F, D>) -> HashOutTarget {
-        builder.hash_n_to_hash_no_pad::<H>(self.to_vec())
+impl LeafableTarget for UserStateTarget {
+    fn hash<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+        &self,
+        builder: &mut CircuitBuilder<F, D>,
+    ) -> HashOutTarget {
+        builder.hash_or_noop::<H>(self.to_vec())
     }
 
-    fn empty_leaf(builder: &mut CircuitBuilder<F, D>) -> Self {
-        let empty_leaf = Leafable::<F, H>::empty_leaf();
+    fn empty_leaf<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+    ) -> Self {
+        let empty_leaf = Leafable::<F>::empty_leaf();
 
         Self::constant::<F, D>(builder, empty_leaf)
     }

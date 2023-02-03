@@ -64,12 +64,12 @@ impl<F: RichField, H: AlgebraicHasher<F>> PurgeTransition<F, H> {
             public_key: self.old_user_state.public_key,
         };
 
-        let old_user_state_hash = Leafable::<F, H>::hash(&self.old_user_state);
-        let new_user_state_hash = Leafable::<F, H>::hash(&new_user_state);
+        let old_user_state_hash = self.old_user_state.hash::<H>();
+        let new_user_state_hash = new_user_state.hash::<H>();
 
         // TODO: validate sender_address
 
-        let tx_hash = Leafable::<F, H>::hash(&self.transaction);
+        let tx_hash = self.transaction.hash::<H>();
 
         Ok((old_user_state_hash, new_user_state_hash, tx_hash))
     }
@@ -110,13 +110,11 @@ impl PurgeTransitionTarget {
         // TODO: assert!(self.transaction.asset.amount <= self.old_amount);
 
         let asset_id_bits = builder.split_le(asset_id, asset_tree_height);
-        let old_asset_hash = LeafableTarget::<F, H, D>::hash(
-            &AssetTarget {
-                asset_id: transaction.asset.asset_id,
-                amount: old_amount.clone(),
-            },
-            builder,
-        );
+        let old_asset_hash = AssetTarget {
+            asset_id: transaction.asset.asset_id,
+            amount: old_amount.clone(),
+        }
+        .hash::<F, H, D>(builder);
         let calculated_old_asset_root = get_merkle_root_target::<F, H, D>(
             builder,
             &asset_id_bits,
@@ -126,13 +124,11 @@ impl PurgeTransitionTarget {
         builder.connect_hashes(calculated_old_asset_root, old_user_state.asset_root);
 
         let new_amount = builder.sub_biguint(&old_amount, &transaction.asset.amount);
-        let new_asset_hash = LeafableTarget::<F, H, D>::hash(
-            &AssetTarget {
-                asset_id: transaction.asset.asset_id,
-                amount: new_amount,
-            },
-            builder,
-        );
+        let new_asset_hash = AssetTarget {
+            asset_id: transaction.asset.asset_id,
+            amount: new_amount,
+        }
+        .hash::<F, H, D>(builder);
         let new_asset_root = get_merkle_root_target::<F, H, D>(
             builder,
             &asset_id_bits,
@@ -145,12 +141,12 @@ impl PurgeTransitionTarget {
             public_key: old_user_state.public_key,
         };
 
-        let old_user_state_hash = LeafableTarget::<F, H, D>::hash(&old_user_state, builder);
-        let new_user_state_hash = LeafableTarget::<F, H, D>::hash(&new_user_state, builder);
+        let old_user_state_hash = old_user_state.hash::<F, H, D>(builder);
+        let new_user_state_hash = new_user_state.hash::<F, H, D>(builder);
 
         // TODO: validate sender_address
 
-        let tx_hash = LeafableTarget::<F, H, D>::hash(&transaction, builder);
+        let tx_hash = transaction.hash::<F, H, D>(builder);
 
         Self {
             sender_address,
@@ -249,7 +245,7 @@ mod tests {
         let asset_id = 0;
         let user_asset_inclusion_proof = user_asset_tree.merkle_tree.prove(asset_id);
         let old_asset = user_asset_tree.merkle_tree.get_leaf(asset_id);
-        let transaction = <Transaction<F> as Leafable<F, H>>::empty_leaf();
+        let transaction = Transaction::empty_leaf();
         let nullifier_hash_root = nullifier_hash_tree.merkle_tree.get_root();
 
         let purge_transaction = PurgeTransition {

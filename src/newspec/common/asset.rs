@@ -65,12 +65,12 @@ impl Asset {
     }
 }
 
-impl<F: RichField, H: Hasher<F>> Leafable<F, H> for Asset {
+impl<F: RichField> Leafable<F> for Asset {
     fn empty_leaf() -> Self {
         Self::default()
     }
 
-    fn hash(&self) -> H::Hash {
+    fn hash<H: Hasher<F>>(&self) -> H::Hash {
         H::hash_no_pad(&self.to_vec())
     }
 }
@@ -193,16 +193,19 @@ impl AssetTarget {
     }
 }
 
-impl<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize> LeafableTarget<F, H, D>
-    for AssetTarget
-{
-    fn empty_leaf(builder: &mut CircuitBuilder<F, D>) -> Self {
-        let empty_leaf = Leafable::<F, H>::empty_leaf();
+impl LeafableTarget for AssetTarget {
+    fn empty_leaf<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+    ) -> Self {
+        let empty_leaf = Leafable::<F>::empty_leaf();
 
         Self::constant::<F, D>(builder, empty_leaf)
     }
 
-    fn hash(&self, builder: &mut CircuitBuilder<F, D>) -> HashOutTarget {
-        builder.hash_n_to_hash_no_pad::<H>(self.to_vec())
+    fn hash<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+        &self,
+        builder: &mut CircuitBuilder<F, D>,
+    ) -> HashOutTarget {
+        builder.hash_or_noop::<H>(self.to_vec())
     }
 }

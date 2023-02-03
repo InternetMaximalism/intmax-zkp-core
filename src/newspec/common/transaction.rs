@@ -2,7 +2,10 @@ use plonky2::{
     field::extension::Extendable,
     hash::hash_types::{HashOutTarget, RichField},
     iop::target::Target,
-    plonk::{circuit_builder::CircuitBuilder, config::Hasher},
+    plonk::{
+        circuit_builder::CircuitBuilder,
+        config::{AlgebraicHasher, Hasher},
+    },
 };
 use plonky2_ecdsa::gadgets::biguint::BigUintTarget;
 
@@ -24,13 +27,25 @@ pub struct Transaction<F: RichField> {
     pub nonce: [F; 4],
 }
 
+impl<F: RichField> Transaction<F> {
+    pub(crate) fn to_vec(&self) -> Vec<F> {
+        [
+            self.from.to_vec(),
+            self.to.to_vec(),
+            self.asset.to_vec(),
+            self.nonce.to_vec(),
+        ]
+        .concat()
+    }
+}
+
 impl<F: RichField, H: Hasher<F>> Leafable<F, H> for Transaction<F> {
     fn hash(&self) -> H::Hash {
-        todo!()
+        H::hash_no_pad(&self.to_vec())
     }
 
     fn empty_leaf() -> Self {
-        todo!()
+        Self::default()
     }
 }
 
@@ -42,13 +57,41 @@ pub struct TransactionTarget {
     pub nonce: [Target; 4],
 }
 
-impl<F: RichField + Extendable<D>, const D: usize> LeafableTarget<F, D> for TransactionTarget {
-    fn hash(&self, _builder: &mut CircuitBuilder<F, D>) -> HashOutTarget {
-        todo!()
+impl TransactionTarget {
+    pub fn constant<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+        value: Transaction<F>,
+    ) -> Self {
+        Self {
+            from: AddressTarget::constant(builder, value.from),
+            to: AddressTarget::constant(builder, value.to),
+            asset: AssetTarget::constant(builder, value.asset),
+            nonce: value.nonce.map(|v| builder.constant(v)),
+        }
     }
 
-    fn empty_leaf(&self, _builder: &mut CircuitBuilder<F, D>) -> HashOutTarget {
-        todo!()
+    pub(crate) fn to_vec(&self) -> Vec<Target> {
+        [
+            self.from.to_vec(),
+            self.to.to_vec(),
+            self.asset.to_vec(),
+            self.nonce.to_vec(),
+        ]
+        .concat()
+    }
+}
+
+impl<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize> LeafableTarget<F, H, D>
+    for TransactionTarget
+{
+    fn hash(&self, builder: &mut CircuitBuilder<F, D>) -> HashOutTarget {
+        builder.hash_n_to_hash_no_pad::<H>(self.to_vec())
+    }
+
+    fn empty_leaf(builder: &mut CircuitBuilder<F, D>) -> Self {
+        let empty_leaf = <Transaction<F> as Leafable<F, H>>::empty_leaf();
+
+        Self::constant::<F, D>(builder, empty_leaf)
     }
 }
 

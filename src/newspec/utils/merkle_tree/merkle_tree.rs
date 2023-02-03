@@ -160,7 +160,7 @@ pub fn verify_merkle_proof_with_leaf<
 pub fn verify_merkle_proof_with_leaf_target<
     F: RichField + Extendable<D>,
     H: AlgebraicHasher<F>,
-    VT: LeafableTarget<F, D>,
+    VT: LeafableTarget<F, H, D>,
     const D: usize,
 >(
     builder: &mut CircuitBuilder<F, D>,

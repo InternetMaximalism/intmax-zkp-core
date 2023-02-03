@@ -1,3 +1,4 @@
+use num::BigUint;
 use plonky2::{
     field::extension::Extendable,
     hash::{
@@ -20,8 +21,9 @@ use crate::{
 pub struct PurgeTransition<F: RichField, H: AlgebraicHasher<F>> {
     pub sender_address: Address<F>,
     pub transaction: Transaction<F>,
+    pub old_amount: BigUint,
     pub old_user_asset_root: HashOut<F>,
-    pub merkle_proof: MerkleProof<F, H>,
+    pub user_asset_inclusion_proof: MerkleProof<F, H>,
 }
 
 impl<F: RichField, H: AlgebraicHasher<F>> PurgeTransition<F, H> {
@@ -38,8 +40,8 @@ pub struct PurgeTransitionTarget {
     pub old_user_state_root: HashOutTarget, // output
     pub new_user_state_root: HashOutTarget, // output
 
-    /// `user_state.asset_root` における `transaction.asset` の inclusion proof
-    pub merkle_proof: MerkleProofTarget, // input
+    /// user state tree における `transaction.asset` の inclusion proof
+    pub user_asset_inclusion_proof: MerkleProofTarget, // input
 
     /// the hash of the `transaction`
     pub tx_hash: HashOutTarget, // output
@@ -59,13 +61,13 @@ impl PurgeTransitionTarget {
         _pw: &mut impl Witness<F>,
         _purge_transition: &PurgeTransition<F, H>,
     ) {
-        // TODO: validate (merkle_proof, old_amount, transaction.asset.kind, old_user_state_root)
-
         // TODO: transaction.amount <= old_amount
 
         // TODO: new_amount <- old_amount - transaction.amount
 
-        // TODO: validate (merkle_proof, new_amount, transaction.asset.kind, new_user_state_root)
+        // TODO: validate (user_asset_inclusion_proof, old_amount, transaction.asset.kind, old_user_state_root)
+
+        // TODO: validate (user_asset_inclusion_proof, new_amount, transaction.asset.kind, new_user_state_root)
 
         // TODO: transaction.amount < MAX_AMOUNT
 
@@ -104,26 +106,26 @@ mod tests {
         type H = <C as GenericConfig<D>>::InnerHasher;
         type F = <C as GenericConfig<D>>::F;
         // const LOG_MAX_N_TXS: usize = 3;
-        // const LOG_MAX_N_CONTRACTS: usize = 3;
-        // const LOG_MAX_N_VARIABLES: usize = 3;
+        const LOG_MAX_N_CONTRACTS: usize = 3;
+        const LOG_MAX_N_VARIABLES: usize = 3;
         // const LOG_N_RECIPIENTS: usize = 3;
         // const LOG_N_CONTRACTS: usize = 3;
         // const LOG_N_VARIABLES: usize = 3;
         // const N_DIFFS: usize = 2;
-        let height = todo!();
 
         let config = CircuitConfig::standard_recursion_config();
 
         let mut builder = CircuitBuilder::<F, D>::new(config);
-        let target: PurgeTransitionTarget = todo!();
+        let target = PurgeTransitionTarget::make_constraints::<F, H, D>(&mut builder);
         let data = builder.build::<C>();
 
         let default_witness = PurgeTransition {
             sender_address: Default::default(),
             transaction: Default::default(),
+            old_amount: Default::default(),
             old_user_asset_root: Default::default(),
-            merkle_proof: MerkleProof {
-                siblings: vec![Default::default(); height],
+            user_asset_inclusion_proof: MerkleProof {
+                siblings: vec![Default::default(); LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES],
             },
         };
 

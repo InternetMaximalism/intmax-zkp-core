@@ -1,11 +1,3 @@
-use crate::transaction::asset::Asset;
-
-use super::{
-    account::{Address, AddressTarget},
-    asset::AssetTarget,
-    block_header::{UINT256Target, UINT256},
-    traits::{Leafable, LeafableTarget},
-};
 use plonky2::{
     field::extension::Extendable,
     hash::hash_types::{HashOutTarget, RichField},
@@ -13,6 +5,13 @@ use plonky2::{
     plonk::{circuit_builder::CircuitBuilder, config::Hasher},
 };
 use plonky2_ecdsa::gadgets::biguint::BigUintTarget;
+
+use super::{
+    account::{Address, AddressTarget},
+    asset::{Asset, AssetTarget},
+    block_header::{UINT256Target, UINT256},
+    traits::{Leafable, LeafableTarget},
+};
 
 /// Transaction which specifies a sender, a reciever, an asset.
 /// `amount` should be below `MAX_AMOUNT`

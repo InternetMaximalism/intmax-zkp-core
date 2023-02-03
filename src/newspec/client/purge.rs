@@ -28,7 +28,6 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct PurgeTransition<F: RichField, H: AlgebraicHasher<F>> {
     pub sender_address: Address<F>,
-    pub private_key: Vec<F>,
     pub transaction: Transaction<F>,
     pub old_user_state: UserState<F>,
     pub token_index: usize,
@@ -83,7 +82,6 @@ impl<F: RichField, H: AlgebraicHasher<F>> PurgeTransition<F, H> {
 #[derive(Clone, Debug)]
 pub struct PurgeTransitionTarget {
     pub sender_address: AddressTarget,      // input
-    pub private_key: Vec<Target>,           // input
     pub transaction: TransactionTarget,     // input
     pub old_user_state: UserStateTarget,    // input
     pub token_index: Target,                // input
@@ -105,7 +103,6 @@ impl PurgeTransitionTarget {
         log_max_n_kinds: usize,
     ) -> Self {
         let sender_address = AddressTarget::make_constraints(builder);
-        let private_key = builder.add_virtual_targets(4);
         let transaction = TransactionTarget::make_constraints(builder);
         let old_user_state = UserStateTarget::make_constraints(builder);
         let token_index = builder.add_virtual_target();
@@ -161,7 +158,6 @@ impl PurgeTransitionTarget {
 
         Self {
             sender_address,
-            private_key,
             transaction,
             old_user_state,
             token_index,
@@ -181,15 +177,6 @@ impl PurgeTransitionTarget {
     ) -> anyhow::Result<(HashOut<F>, HashOut<F>, HashOut<F>)> {
         self.sender_address
             .set_witness(pw, purge_transition.sender_address);
-
-        anyhow::ensure!(self.private_key.len() == purge_transition.private_key.len());
-        for (target, value) in self
-            .private_key
-            .iter()
-            .zip(purge_transition.private_key.iter())
-        {
-            pw.set_target(*target, *value);
-        }
 
         self.transaction
             .set_witness(pw, &purge_transition.transaction)?;
@@ -274,7 +261,6 @@ mod tests {
 
         let purge_transaction = PurgeTransition {
             sender_address: Address::default(),
-            private_key: vec![F::default(); 4],
             transaction,
             old_user_state: UserState {
                 asset_root,

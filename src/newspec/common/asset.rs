@@ -197,7 +197,7 @@ impl<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize> Leafab
     for AssetTarget
 {
     fn empty_leaf(builder: &mut CircuitBuilder<F, D>) -> Self {
-        let empty_leaf = <Asset<F> as Leafable<F, H>>::empty_leaf();
+        let empty_leaf = Leafable::<F, H>::empty_leaf();
 
         Self::constant::<F, D>(builder, empty_leaf)
     }

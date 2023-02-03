@@ -39,7 +39,7 @@ impl<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize> Leafab
     for HashOutTarget
 {
     fn empty_leaf(builder: &mut CircuitBuilder<F, D>) -> Self {
-        let empty_leaf = <HashOut<F> as Leafable<F, H>>::empty_leaf();
+        let empty_leaf = Leafable::<F, H>::empty_leaf();
 
         builder.constant_hash(empty_leaf)
     }

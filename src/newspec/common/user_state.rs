@@ -1,7 +1,7 @@
 use plonky2::{
     field::extension::Extendable,
     hash::hash_types::{HashOut, HashOutTarget, RichField},
-    iop::target::Target,
+    iop::{target::Target, witness::Witness},
     plonk::{
         circuit_builder::CircuitBuilder,
         config::{AlgebraicHasher, Hasher},
@@ -10,7 +10,7 @@ use plonky2::{
 
 use super::traits::{Leafable, LeafableTarget};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct UserState<F: RichField> {
     pub asset_root: HashOut<F>,
     pub nullifier_hash_root: HashOut<F>,
@@ -18,7 +18,7 @@ pub struct UserState<F: RichField> {
 }
 
 impl<F: RichField> UserState<F> {
-    pub(crate) fn to_vec(&self) -> Vec<F> {
+    pub(crate) fn to_vec(self) -> Vec<F> {
         [
             self.asset_root.elements.to_vec(),
             self.nullifier_hash_root.elements.to_vec(),
@@ -38,6 +38,7 @@ impl<F: RichField, H: Hasher<F>> Leafable<F, H> for UserState<F> {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct UserStateTarget {
     pub asset_root: HashOutTarget,
     pub nullifier_hash_root: HashOutTarget,
@@ -45,6 +46,26 @@ pub struct UserStateTarget {
 }
 
 impl UserStateTarget {
+    pub fn make_constraints<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+    ) -> Self {
+        let asset_root = builder.add_virtual_hash();
+        let nullifier_hash_root = builder.add_virtual_hash();
+        let public_key = builder.add_virtual_hash();
+
+        Self {
+            asset_root,
+            nullifier_hash_root,
+            public_key,
+        }
+    }
+
+    pub fn set_witness<F: RichField>(&self, pw: &mut impl Witness<F>, user_state: UserState<F>) {
+        pw.set_hash_target(self.asset_root, user_state.asset_root);
+        pw.set_hash_target(self.nullifier_hash_root, user_state.nullifier_hash_root);
+        pw.set_hash_target(self.public_key, user_state.public_key);
+    }
+
     pub fn constant<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
         value: UserState<F>,
@@ -56,7 +77,7 @@ impl UserStateTarget {
         }
     }
 
-    pub(crate) fn to_vec(&self) -> Vec<Target> {
+    pub(crate) fn to_vec(self) -> Vec<Target> {
         [
             self.asset_root.elements.to_vec(),
             self.nullifier_hash_root.elements.to_vec(),

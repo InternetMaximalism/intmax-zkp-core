@@ -1,7 +1,7 @@
 use plonky2::{
     field::extension::Extendable,
     hash::hash_types::{HashOutTarget, RichField},
-    iop::target::Target,
+    iop::{target::Target, witness::Witness},
     plonk::{
         circuit_builder::CircuitBuilder,
         config::{AlgebraicHasher, Hasher},
@@ -58,6 +58,39 @@ pub struct TransactionTarget {
 }
 
 impl TransactionTarget {
+    pub fn make_constraints<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+    ) -> Self {
+        let from = AddressTarget::make_constraints(builder);
+        let to = AddressTarget::make_constraints(builder);
+        let asset = AssetTarget::make_constraints(builder);
+        let nonce = builder.add_virtual_target_arr::<4>();
+
+        Self {
+            from,
+            to,
+            asset,
+            nonce,
+        }
+    }
+
+    pub fn set_witness<F: RichField>(
+        &self,
+        pw: &mut impl Witness<F>,
+        transaction: &Transaction<F>,
+    ) -> anyhow::Result<()> {
+        self.from.set_witness(pw, transaction.from);
+        self.to.set_witness(pw, transaction.to);
+        self.asset.set_witness(pw, &transaction.asset);
+
+        anyhow::ensure!(self.nonce.len() == transaction.nonce.len());
+        for (target, value) in self.nonce.iter().zip(transaction.nonce.iter()) {
+            pw.set_target(*target, *value);
+        }
+
+        Ok(())
+    }
+
     pub fn constant<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
         value: Transaction<F>,

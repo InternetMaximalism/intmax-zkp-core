@@ -96,7 +96,7 @@ impl PurgeTransitionTarget {
     #[allow(clippy::too_many_arguments)]
     pub fn make_constraints<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
-        log_max_n_kinds: usize,
+        asset_tree_height: usize,
     ) -> Self {
         let sender_address = AddressTarget::make_constraints(builder);
         let transaction = TransactionTarget::make_constraints(builder);
@@ -104,12 +104,12 @@ impl PurgeTransitionTarget {
         let asset_id = builder.add_virtual_target();
         let old_amount = builder.add_virtual_biguint_target(AMOUNT_LIMBS);
         let user_asset_inclusion_proof = MerkleProofTarget {
-            siblings: builder.add_virtual_hashes(log_max_n_kinds),
+            siblings: builder.add_virtual_hashes(asset_tree_height),
         };
 
         // TODO: assert!(self.transaction.asset.amount <= self.old_amount);
 
-        let asset_id_bits = builder.split_le(asset_id, log_max_n_kinds);
+        let asset_id_bits = builder.split_le(asset_id, asset_tree_height);
         let old_asset_hash = LeafableTarget::<F, H, D>::hash(
             &AssetTarget {
                 asset_id: transaction.asset.asset_id,
@@ -232,21 +232,18 @@ mod tests {
         type C = PoseidonGoldilocksConfig;
         type H = <C as GenericConfig<D>>::InnerHasher;
         type F = <C as GenericConfig<D>>::F;
-        const LOG_MAX_N_TXS: usize = 3;
-        const LOG_MAX_N_CONTRACTS: usize = 3;
-        const LOG_MAX_N_VARIABLES: usize = 3;
+        let tx_tree_height = 3;
+        let asset_tree_height = 6;
 
         let config = CircuitConfig::standard_recursion_config();
 
         let mut builder = CircuitBuilder::<F, D>::new(config);
-        let target = PurgeTransitionTarget::make_constraints::<F, H, D>(
-            &mut builder,
-            LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES,
-        );
+        let target =
+            PurgeTransitionTarget::make_constraints::<F, H, D>(&mut builder, asset_tree_height);
         let data = builder.build::<C>();
 
-        let user_asset_tree = UserAssetTree::<F, H>::new(LOG_MAX_N_CONTRACTS + LOG_MAX_N_VARIABLES);
-        let nullifier_hash_tree = NullifierHashTree::<F, H>::new(LOG_MAX_N_TXS);
+        let user_asset_tree = UserAssetTree::<F, H>::new(asset_tree_height);
+        let nullifier_hash_tree = NullifierHashTree::<F, H>::new(tx_tree_height);
         let public_key = HashOut::ZERO;
         let asset_root = user_asset_tree.merkle_tree.get_root();
         let asset_id = 0;

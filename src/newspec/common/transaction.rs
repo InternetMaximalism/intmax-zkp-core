@@ -22,7 +22,7 @@ use super::{
 pub struct Transaction<F: RichField> {
     pub from: Address<F>,
     pub to: Address<F>,
-    pub asset: Asset<F>,
+    pub asset: Asset,
     /// Random value which randomize tx_hash
     pub nonce: [F; 4],
 }

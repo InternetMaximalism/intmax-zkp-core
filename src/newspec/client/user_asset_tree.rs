@@ -8,7 +8,7 @@ use crate::newspec::{
 };
 
 pub struct UserAssetTree<F: RichField, H: Hasher<F>> {
-    pub merkle_tree: MerkleTree<F, H, Asset<F>>,
+    pub merkle_tree: MerkleTree<F, H, Asset>,
     pub token_index_map: HashMap<TokenKind<F>, usize>,
     max_token_index: usize,
 }

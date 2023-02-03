@@ -44,18 +44,18 @@ impl<F: RichField> TokenKind<F> {
 
 /// `amount` should be below `MAX_AMOUNT`
 #[derive(Clone, Debug, Default)]
-pub struct Asset<F: RichField> {
-    pub asset_id: F,
+pub struct Asset {
+    pub asset_id: usize,
     pub amount: BigUint, // num_limbs: CONTRACT_ADDRESS_LIMBS
 }
 
-impl<F: RichField> Asset<F> {
-    pub(crate) fn to_vec(&self) -> Vec<F> {
+impl Asset {
+    pub(crate) fn to_vec<F: RichField>(&self) -> Vec<F> {
         let mut amount = self.amount.to_u32_digits();
         amount.resize(CONTRACT_ADDRESS_LIMBS, 0);
 
         vec![
-            vec![self.asset_id],
+            vec![F::from_canonical_usize(self.asset_id)],
             amount
                 .into_iter()
                 .map(F::from_canonical_u32)
@@ -65,7 +65,7 @@ impl<F: RichField> Asset<F> {
     }
 }
 
-impl<F: RichField, H: Hasher<F>> Leafable<F, H> for Asset<F> {
+impl<F: RichField, H: Hasher<F>> Leafable<F, H> for Asset {
     fn empty_leaf() -> Self {
         Self::default()
     }
@@ -169,17 +169,17 @@ impl AssetTarget {
         Self { asset_id, amount }
     }
 
-    pub fn set_witness<F: RichField>(&self, pw: &mut impl Witness<F>, asset: &Asset<F>) {
-        pw.set_target(self.asset_id, asset.asset_id);
+    pub fn set_witness<F: RichField>(&self, pw: &mut impl Witness<F>, asset: &Asset) {
+        pw.set_target(self.asset_id, F::from_canonical_usize(asset.asset_id));
         pw.set_biguint_target(&self.amount, &asset.amount);
     }
 
     pub fn constant<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
-        value: Asset<F>,
+        value: Asset,
     ) -> Self {
         Self {
-            asset_id: builder.constant(value.asset_id),
+            asset_id: builder.constant(F::from_canonical_usize(value.asset_id)),
             amount: builder.constant_biguint(&value.amount),
         }
     }

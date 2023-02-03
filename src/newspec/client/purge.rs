@@ -32,7 +32,7 @@ pub struct PurgeTransition<F: RichField, H: AlgebraicHasher<F>> {
     pub sender_address: Address<F>,
     pub transaction: Transaction<F>,
     pub old_user_state: UserState<F>,
-    pub token_index: usize,
+    pub asset_id: usize,
     pub old_amount: BigUint,
     pub user_asset_inclusion_proof: MerkleProof<F, H>,
 }
@@ -48,22 +48,16 @@ impl<F: RichField, H: AlgebraicHasher<F>> PurgeTransition<F, H> {
             asset_id: self.transaction.asset.asset_id,
             amount: self.old_amount.clone(),
         };
-        let calculated_old_asset_root = get_merkle_root(
-            self.token_index,
-            &old_asset,
-            &self.user_asset_inclusion_proof,
-        );
+        let calculated_old_asset_root =
+            get_merkle_root(self.asset_id, &old_asset, &self.user_asset_inclusion_proof);
         anyhow::ensure!(calculated_old_asset_root == self.old_user_state.asset_root);
 
         let new_asset = Asset {
             asset_id: self.transaction.asset.asset_id,
             amount: self.old_amount.clone() - self.transaction.asset.amount.clone(),
         };
-        let new_asset_root = get_merkle_root(
-            self.token_index,
-            &new_asset,
-            &self.user_asset_inclusion_proof,
-        );
+        let new_asset_root =
+            get_merkle_root(self.asset_id, &new_asset, &self.user_asset_inclusion_proof);
         let new_user_state = UserState {
             asset_root: new_asset_root,
             nullifier_hash_root: self.old_user_state.nullifier_hash_root,
@@ -86,7 +80,7 @@ pub struct PurgeTransitionTarget {
     pub sender_address: AddressTarget,      // input
     pub transaction: TransactionTarget,     // input
     pub old_user_state: UserStateTarget,    // input
-    pub token_index: Target,                // input
+    pub asset_id: Target,                   // input
     pub old_amount: BigUintTarget,          // input
     pub old_user_state_hash: HashOutTarget, // output
     pub new_user_state_hash: HashOutTarget, // output
@@ -107,7 +101,7 @@ impl PurgeTransitionTarget {
         let sender_address = AddressTarget::make_constraints(builder);
         let transaction = TransactionTarget::make_constraints(builder);
         let old_user_state = UserStateTarget::make_constraints(builder);
-        let token_index = builder.add_virtual_target();
+        let asset_id = builder.add_virtual_target();
         let old_amount = builder.add_virtual_biguint_target(AMOUNT_LIMBS);
         let user_asset_inclusion_proof = MerkleProofTarget {
             siblings: builder.add_virtual_hashes(log_max_n_kinds),
@@ -115,7 +109,7 @@ impl PurgeTransitionTarget {
 
         // TODO: assert!(self.transaction.asset.amount <= self.old_amount);
 
-        let token_index_bits = builder.split_le(token_index, log_max_n_kinds);
+        let asset_id_bits = builder.split_le(asset_id, log_max_n_kinds);
         let old_asset_hash = LeafableTarget::<F, H, D>::hash(
             &AssetTarget {
                 asset_id: transaction.asset.asset_id,
@@ -125,7 +119,7 @@ impl PurgeTransitionTarget {
         );
         let calculated_old_asset_root = get_merkle_root_target::<F, H, D>(
             builder,
-            &token_index_bits,
+            &asset_id_bits,
             old_asset_hash,
             &user_asset_inclusion_proof.siblings,
         );
@@ -141,7 +135,7 @@ impl PurgeTransitionTarget {
         );
         let new_asset_root = get_merkle_root_target::<F, H, D>(
             builder,
-            &token_index_bits,
+            &asset_id_bits,
             new_asset_hash,
             &user_asset_inclusion_proof.siblings,
         );
@@ -162,7 +156,7 @@ impl PurgeTransitionTarget {
             sender_address,
             transaction,
             old_user_state,
-            token_index,
+            asset_id,
             old_amount,
             old_user_state_hash,
             new_user_state_hash,
@@ -185,8 +179,8 @@ impl PurgeTransitionTarget {
         self.old_user_state
             .set_witness(pw, purge_transition.old_user_state);
         pw.set_target(
-            self.token_index,
-            F::from_canonical_usize(purge_transition.token_index),
+            self.asset_id,
+            F::from_canonical_usize(purge_transition.asset_id),
         );
         pw.set_biguint_target(&self.old_amount, &purge_transition.old_amount);
 
@@ -255,9 +249,9 @@ mod tests {
         let nullifier_hash_tree = NullifierHashTree::<F, H>::new(LOG_MAX_N_TXS);
         let public_key = HashOut::ZERO;
         let asset_root = user_asset_tree.merkle_tree.get_root();
-        let token_index = 0;
-        let user_asset_inclusion_proof = user_asset_tree.merkle_tree.prove(token_index);
-        let old_asset = user_asset_tree.merkle_tree.get_leaf(token_index);
+        let asset_id = 0;
+        let user_asset_inclusion_proof = user_asset_tree.merkle_tree.prove(asset_id);
+        let old_asset = user_asset_tree.merkle_tree.get_leaf(asset_id);
         let transaction = <Transaction<F> as Leafable<F, H>>::empty_leaf();
         let nullifier_hash_root = nullifier_hash_tree.merkle_tree.get_root();
 
@@ -269,7 +263,7 @@ mod tests {
                 nullifier_hash_root,
                 public_key,
             },
-            token_index,
+            asset_id,
             old_amount: old_asset.amount,
             user_asset_inclusion_proof,
         };

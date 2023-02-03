@@ -16,7 +16,7 @@ use plonky2_ecdsa::gadgets::biguint::BigUintTarget;
 
 /// Transaction which specifies a sender, a reciever, an asset.
 /// `amount` should be below `MAX_AMOUNT`
-#[derive(Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct Transaction<F: RichField> {
     pub from: Address<F>,
     pub to: Address<F>,
@@ -35,6 +35,7 @@ impl<F: RichField, H: Hasher<F>> Leafable<F, H> for Transaction<F> {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct TransactionTarget {
     pub from: AddressTarget,
     pub to: AddressTarget,

@@ -36,13 +36,16 @@ impl<F: RichField, H: Hasher<F>> Leafable<F, H> for Asset<F> {
     }
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct ContractAddressTarget([Target; 8]);
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct TokenKindTarget {
     pub contract_address: ContractAddressTarget,
     pub variable_index: Target,
 }
 
+#[derive(Clone, Debug)]
 pub struct AssetTarget {
     pub kind: TokenKindTarget,
     pub amount: BigUintTarget,

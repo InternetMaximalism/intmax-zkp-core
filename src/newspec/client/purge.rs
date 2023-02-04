@@ -15,7 +15,7 @@ use crate::{
     newspec::{
         common::{
             account::{Address, AddressTarget},
-            asset::{Asset, AssetTarget},
+            asset::{Asset, AssetTarget, AMOUNT_LIMBS},
             traits::{Leafable, LeafableTarget},
             transaction::{Transaction, TransactionTarget},
             user_state::{UserState, UserStateTarget},
@@ -23,8 +23,6 @@ use crate::{
         utils::merkle_tree::merkle_tree::get_merkle_root,
     },
 };
-
-pub const AMOUNT_LIMBS: usize = 8;
 
 /// Assetの消去と、追加をbatchして行う処理
 #[derive(Clone, Debug)]

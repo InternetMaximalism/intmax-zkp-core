@@ -20,8 +20,8 @@ use super::{
 /// `amount` should be below `MAX_AMOUNT`
 #[derive(Clone, Debug, Default)]
 pub struct Transaction<F: RichField> {
-    pub from: Address<F>,
-    pub to: Address<F>,
+    pub from: Address,
+    pub to: Address,
     pub asset: Asset,
     /// Random value which randomize tx_hash
     pub nonce: [F; 4],
@@ -79,9 +79,9 @@ impl TransactionTarget {
         pw: &mut impl Witness<F>,
         transaction: &Transaction<F>,
     ) -> anyhow::Result<()> {
-        self.from.set_witness(pw, transaction.from);
-        self.to.set_witness(pw, transaction.to);
-        self.asset.set_witness(pw, &transaction.asset);
+        self.from.set_witness(pw, transaction.from)?;
+        self.to.set_witness(pw, transaction.to)?;
+        self.asset.set_witness(pw, &transaction.asset)?;
 
         anyhow::ensure!(self.nonce.len() == transaction.nonce.len());
         for (target, value) in self.nonce.iter().zip(transaction.nonce.iter()) {

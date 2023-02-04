@@ -27,7 +27,7 @@ use crate::{
 /// Assetの消去と、追加をbatchして行う処理
 #[derive(Clone, Debug)]
 pub struct PurgeTransition<F: RichField, H: AlgebraicHasher<F>> {
-    pub sender_address: Address<F>,
+    pub sender_address: Address,
     pub transaction: Transaction<F>,
     pub old_user_state: UserState<F>,
     pub asset_id: usize,
@@ -166,7 +166,7 @@ impl PurgeTransitionTarget {
         purge_transition: &PurgeTransition<F, H>,
     ) -> anyhow::Result<(HashOut<F>, HashOut<F>, HashOut<F>)> {
         self.sender_address
-            .set_witness(pw, purge_transition.sender_address);
+            .set_witness(pw, purge_transition.sender_address)?;
 
         self.transaction
             .set_witness(pw, &purge_transition.transaction)?;

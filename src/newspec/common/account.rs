@@ -26,7 +26,7 @@ pub struct Account<F: RichField> {
 pub struct AddressTarget(pub Target);
 
 impl AddressTarget {
-    pub fn make_constraints<F: RichField + Extendable<D>, const D: usize>(
+    pub fn new<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
         Self(builder.add_virtual_target())

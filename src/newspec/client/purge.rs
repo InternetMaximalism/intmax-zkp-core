@@ -92,13 +92,13 @@ pub struct PurgeTransitionTarget {
 
 impl PurgeTransitionTarget {
     #[allow(clippy::too_many_arguments)]
-    pub fn make_constraints<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+    pub fn new<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
         asset_tree_height: usize,
     ) -> Self {
-        let sender_address = AddressTarget::make_constraints(builder);
-        let transaction = TransactionTarget::make_constraints(builder);
-        let old_user_state = UserStateTarget::make_constraints(builder);
+        let sender_address = AddressTarget::new(builder);
+        let transaction = TransactionTarget::new(builder);
+        let old_user_state = UserStateTarget::new(builder);
         let asset_id = builder.add_virtual_target();
         let old_amount = builder.add_virtual_biguint_target(AMOUNT_LIMBS);
         let user_asset_inclusion_proof = MerkleProofTarget {
@@ -232,8 +232,7 @@ mod tests {
         let config = CircuitConfig::standard_recursion_config();
 
         let mut builder = CircuitBuilder::<F, D>::new(config);
-        let target =
-            PurgeTransitionTarget::make_constraints::<F, H, D>(&mut builder, asset_tree_height);
+        let target = PurgeTransitionTarget::new::<F, H, D>(&mut builder, asset_tree_height);
         let data = builder.build::<C>();
 
         let user_asset_tree = UserAssetTree::<F, H>::new(asset_tree_height);

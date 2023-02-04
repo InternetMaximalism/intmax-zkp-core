@@ -46,7 +46,7 @@ pub struct UserStateTarget {
 }
 
 impl UserStateTarget {
-    pub fn make_constraints<F: RichField + Extendable<D>, const D: usize>(
+    pub fn new<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
         let asset_root = builder.add_virtual_hash();

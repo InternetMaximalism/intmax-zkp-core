@@ -58,12 +58,12 @@ pub struct TransactionTarget {
 }
 
 impl TransactionTarget {
-    pub fn make_constraints<F: RichField + Extendable<D>, const D: usize>(
+    pub fn new<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
-        let from = AddressTarget::make_constraints(builder);
-        let to = AddressTarget::make_constraints(builder);
-        let asset = AssetTarget::make_constraints(builder);
+        let from = AddressTarget::new(builder);
+        let to = AddressTarget::new(builder);
+        let asset = AssetTarget::new(builder);
         let nonce = builder.add_virtual_target_arr::<4>();
 
         Self {

@@ -226,7 +226,7 @@ mod tests {
         type C = PoseidonGoldilocksConfig;
         type H = <C as GenericConfig<D>>::InnerHasher;
         type F = <C as GenericConfig<D>>::F;
-        let tx_tree_height = 3;
+        let used_tx_hash_tree_height = 3;
         let asset_tree_height = 6;
 
         let config = CircuitConfig::standard_recursion_config();
@@ -237,7 +237,7 @@ mod tests {
         let data = builder.build::<C>();
 
         let user_asset_tree = UserAssetTree::<F, H>::new(asset_tree_height);
-        let nullifier_hash_tree = NullifierHashTree::<F, H>::new(tx_tree_height);
+        let nullifier_hash_tree = NullifierHashTree::<F, H>::new(used_tx_hash_tree_height);
         let public_key = HashOut::ZERO;
         let asset_root = user_asset_tree.merkle_tree.get_root();
         let asset_id = 0;

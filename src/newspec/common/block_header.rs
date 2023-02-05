@@ -31,7 +31,7 @@ pub struct BlockHeader<F: RichField> {
 
     /// The address list of tx senders that their tx were accepted
     /// (they responded correct signature).
-    pub tx_senders: Vec<Address<F>>,
+    pub tx_senders: Vec<Address>,
 
     /// The root of the Merkle tree that consists of block_hashes.
     pub block_hash_root: HashOut<F>,

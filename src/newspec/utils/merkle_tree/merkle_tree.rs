@@ -17,18 +17,18 @@ use crate::newspec::common::traits::{Leafable, LeafableTarget};
 
 /// Sparse Merkle Tree which is compatible to the native plonky2 Merkle Tree.
 #[derive(Debug)]
-pub struct MerkleTree<F: RichField, H: Hasher<F>, V: Leafable<F, H>> {
+pub struct MerkleTree<F: RichField, H: Hasher<F>, V: Leafable<F>> {
     height: usize,
     node_hashes: HashMap<Vec<bool>, H::Hash>,
     leaves: HashMap<usize, V>,
     zero_hashes: Vec<H::Hash>,
 }
 
-impl<F: RichField, H: Hasher<F>, V: Leafable<F, H>> MerkleTree<F, H, V> {
+impl<F: RichField, H: Hasher<F>, V: Leafable<F>> MerkleTree<F, H, V> {
     pub fn new(height: usize) -> Self {
         // zero_hashes = reverse([H(zero_leaf), H(H(zero_leaf), H(zero_leaf)), ...])
         let mut zero_hashes = vec![];
-        let mut h = V::empty_leaf().hash();
+        let mut h = V::empty_leaf().hash::<H>();
         zero_hashes.push(h);
         for _ in 0..height {
             h = H::two_to_one(h, h);
@@ -79,7 +79,7 @@ impl<F: RichField, H: Hasher<F>, V: Leafable<F, H>> MerkleTree<F, H, V> {
 
         self.leaves.insert(index, leaf.clone());
 
-        let mut h = leaf.hash();
+        let mut h = leaf.hash::<H>();
         self.node_hashes.insert(path.clone(), h);
 
         while !path.is_empty() {
@@ -120,13 +120,13 @@ fn usize_to_vec(x: usize, length: usize) -> Vec<bool> {
     v
 }
 
-pub fn get_merkle_root<F: RichField, H: Hasher<F>, V: Leafable<F, H>>(
+pub fn get_merkle_root<F: RichField, H: Hasher<F>, V: Leafable<F>>(
     index: usize,
     leaf: &V,
     proof: &MerkleProof<F, H>,
 ) -> H::Hash {
     let mut index = index;
-    let mut current_digest = leaf.hash();
+    let mut current_digest = leaf.hash::<H>();
     for &sibling_digest in proof.siblings.iter() {
         let bit = index & 1;
         index >>= 1;
@@ -142,7 +142,7 @@ pub fn get_merkle_root<F: RichField, H: Hasher<F>, V: Leafable<F, H>>(
 pub fn verify_merkle_proof_with_leaf<
     F: RichField,
     H: Hasher<F, Hash = HashOut<F>>,
-    V: Leafable<F, H>,
+    V: Leafable<F>,
 >(
     leaf_data: V,
     leaf_index: usize,
@@ -150,7 +150,7 @@ pub fn verify_merkle_proof_with_leaf<
     proof: &MerkleProof<F, H>,
 ) -> anyhow::Result<()> {
     verify_merkle_proof(
-        leaf_data.hash().elements.to_vec(),
+        leaf_data.hash::<H>().elements.to_vec(),
         leaf_index,
         merkle_root,
         proof,
@@ -160,7 +160,7 @@ pub fn verify_merkle_proof_with_leaf<
 pub fn verify_merkle_proof_with_leaf_target<
     F: RichField + Extendable<D>,
     H: AlgebraicHasher<F>,
-    VT: LeafableTarget<F, D>,
+    VT: LeafableTarget,
     const D: usize,
 >(
     builder: &mut CircuitBuilder<F, D>,
@@ -170,7 +170,7 @@ pub fn verify_merkle_proof_with_leaf_target<
     proof: &MerkleProofTarget,
 ) {
     let index_bits = builder.split_le(leaf_index, proof.siblings.len());
-    let leaf_hash = leaf_data.hash(builder).elements.to_vec();
+    let leaf_hash = leaf_data.hash::<F, H, D>(builder).elements.to_vec();
     builder.verify_merkle_proof::<H>(leaf_hash, &index_bits, merkle_root, proof);
 }
 
@@ -190,13 +190,13 @@ mod tests {
     type H = PoseidonHash;
     type V = Vec<F>;
 
-    impl<F: RichField, H: Hasher<F>> Leafable<F, H> for Vec<F> {
+    impl<F: RichField> Leafable<F> for Vec<F> {
         /// Default hash which indicates empty value.
         fn empty_leaf() -> Self {
             vec![]
         }
         /// Hash of its value.
-        fn hash(&self) -> H::Hash {
+        fn hash<H: Hasher<F>>(&self) -> H::Hash {
             H::hash_no_pad(self)
         }
     }
@@ -220,7 +220,7 @@ mod tests {
             let proof = tree.prove(index);
             assert_eq!(tree.get_leaf(index), leaf.clone());
             assert_eq!(tree.get_root(), get_merkle_root(index, &leaf, &proof));
-            let h = Leafable::<F, H>::hash(&leaf);
+            let h = leaf.hash::<H>();
             verify_merkle_proof_with_leaf(h, index, tree.get_root(), &proof).unwrap();
             verify_merkle_proof_with_leaf(leaf, index, tree.get_root(), &proof).unwrap();
         }

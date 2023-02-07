@@ -6,7 +6,7 @@ use plonky2::{
 };
 
 /// Address of user account. This corresponds to the index of the world state tree.
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Address(pub usize);
 
 impl Address {

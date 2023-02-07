@@ -14,7 +14,7 @@ use super::traits::{Leafable, LeafableTarget};
 
 pub const AMOUNT_LIMBS: usize = 8;
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AssetId(pub usize);
 
 impl AssetId {
@@ -26,7 +26,7 @@ impl AssetId {
 }
 
 /// `amount` should be below `MAX_AMOUNT`
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Asset {
     pub asset_id: AssetId,
     pub amount: BigUint, // num_limbs: AMOUNT_LIMBS

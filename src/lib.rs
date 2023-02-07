@@ -1,3 +1,4 @@
+pub mod another_spec;
 pub mod config;
 pub mod merkle_tree;
 pub mod newspec;

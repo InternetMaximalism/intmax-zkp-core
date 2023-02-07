@@ -25,7 +25,7 @@ pub struct BlockHeader<F: RichField> {
     pub previous_block_hash: HashOut<F>,
     pub block_number: u32,
     pub timestamp: Timestamp,
-    /// The type of the block content. Can be either Transfer_batch or Deposit
+    /// The type of the block content. Can be either TransferBatch or Deposit.
     pub content_type: BlockContentType,
     pub content_hash: HashOut<F>,
 }

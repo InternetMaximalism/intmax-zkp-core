@@ -45,6 +45,12 @@ pub struct TransferTree<F: RichField, H: Hasher<F, Hash = HashOut<F>>> {
     pub merkle_tree: MerkleTree<F, H, Transfer>,
 }
 
+impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> TransferTree<F, H> {
+    pub fn with_leaves(_transfers: &[Transfer]) -> Self {
+        todo!()
+    }
+}
+
 #[derive(Debug)]
 pub struct TransactionTree<F: RichField, H: Hasher<F, Hash = HashOut<F>>> {
     pub merkle_tree: MerkleTree<F, H, HashOut<F>>,
@@ -242,14 +248,15 @@ pub fn verify_amount_received_in_block<F: RichField, H: Hasher<F, Hash = HashOut
     }
 }
 
+// TODO: make a circuit
 /// Returns `(last_block_hash, amount_received_before_last_block_hash, amount_received_in_last_block_hash, total_amount_received_hash)`
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn verify_total_amount_received_in_history<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
     account: Address,
     /* private */ last_block_header: BlockHeader<F>,
-    /* private */ amount_received_before_last_block: Assets,
-    /* private */ amount_received_in_last_block: Assets,
-    /* private */ total_amount_received: Assets,
+    /* private */ amount_received_before_last_block: &Assets,
+    /* private */ amount_received_in_last_block: &Assets,
+    /* private */ total_amount_received: &Assets,
     /* private */ block_content: BlockContent<F>,
     /* private */ payments: &[Payment<F, H>],
     /* private */ salt: [F; 4],
@@ -265,7 +272,7 @@ pub fn verify_total_amount_received_in_history<F: RichField, H: Hasher<F, Hash =
     let (amount_received_in_last_block_hash, last_block_hash) =
         verify_amount_received_in_block::<F, H>(
             account,
-            &amount_received_in_last_block,
+            amount_received_in_last_block,
             last_block_header,
             block_content,
             payments,
@@ -301,4 +308,137 @@ pub fn verify_total_amount_received_by_l1_addresses<
     //     verify_total_amount_received_in_history(l1_address, amount, block_hash)?;
     // }
     todo!()
+}
+
+/// Returns `(amount_sent_in_transaction_hash, transfer_tree_root)`
+pub fn verify_amount_sent_in_transaction<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+    /* private */ amount_sent_in_transaction: &Assets,
+    /* private */ transfers: &[Transfer],
+    /* private */ salt: [F; 4],
+) -> anyhow::Result<(HashOut<F>, HashOut<F>)> {
+    let amount_sent_in_transaction_hash =
+        verify_amount_hash::<F, H>(amount_sent_in_transaction, salt)?;
+
+    // We check that the transfer tree root is the correct merkle root of the tree consisting of all the given transfers.
+    let transfer_tree_root = TransferTree::<F, H>::with_leaves(transfers)
+        .merkle_tree
+        .get_root();
+
+    // We check that amount_sent_in_transaction is the sum of all amounts in the given transfers.
+    let total_transfer_amount = transfers.iter().fold(Assets::default(), |acc, transfer| {
+        acc + transfer.amount.clone()
+    });
+    anyhow::ensure!(&total_transfer_amount == amount_sent_in_transaction);
+
+    Ok((amount_sent_in_transaction_hash, transfer_tree_root))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn verify_amount_sent_in_transfer_block<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+    account: Address,
+    /* private */ amount_sent: &Assets,
+    /* private */ block_header: BlockHeader<F>,
+    /* private */ transfer_batch: TransferBatch<F>,
+    /* private */ transfer_merkle_proof: MerkleProof<F, H>,
+    /* private */ transfers: &[Transfer],
+    /* private */ salt: [F; 4],
+) -> anyhow::Result<()> {
+    anyhow::ensure!(transfer_batch.hash::<H>() == block_header.content_hash);
+
+    // We only need to verify the amount sent if the account actually did send a transaction in the block,
+    // which is determined by the following if-statement
+    let content_hash = block_signature_is_valid::<F, H>(&transfer_batch)?;
+    if transfer_batch.sender_list.iter().any(|v| v == &account)
+        && content_hash == block_header.content_hash
+    {
+        // We check that the given transfer tree root is in the transaction tree.
+        let (_, transfer_tree_root) =
+            verify_amount_sent_in_transaction::<F, H>(amount_sent, transfers, salt)?;
+
+        verify_merkle_proof_with_leaf(
+            transfer_tree_root,
+            account.0,
+            transfer_batch.transaction_tree_root,
+            &transfer_merkle_proof,
+        )?;
+    }
+
+    Ok(())
+}
+
+pub fn verify_amount_sent_in_block<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+    account: Address,
+    /* private */ amount_sent_in_block: &Assets,
+    /* private */ block_header: BlockHeader<F>,
+    /* private */ transfer_batch: TransferBatch<F>,
+    /* private */ transfer_merkle_proof: MerkleProof<F, H>,
+    /* private */ transfers: &[Transfer],
+    /* private */ salt: [F; 4],
+) -> anyhow::Result<()> {
+    if block_header.content_type == BlockContentType::TransferBatch {
+        verify_amount_sent_in_transfer_block::<F, H>(
+            account,
+            amount_sent_in_block,
+            block_header,
+            transfer_batch,
+            transfer_merkle_proof,
+            transfers,
+            salt,
+        )?;
+    }
+
+    Ok(())
+}
+
+// TODO: make a circuit
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn verify_total_amount_sent_in_history<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+    account: Address,
+    /* private */ last_block_header: BlockHeader<F>,
+    /* private */ amount_sent_before_last_block: &Assets,
+    /* private */ amount_sent_in_last_block: &Assets,
+    /* private */ total_amount_sent: &Assets,
+    /* private */ transfer_batch: TransferBatch<F>,
+    /* private */ transfer_merkle_proof: MerkleProof<F, H>,
+    /* private */ transfers: &[Transfer],
+    /* private */ salt: [F; 4],
+) -> anyhow::Result<(HashOut<F>, HashOut<F>, HashOut<F>, HashOut<F>)> {
+    // We decare and verify the last block header
+    let last_block_hash = last_block_header.get_block_hash::<H>();
+
+    // TODO: We decare and verify the amount sent before the last block
+    // verify_total_amount_sent_in_history::<F, H>(
+    //     account,
+    //     amount_sent_before_last_block_hash,
+    //     last_block_header.previous_block_hash,
+    // )?;
+
+    // We decare and verify the amount sent in the last block
+    verify_amount_sent_in_block::<F, H>(
+        account,
+        amount_sent_in_last_block,
+        last_block_header,
+        transfer_batch,
+        transfer_merkle_proof,
+        transfers,
+        salt,
+    )?;
+
+    // We ensure that the sum of the amount sent before the last block and the amount sent in the last block is equal to "total_amount_sent_hash"
+    let (
+        amount_sent_before_last_block_hash,
+        amount_sent_in_last_block_hash,
+        total_amount_sent_hash,
+    ) = add_amounts::<F, H>(
+        amount_sent_before_last_block,
+        amount_sent_in_last_block,
+        total_amount_sent,
+    )?;
+
+    Ok((
+        last_block_hash,
+        amount_sent_before_last_block_hash,
+        amount_sent_in_last_block_hash,
+        total_amount_sent_hash,
+    ))
 }

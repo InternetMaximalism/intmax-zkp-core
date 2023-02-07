@@ -54,22 +54,22 @@ pub fn verify_amount_hash<F: RichField, H: Hasher<F>>(
 
 /// Returns `(hash_x, hash_y, hash_z)`
 pub fn add_amounts<F: RichField, H: Hasher<F>>(
-    /* private */ x: Assets,
-    /* private */ y: Assets,
-    /* private */ z: Assets,
+    /* private */ x: &Assets,
+    /* private */ y: &Assets,
+    /* private */ z: &Assets,
 ) -> anyhow::Result<(H::Hash, H::Hash, H::Hash)> {
     let hash_x = x.hash::<H>();
     let hash_y = y.hash::<H>();
     let hash_z = z.hash::<H>();
-    anyhow::ensure!(x + y == z);
+    anyhow::ensure!(&(x.clone() + y.clone()) == z);
 
     Ok((hash_x, hash_y, hash_z))
 }
 
 /// Returns `(hash_x, hash_y)`
 pub fn is_greater_than<F: RichField, H: Hasher<F>>(
-    /* private */ x: Assets,
-    /* private */ y: Assets,
+    /* private */ x: &Assets,
+    /* private */ y: &Assets,
 ) -> anyhow::Result<(H::Hash, H::Hash)> {
     let hash_x = x.hash::<H>();
     let hash_y = y.hash::<H>();

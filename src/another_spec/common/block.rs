@@ -5,12 +5,21 @@ use plonky2::{
 
 use crate::newspec::common::account::Address;
 
-use super::utils::Timestamp;
+use super::{
+    transaction::{Deposit, TransferBatch},
+    utils::Timestamp,
+};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum BlockContentType {
     TransferBatch,
     Deposit,
+}
+
+#[derive(Clone, Debug)]
+pub enum BlockContent<F: RichField> {
+    TransferBatch(TransferBatch<F>),
+    Deposit(Deposit),
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -21,6 +30,12 @@ pub struct BlockHeader<F: RichField> {
     /// The type of the block content. Can be either Transfer_batch or Deposit
     pub content_type: BlockContentType,
     pub content_hash: HashOut<F>,
+}
+
+impl<F: RichField> BlockHeader<F> {
+    pub fn get_block_hash<H: Hasher<F>>(&self) -> H::Hash {
+        todo!()
+    }
 }
 
 pub fn has_positive_balance<F: RichField, H: Hasher<F>>(

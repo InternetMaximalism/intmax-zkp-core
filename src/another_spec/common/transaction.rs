@@ -11,7 +11,7 @@ use plonky2::{
 use crate::{
     another_spec::{
         common::{asset::verify_amount_hash, block::has_positive_balance},
-        utils::signature::BlsSignature,
+        utils::signature::{block_signature_is_valid, BlsSignature},
     },
     newspec::{
         common::{account::Address, traits::Leafable},
@@ -19,7 +19,10 @@ use crate::{
     },
 };
 
-use super::{asset::Assets, block::BlockHeader};
+use super::{
+    asset::Assets,
+    block::{BlockContent, BlockContentType, BlockHeader},
+};
 
 #[derive(Clone, Debug)]
 pub struct Transfer {
@@ -153,4 +156,88 @@ pub fn verify_amount_received_in_transfer_batch_conditional<
     anyhow::ensure!(&computed_amount_received == amount_received);
 
     Ok((amount_received_hash, transfer_batch_hash))
+}
+
+/// Returns `(amount_received_hash, block_hash)`
+pub fn verify_amount_received_in_transfer_block<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+    account: Address, // L1 address
+    /* private */ amount_received: &Assets,
+    /* private */ block_header: BlockHeader<F>,
+    /* private */ transfer_batch: TransferBatch<F>,
+    /* private */ payments: &[Payment<F, H>],
+    /* private */ salt: [F; 4],
+) -> anyhow::Result<(HashOut<F>, HashOut<F>)> {
+    let block_hash = block_header.get_block_hash::<H>();
+
+    let transfer_batch_hash = block_signature_is_valid::<F, H>(&transfer_batch)?;
+    anyhow::ensure!(block_header.content_hash == transfer_batch_hash);
+
+    let (amount_received_hash, transfer_batch_hash) =
+        verify_amount_received_in_transfer_batch_conditional::<F, H>(
+            account,
+            transfer_batch,
+            amount_received,
+            block_header,
+            payments,
+            salt,
+        )?;
+    anyhow::ensure!(block_header.content_hash == transfer_batch_hash);
+
+    Ok((amount_received_hash, block_hash))
+}
+
+/// Returns `(amount_received_hash, block_hash)`
+pub fn verify_amount_received_in_deposit_block<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+    account: Address, // L1 address
+    /* private */ amount_received: &Assets,
+    /* private */ block_header: BlockHeader<F>,
+    /* private */ deposit: Deposit,
+    /* private */ salt: [F; 4],
+) -> anyhow::Result<(HashOut<F>, HashOut<F>)> {
+    let amount_received_hash = verify_amount_hash::<F, H>(amount_received, salt)?;
+
+    let block_hash = block_header.get_block_hash::<H>();
+
+    anyhow::ensure!(deposit.hash::<H>() == block_header.content_hash);
+
+    anyhow::ensure!(amount_received == &Assets::default() || deposit.recipient == account);
+    anyhow::ensure!(amount_received == &deposit.deposited_amount);
+
+    Ok((amount_received_hash, block_hash))
+}
+
+/// Returns `(amount_received_hash, block_hash)`
+pub fn verify_amount_received_in_block<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+    account: Address,
+    /* private */ amount_received: &Assets,
+    /* private */ block_header: BlockHeader<F>,
+    /* private */ block_content: BlockContent<F>,
+    /* private */ payments: &[Payment<F, H>],
+    /* private */ salt: [F; 4],
+) -> anyhow::Result<(HashOut<F>, HashOut<F>)> {
+    if let BlockContent::Deposit(deposit) = block_content {
+        anyhow::ensure!(block_header.content_type == BlockContentType::Deposit);
+        verify_amount_received_in_deposit_block::<F, H>(
+            account,
+            amount_received,
+            block_header,
+            deposit,
+            salt,
+        )
+    } else if let BlockContent::TransferBatch(transfer_batch) = block_content {
+        anyhow::ensure!(block_header.content_type == BlockContentType::TransferBatch);
+        verify_amount_received_in_transfer_block::<F, H>(
+            account,
+            amount_received,
+            block_header,
+            transfer_batch,
+            payments,
+            salt,
+        )
+    } else {
+        let amount_received_hash = verify_amount_hash::<F, H>(&Assets::default(), salt)?;
+        let block_hash = block_header.get_block_hash::<H>();
+
+        Ok((amount_received_hash, block_hash))
+    }
 }

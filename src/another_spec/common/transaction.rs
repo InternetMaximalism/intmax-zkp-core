@@ -20,7 +20,7 @@ use crate::{
 };
 
 use super::{
-    asset::Assets,
+    asset::{add_amounts, Assets},
     block::{BlockContent, BlockContentType, BlockHeader},
 };
 
@@ -240,4 +240,65 @@ pub fn verify_amount_received_in_block<F: RichField, H: Hasher<F, Hash = HashOut
 
         Ok((amount_received_hash, block_hash))
     }
+}
+
+/// Returns `(last_block_hash, amount_received_before_last_block_hash, amount_received_in_last_block_hash, total_amount_received_hash)`
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn verify_total_amount_received_in_history<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+    account: Address,
+    /* private */ last_block_header: BlockHeader<F>,
+    /* private */ amount_received_before_last_block: Assets,
+    /* private */ amount_received_in_last_block: Assets,
+    /* private */ total_amount_received: Assets,
+    /* private */ block_content: BlockContent<F>,
+    /* private */ payments: &[Payment<F, H>],
+    /* private */ salt: [F; 4],
+) -> anyhow::Result<(HashOut<F>, HashOut<F>, HashOut<F>, HashOut<F>)> {
+    // TODO: We decare and verify the amount received before the last block
+    // verify_total_amount_received_in_history(
+    //     account,
+    //     amount_received_before_last_block_hash,
+    //     last_block_header.previous_block_hash,
+    // )?;
+
+    // We decare and verify the amount received in the last block
+    let (amount_received_in_last_block_hash, last_block_hash) =
+        verify_amount_received_in_block::<F, H>(
+            account,
+            &amount_received_in_last_block,
+            last_block_header,
+            block_content,
+            payments,
+            salt,
+        )?;
+
+    // We check that the sum is "total_amount_received_hash"
+    let (amount_received_before_last_block_hash, _, total_amount_received_hash) =
+        add_amounts::<F, H>(
+            amount_received_before_last_block,
+            amount_received_in_last_block,
+            total_amount_received,
+        )?;
+
+    Ok((
+        last_block_hash,
+        amount_received_before_last_block_hash,
+        amount_received_in_last_block_hash,
+        total_amount_received_hash,
+    ))
+}
+
+/// The following circuit verifies the total amount received by a list of L1 accounts. This is the
+/// circuit that needs a proof which will be verified by the rollup contract when withdrawing to L1.
+pub fn verify_total_amount_received_by_l1_addresses<
+    F: RichField,
+    H: Hasher<F, Hash = HashOut<F>>,
+>(
+    _total_amount_received: &[(Address, Assets)], // L1 address
+    _block_hash: HashOut<F>,
+) -> anyhow::Result<()> {
+    // for (l1_address, amount) in total_amount_received {
+    //     verify_total_amount_received_in_history(l1_address, amount, block_hash)?;
+    // }
+    todo!()
 }

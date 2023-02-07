@@ -10,7 +10,7 @@ use plonky2::{
 
 use crate::{
     another_spec::{
-        common::{asset::verify_amount_hash, block::has_positive_balance},
+        common::asset::verify_amount_hash,
         utils::signature::{block_signature_is_valid, BlsSignature},
     },
     newspec::{
@@ -110,6 +110,26 @@ pub struct Payment<F: RichField, H: Hasher<F>> {
     pub transfer: Transfer,
 }
 
+pub fn has_positive_balance<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
+    _account: Address, // L2 address
+    /* private */ _block_header: BlockHeader<F>,
+) -> anyhow::Result<()> {
+    // let block_hash = block_header.get_block_hash::<H>();
+    // let (total_amount_received_hash, total_amount_sent_hash) =
+    //     is_greater_than::<F, H>(total_amount_received, total_amount_sent)?;
+
+    // verify_total_amount_received_in_history::<F, H>(
+    //     account,
+    //     total_amount_received_hash,
+    //     block_hash,
+    // )?;
+
+    // verify_total_amount_sent_in_history::<F, H>(account, total_amount_sent_hash, block_hash)?;
+
+    todo!()
+}
+
+/// `payments` is a list of all payments to the account in the block.
 /// Returns `(amount_received_hash, transfer_batch_hash)`
 pub fn verify_amount_received_in_transfer_batch_conditional<
     F: RichField,
@@ -119,11 +139,7 @@ pub fn verify_amount_received_in_transfer_batch_conditional<
     /* private */ transfer_batch: TransferBatch<F>,
     /* private */ amount_received: &Assets,
     /* private */ block_header: BlockHeader<F>,
-
-    // The following is a list of all payments to the account in the block. Each payment
-    // contains the sender, the transfer tree root, the transfer index and the transfer.
-    /* private */
-    payments: &[Payment<F, H>],
+    /* private */ payments: &[Payment<F, H>],
     /* private */ salt: [F; 4],
 ) -> anyhow::Result<(HashOut<F>, HashOut<F>)> {
     let transfer_batch_hash = transfer_batch.hash::<H>();
@@ -151,7 +167,7 @@ pub fn verify_amount_received_in_transfer_batch_conditional<
             .iter()
             .any(|v| v == &payment.sender));
 
-        // Check that the sender had enough balance to send the funds
+        // TODO: Check that the sender had enough balance to send the funds
         has_positive_balance::<F, H>(payment.sender, block_header)?;
 
         anyhow::ensure!(payment.transfer.recipient == account);

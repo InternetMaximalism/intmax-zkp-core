@@ -3,8 +3,6 @@ use plonky2::{
     plonk::config::Hasher,
 };
 
-use crate::newspec::common::account::Address;
-
 use super::{
     transaction::{Deposit, TransferBatch},
     utils::Timestamp,
@@ -36,11 +34,4 @@ impl<F: RichField> BlockHeader<F> {
     pub fn get_block_hash<H: Hasher<F>>(&self) -> H::Hash {
         todo!()
     }
-}
-
-pub fn has_positive_balance<F: RichField, H: Hasher<F>>(
-    _sender: Address,
-    /* private */ _block_header: BlockHeader<F>,
-) -> anyhow::Result<H::Hash> {
-    todo!()
 }

@@ -97,24 +97,6 @@ impl<F: RichField> Leafable<F> for TransferBatch<F> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Deposit {
-    pub recipient: Address,
-
-    /// deposited amount
-    pub amount: Assets,
-}
-
-impl<F: RichField> Leafable<F> for Deposit {
-    fn empty_leaf() -> Self {
-        todo!()
-    }
-
-    fn hash<H: Hasher<F>>(&self) -> H::Hash {
-        todo!()
-    }
-}
-
-#[derive(Clone, Debug)]
 pub struct Payment<F: RichField, H: Hasher<F>> {
     pub sender: Address,
     pub transfer_tree_root: H::Hash,
@@ -155,7 +137,7 @@ pub fn verify_amount_received_in_transfer_batch_conditional<
     F: RichField,
     H: Hasher<F, Hash = HashOut<F>>,
 >(
-    account: Address, // L1 address
+    account: Address, // L1 address (?)
     /* private */ transfer_batch: &TransferBatch<F>,
     /* private */ payments: &[Payment<F, H>],
     /* private */ amount_received: &Assets,
@@ -192,7 +174,7 @@ pub fn verify_amount_received_in_transfer_batch_conditional<
 
 /// Returns `(amount_received_hash, block_hash)`
 pub fn verify_amount_received_in_transfer_block<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
-    account: Address, // L1 address
+    account: Address, // L1 address (?)
     /* private */ amount_received: &Assets,
     /* private */ block_header: BlockHeader<F>,
     /* private */ transfer_batch: &TransferBatch<F>,
@@ -219,7 +201,7 @@ pub fn verify_amount_received_in_transfer_block<F: RichField, H: Hasher<F, Hash 
 
 /// Returns `(amount_received_hash, block_hash)`
 pub fn verify_amount_received_in_deposit_block<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
-    account: Address, // L1 address
+    account: Address, // L1 address (?)
     /* private */ amount_received: &Assets,
     /* private */ block_header: BlockHeader<F>,
     /* private */ deposit: Transfer,
@@ -234,7 +216,7 @@ pub fn verify_amount_received_in_deposit_block<F: RichField, H: Hasher<F, Hash =
 
 /// Returns `(amount_received_hash, block_hash)`
 pub fn verify_amount_received_in_block<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
-    account: Address,
+    account: Address, // L1 address (?)
     /* private */ amount_received: &Assets,
     /* private */ block_header: BlockHeader<F>,
     /* private */ block_content: BlockContent<F>,
@@ -265,14 +247,13 @@ pub fn verify_amount_received_in_block<F: RichField, H: Hasher<F, Hash = HashOut
 }
 
 pub struct ReceivedAmountProof<F: RichField, H: Hasher<F>> {
-    pub account: Address,
+    pub account: Address, // L1 address (?)
     pub last_block_header: BlockHeader<F>,
     pub amount_received_before_last_block: Assets,
     pub amount_received_in_last_block: Assets,
     pub total_amount_received: Assets,
     pub block_content: BlockContent<F>,
     pub payments: Vec<Payment<F, H>>,
-    pub salt: [F; 4],
 }
 
 /// Returns `(last_block_hash, amount_received_before_last_block_hash, amount_received_in_last_block_hash, total_amount_received_hash)`
@@ -305,10 +286,12 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> ReceivedAmountProof<F, H> {
 
         let last_block_hash = self.last_block_header.hash::<H>();
 
-        let amount_received_before_last_block_hash =
-            self.amount_received_before_last_block.hash::<H>();
-        let amount_received_in_last_block_hash = self.amount_received_in_last_block.hash::<H>();
-        let total_amount_received_hash = self.total_amount_received.hash::<H>();
+        let amount_received_before_last_block_hash = self
+            .amount_received_before_last_block
+            .hash_with_salt::<F, H>();
+        let amount_received_in_last_block_hash =
+            self.amount_received_in_last_block.hash_with_salt::<F, H>();
+        let total_amount_received_hash = self.total_amount_received.hash_with_salt::<F, H>();
 
         Ok((
             last_block_hash,
@@ -442,9 +425,11 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> SentAmountProof<F, H> {
         // We decare and verify the last block header
         let last_block_hash = self.last_block_header.hash::<H>();
 
-        let amount_sent_before_last_block_hash = self.amount_sent_before_last_block.hash::<H>();
-        let amount_sent_in_last_block_hash = self.amount_sent_in_last_block.hash::<H>();
-        let total_amount_sent_hash = self.total_amount_sent.hash::<H>();
+        let amount_sent_before_last_block_hash =
+            self.amount_sent_before_last_block.hash_with_salt::<F, H>();
+        let amount_sent_in_last_block_hash =
+            self.amount_sent_in_last_block.hash_with_salt::<F, H>();
+        let total_amount_sent_hash = self.total_amount_sent.hash_with_salt::<F, H>();
 
         Ok((
             last_block_hash,
@@ -649,7 +634,7 @@ pub fn verify_amount_received_in_transfer_block_target<
 
     let block_hash = block_header.hash::<F, H, D>(builder);
 
-    let amount_received_hash = amount_received.hash::<F, H, D>(builder);
+    let amount_received_hash = amount_received.hash_with_salt::<F, H, D>(builder);
 
     let mut computed_amount_received = AssetsTarget::constant::<F, D>(builder, Assets::default());
     for payment in payments.iter() {
@@ -724,7 +709,7 @@ pub fn verify_amount_received_in_block_target<
     // else {
     //     let default_constant_asset = AssetsTarget::new(builder, n_kinds);
     //     let amount_received_hash =
-    //         verify_amount_hash_target::<F, H, D>(builder, &default_constant_asset, salt)?;
+    //         default_constant_asset.hash::<F, H, D>(builder);
     //     let block_hash = block_header.hash::<F, H, D>(builder);
 
     //     (amount_received_hash, block_hash)
@@ -739,7 +724,6 @@ pub struct ReceivedAmountProofTarget {
     /* private */ pub total_amount_received: AssetsTarget,
     /* private */ pub block_content: TransferBatchTarget,
     /* private */ pub payments: Vec<PaymentTarget>,
-    /* private */ pub salt: [Target; 4],
     pub last_block_hash: HashOutTarget,
     pub amount_received_before_last_block_hash: HashOutTarget,
     pub amount_received_in_last_block_hash: HashOutTarget,
@@ -762,7 +746,6 @@ impl ReceivedAmountProofTarget {
         let payments = (0..n_payments)
             .map(|_| PaymentTarget::new(builder, transaction_tree_height, transfer_tree_height))
             .collect::<Vec<_>>();
-        let salt = builder.add_virtual_target_arr::<4>();
 
         // TODO: We decare and verify the amount received before the last block
         // verify_total_amount_received_in_history(
@@ -794,8 +777,8 @@ impl ReceivedAmountProofTarget {
             &total_amount_received,
         );
         let amount_received_before_last_block_hash =
-            amount_received_before_last_block.hash::<F, H, D>(builder);
-        let total_amount_received_hash = total_amount_received.hash::<F, H, D>(builder);
+            amount_received_before_last_block.hash_with_salt::<F, H, D>(builder);
+        let total_amount_received_hash = total_amount_received.hash_with_salt::<F, H, D>(builder);
 
         Self {
             account,
@@ -805,7 +788,6 @@ impl ReceivedAmountProofTarget {
             total_amount_received,
             block_content,
             payments,
-            salt,
             last_block_hash,
             amount_received_before_last_block_hash,
             amount_received_in_last_block_hash,

@@ -10,20 +10,15 @@ use plonky2::{
     },
 };
 
-use crate::newspec::common::{
-    asset::{Asset, AssetTarget},
-    traits::Leafable,
-};
+use crate::newspec::common::asset::{Asset, AssetTarget};
 
+// TODO: Include multiple kinds of assets.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Assets(pub Asset);
 
-impl<F: RichField> Leafable<F> for Assets {
-    fn empty_leaf() -> Self {
-        todo!()
-    }
-
-    fn hash<H: Hasher<F>>(&self) -> H::Hash {
+impl Assets {
+    // TODO: Pass `salt` as an argument.
+    pub fn hash_with_salt<F: RichField, H: Hasher<F>>(&self) -> H::Hash {
         todo!()
     }
 }
@@ -88,7 +83,7 @@ impl AssetsTarget {
         todo!()
     }
 
-    pub fn hash<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+    pub fn hash_with_salt<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         &self,
         _builder: &mut CircuitBuilder<F, D>,
     ) -> HashOutTarget {

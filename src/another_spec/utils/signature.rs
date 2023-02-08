@@ -1,35 +1,47 @@
 use plonky2::{
-    hash::hash_types::{HashOut, RichField},
-    plonk::config::Hasher,
+    field::extension::Extendable,
+    hash::hash_types::{HashOut, HashOutTarget, RichField},
+    iop::{target::BoolTarget, witness::Witness},
+    plonk::circuit_builder::CircuitBuilder,
 };
 
-use crate::{
-    another_spec::common::transaction::TransferBatch,
-    newspec::common::{account::Address, traits::Leafable},
-};
+use crate::newspec::common::account::{Address, AddressTarget};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlsSignature(pub Vec<u8>);
 
-/// Returns `transfer_batch_hash`
-pub fn block_signature_is_valid<F: RichField, H: Hasher<F>>(
-    /* private */ batch: &TransferBatch<F>,
-) -> anyhow::Result<H::Hash> {
-    let transfer_batch_hash = batch.hash::<H>();
-
-    verify_bls_signature(
-        batch.transaction_tree_root,
-        batch.signature.clone(),
-        &batch.sender_list,
-    )?;
-
-    Ok(transfer_batch_hash)
-}
-
 pub fn verify_bls_signature<F: RichField>(
-    _message: HashOut<F>,
+    _hashed_message: HashOut<F>,
     _signature: BlsSignature,
     _keys: &[Address],
 ) -> anyhow::Result<()> {
+    todo!()
+}
+
+#[derive(Clone, Debug)]
+pub struct BlsSignatureTarget(pub Vec<BoolTarget>);
+
+impl BlsSignatureTarget {
+    pub fn new<F: RichField + Extendable<D>, const D: usize>(
+        _builder: &mut CircuitBuilder<F, D>,
+    ) -> Self {
+        todo!()
+    }
+
+    pub fn set_witness<F: RichField>(
+        &self,
+        _pw: &mut impl Witness<F>,
+        _signature: &BlsSignature,
+    ) -> anyhow::Result<()> {
+        todo!()
+    }
+}
+
+pub fn verify_bls_signature_target<F: RichField + Extendable<D>, const D: usize>(
+    _builder: &mut CircuitBuilder<F, D>,
+    _hashed_message: HashOutTarget,
+    _signature: BlsSignatureTarget,
+    _keys: &[AddressTarget],
+) {
     todo!()
 }

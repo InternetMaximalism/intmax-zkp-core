@@ -1,11 +1,22 @@
 use std::ops::{Add, AddAssign};
 
-use plonky2::{hash::hash_types::RichField, plonk::config::Hasher};
+use plonky2::{
+    field::extension::Extendable,
+    hash::hash_types::{HashOutTarget, RichField},
+    iop::{target::BoolTarget, witness::Witness},
+    plonk::{
+        circuit_builder::CircuitBuilder,
+        config::{AlgebraicHasher, Hasher},
+    },
+};
 
-use crate::newspec::common::{asset::Asset, traits::Leafable};
+use crate::newspec::common::{
+    asset::{Asset, AssetTarget},
+    traits::Leafable,
+};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Assets(pub Vec<Asset>);
+pub struct Assets(pub Asset);
 
 impl<F: RichField> Leafable<F> for Assets {
     fn empty_leaf() -> Self {
@@ -43,39 +54,72 @@ impl AddAssign for Assets {
     }
 }
 
-/// Returns `hash_x_with_salt`
-pub fn verify_amount_hash<F: RichField, H: Hasher<F>>(
-    _x: &Assets,
-    /* private */ _salt: [F; 4],
-) -> anyhow::Result<H::Hash> {
-    // anyhow::ensure!(hash(salt, x) == hash_x_with_salt);
-    todo!()
-}
+#[derive(Clone, Debug)]
+pub struct AssetsTarget(pub AssetTarget);
 
-/// Returns `(hash_x, hash_y, hash_z)`
-pub fn add_amounts<F: RichField, H: Hasher<F>>(
-    /* private */ x: &Assets,
-    /* private */ y: &Assets,
-    /* private */ z: &Assets,
-) -> anyhow::Result<(H::Hash, H::Hash, H::Hash)> {
-    let hash_x = x.hash::<H>();
-    let hash_y = y.hash::<H>();
-    let hash_z = z.hash::<H>();
-    anyhow::ensure!(&(x.clone() + y.clone()) == z);
+impl AssetsTarget {
+    pub fn new<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+    ) -> Self {
+        Self(AssetTarget::new(builder))
+    }
 
-    Ok((hash_x, hash_y, hash_z))
-}
+    pub fn set_witness<F: RichField>(
+        &self,
+        _pw: &mut impl Witness<F>,
+        _assets: &Assets,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-/// Returns `(hash_x, hash_y)`
-pub fn is_greater_than<F: RichField, H: Hasher<F>>(
-    /* private */ x: &Assets,
-    /* private */ y: &Assets,
-) -> anyhow::Result<(H::Hash, H::Hash)> {
-    let hash_x = x.hash::<H>();
-    let hash_y = y.hash::<H>();
+    pub fn constant<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+        assets: Assets,
+        // n_kinds: usize,
+    ) -> Self {
+        Self(AssetTarget::constant(builder, assets.0))
+    }
 
-    // For multi-asset balances this means that the balance is positive for all assets.
-    anyhow::ensure!(x >= y);
+    pub fn connect<F: RichField + Extendable<D>, const D: usize>(
+        _builder: &mut CircuitBuilder<F, D>,
+        _x: &Self,
+        _y: &Self,
+    ) {
+        todo!()
+    }
 
-    Ok((hash_x, hash_y))
+    pub fn hash<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+        &self,
+        _builder: &mut CircuitBuilder<F, D>,
+    ) -> HashOutTarget {
+        todo!()
+    }
+
+    pub fn add<F: RichField + Extendable<D>, const D: usize>(
+        _builder: &mut CircuitBuilder<F, D>,
+        _x: &Self,
+        _y: &Self,
+    ) -> Self {
+        todo!()
+    }
+
+    pub fn sub<F: RichField + Extendable<D>, const D: usize>(
+        _builder: &mut CircuitBuilder<F, D>,
+        _x: &Self,
+        _y: &Self,
+    ) -> Self {
+        todo!()
+    }
+
+    pub fn is_greater_than_target<
+        F: RichField + Extendable<D>,
+        H: AlgebraicHasher<F>,
+        const D: usize,
+    >(
+        &self,
+        _builder: &mut CircuitBuilder<F, D>,
+        /* private */ _other: &AssetsTarget,
+    ) -> BoolTarget {
+        todo!()
+    }
 }

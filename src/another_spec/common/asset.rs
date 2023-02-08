@@ -98,14 +98,6 @@ impl AssetsTarget {
         todo!()
     }
 
-    pub fn sub<F: RichField + Extendable<D>, const D: usize>(
-        _builder: &mut CircuitBuilder<F, D>,
-        _x: &Self,
-        _y: &Self,
-    ) -> Self {
-        todo!()
-    }
-
     pub fn is_greater_than_target<
         F: RichField + Extendable<D>,
         H: AlgebraicHasher<F>,

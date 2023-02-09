@@ -33,6 +33,8 @@ pub struct BlockHeader<F: RichField> {
     /// The type of the block content. Can be either TransferBatch or Deposit.
     pub content_type: BlockContentType,
     pub content_hash: HashOut<F>,
+    // TODO: circuit で検証しなくて良いのか？
+    // pub last_block_num_tree_root: HashOut<F>,
 }
 
 impl<F: RichField> BlockHeader<F> {

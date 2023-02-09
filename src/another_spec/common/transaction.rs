@@ -20,13 +20,17 @@ use crate::{
     another_spec::utils::signature::{
         verify_bls_signature, verify_bls_signature_target, BlsSignature, BlsSignatureTarget,
     },
+    merkle_tree::gadgets::get_merkle_root_target_from_leaves,
     newspec::{
         common::{
             account::{Address, AddressTarget},
             traits::Leafable,
         },
-        utils::merkle_tree::merkle_tree::{verify_merkle_proof_with_leaf, MerkleTree},
+        utils::merkle_tree::merkle_tree::{
+            verify_merkle_proof_with_leaf, verify_merkle_proof_with_leaf_target, MerkleTree,
+        },
     },
+    utils::gadgets::logic::logical_or,
 };
 
 use super::{
@@ -310,27 +314,23 @@ pub fn verify_amount_sent_in_transfer_block<F: RichField, H: Hasher<F, Hash = Ha
 
     // We only need to verify the amount sent if the account actually did send a transaction in the block,
     // which is determined by the following if-statement
-    let amount_sent = if transfer_batch.senders.iter().any(|v| v == &account) {
-        // We check that the transfer tree root is the correct merkle root of the tree consisting of all the given transfers.
-        let transfer_tree_root = TransferTree::<F, H>::with_leaves(transfers)
-            .merkle_tree
-            .get_root();
 
-        // We check that the given transfer tree root is in the transaction tree.
-        verify_merkle_proof_with_leaf(
-            transfer_tree_root,
-            account.0,
-            transfer_batch.transaction_tree_root,
-            &transaction_merkle_proof,
-        )?;
+    // We check that the transfer tree root is the correct merkle root of the tree consisting of all the given transfers.
+    let transfer_tree_root = TransferTree::<F, H>::with_leaves(transfers)
+        .merkle_tree
+        .get_root();
 
-        // XXX: あってる？
-        transfers.iter().fold(Assets::default(), |acc, transfer| {
-            acc + transfer.amount.clone()
-        })
-    } else {
-        Assets::default()
-    };
+    // We check that the given transfer tree root is in the transaction tree.
+    verify_merkle_proof_with_leaf(
+        transfer_tree_root,
+        account.0,
+        transfer_batch.transaction_tree_root,
+        &transaction_merkle_proof,
+    )?;
+
+    let amount_sent = transfers.iter().fold(Assets::default(), |acc, transfer| {
+        acc + transfer.amount.clone()
+    });
 
     Ok(amount_sent)
 }
@@ -598,7 +598,7 @@ pub fn verify_amount_received_in_transfer_block_target<
     /* private */ amount_received: &AssetsTarget,
     /* private */ block_header: BlockHeaderTarget,
     /* private */ transfer_batch: &TransferBatchTarget,
-    payments: &[PaymentTarget],
+    /* private */ payments: &[PaymentTarget],
 ) {
     verify_bls_signature_target(
         builder,
@@ -711,7 +711,7 @@ impl ReceivedAmountProofTarget {
         //     last_block_header.previous_block_hash,
         // )?;
 
-        // TODO: We decare and verify the amount received in the last block
+        // We decare and verify the amount received in the last block
         verify_amount_received_in_block_target::<F, H, D>(
             builder,
             account,
@@ -721,7 +721,7 @@ impl ReceivedAmountProofTarget {
             &payments,
         );
 
-        // TODO: We check that the sum is "total_amount_received_hash"
+        // We check that the sum is "total_amount_received_hash"
         let actual_total_amount_received = AssetsTarget::add::<F, D>(
             builder,
             &amount_received_before_last_block,
@@ -752,6 +752,173 @@ impl ReceivedAmountProofTarget {
             amount_received_before_last_block_hash,
             amount_received_in_last_block_hash,
             total_amount_received_hash,
+        }
+    }
+}
+
+/// Returns `amount_sent`
+#[allow(clippy::too_many_arguments)]
+pub fn verify_amount_sent_in_transfer_block_target<
+    F: RichField + Extendable<D>,
+    H: AlgebraicHasher<F>,
+    const D: usize,
+>(
+    builder: &mut CircuitBuilder<F, D>,
+    account: AddressTarget,
+    /* private */ block_header: BlockHeaderTarget,
+    /* private */ transfer_batch: &TransferBatchTarget,
+    /* private */ transaction_merkle_proof: MerkleProofTarget,
+    /* private */ transfers: &[TransferTarget],
+) -> AssetsTarget {
+    let content_hash = transfer_batch.hash::<F, H, D>(builder);
+    builder.connect_hashes(content_hash, block_header.content_hash);
+
+    verify_bls_signature_target::<F, D>(
+        builder,
+        transfer_batch.transaction_tree_root,
+        transfer_batch.signature.clone(),
+        &transfer_batch.senders,
+    );
+
+    // We only need to verify the amount sent if the account actually did send a transaction in the block,
+    // which is determined by the following if-statement
+
+    // We check that the transfer tree root is the correct merkle root of the tree consisting of all the given transfers.
+    let transfer_hashes = transfers
+        .iter()
+        .map(|v| v.hash::<F, H, D>(builder))
+        .collect::<Vec<_>>();
+    let transfer_tree_root =
+        get_merkle_root_target_from_leaves::<F, H, D>(builder, transfer_hashes);
+
+    // We check that the given transfer tree root is in the transaction tree.
+    verify_merkle_proof_with_leaf_target::<F, H, _, D>(
+        builder,
+        transfer_tree_root,
+        account.0,
+        transfer_batch.transaction_tree_root,
+        &transaction_merkle_proof,
+    );
+
+    transfers.iter().fold(
+        AssetsTarget::constant(builder, Assets::default()),
+        |acc, transfer| AssetsTarget::add(builder, &acc, &transfer.amount),
+    )
+}
+
+pub fn verify_amount_sent_in_block_target<
+    F: RichField + Extendable<D>,
+    H: AlgebraicHasher<F>,
+    const D: usize,
+>(
+    builder: &mut CircuitBuilder<F, D>,
+    account: AddressTarget,
+    /* private */ amount_sent_in_block: &AssetsTarget,
+    /* private */ block_header: BlockHeaderTarget,
+    /* private */ transfer_batch: &TransferBatchTarget,
+    /* private */ transaction_merkle_proof: MerkleProofTarget,
+    /* private */ transfers: &[TransferTarget],
+) {
+    let actual_amount_sent_in_block = verify_amount_sent_in_transfer_block_target::<F, H, D>(
+        builder,
+        account,
+        block_header,
+        transfer_batch,
+        transaction_merkle_proof,
+        transfers,
+    );
+
+    // If this block is not a deposit, `amount_sent_in_block` is the same with the sum of `transfers`.
+    let tmp = AssetsTarget::is_equal(builder, &actual_amount_sent_in_block, amount_sent_in_block);
+    let tmp = logical_or(builder, block_header.is_deposit, tmp);
+    let constant_false = builder.constant_bool(false);
+    builder.connect(tmp.target, constant_false.target);
+}
+
+pub struct SentAmountProofTarget {
+    pub account: AddressTarget,
+    /* private */ pub last_block_header: BlockHeaderTarget,
+    /* private */ pub amount_sent_before_last_block: AssetsTarget,
+    /* private */ pub amount_sent_in_last_block: AssetsTarget,
+    /* private */ pub total_amount_sent: AssetsTarget,
+    /* private */ pub transfer_batch: TransferBatchTarget,
+    /* private */ pub transaction_merkle_proof: MerkleProofTarget,
+    /* private */ pub transfers: Vec<TransferTarget>,
+    pub last_block_hash: HashOutTarget,
+    pub amount_sent_before_last_block_hash: HashOutTarget,
+    pub amount_sent_in_last_block_hash: HashOutTarget,
+    pub total_amount_sent_hash: HashOutTarget,
+}
+
+impl SentAmountProofTarget {
+    // verify_total_amount_sent_in_history
+    pub fn new<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+        n_payments: usize,
+        n_transfers: usize,
+        transaction_tree_height: usize,
+    ) -> Self {
+        let account = AddressTarget::new(builder);
+        let last_block_header = BlockHeaderTarget::new(builder);
+        let amount_sent_before_last_block = AssetsTarget::new(builder);
+        let amount_sent_in_last_block = AssetsTarget::new(builder);
+        let total_amount_sent = AssetsTarget::new(builder);
+        let transfer_batch = TransferBatchTarget::new(builder, n_payments);
+        let transaction_merkle_proof = MerkleProofTarget {
+            siblings: builder.add_virtual_hashes(transaction_tree_height),
+        };
+        let transfers = (0..n_transfers)
+            .map(|_| TransferTarget::new(builder))
+            .collect::<Vec<_>>();
+
+        // TODO: We decare and verify the amount sent before the last block
+        // verify_total_amount_sent_in_history::<F, H>(
+        //     account,
+        //     amount_sent_before_last_block_hash,
+        //     last_block_header.previous_block_hash,
+        // )?;
+
+        // We decare and verify the amount sent in the last block
+        verify_amount_sent_in_block_target::<F, H, D>(
+            builder,
+            account,
+            &amount_sent_in_last_block,
+            last_block_header,
+            &transfer_batch,
+            transaction_merkle_proof.clone(),
+            &transfers,
+        );
+
+        // We ensure that the sum of the amount sent before the last block and the amount sent in the last block is equal to "total_amount_sent_hash"
+        let actual_total_amount_sent = AssetsTarget::add::<F, D>(
+            builder,
+            &amount_sent_before_last_block,
+            &amount_sent_in_last_block,
+        );
+        AssetsTarget::connect(builder, &actual_total_amount_sent, &total_amount_sent);
+
+        // We decare and verify the last block header
+        let last_block_hash = last_block_header.hash::<F, H, D>(builder);
+
+        let amount_sent_before_last_block_hash =
+            amount_sent_before_last_block.hash_with_salt::<F, H, D>(builder);
+        let amount_sent_in_last_block_hash =
+            amount_sent_in_last_block.hash_with_salt::<F, H, D>(builder);
+        let total_amount_sent_hash = total_amount_sent.hash_with_salt::<F, H, D>(builder);
+
+        Self {
+            account,
+            last_block_header,
+            amount_sent_before_last_block,
+            amount_sent_in_last_block,
+            total_amount_sent,
+            transfer_batch,
+            transaction_merkle_proof,
+            transfers,
+            last_block_hash,
+            amount_sent_before_last_block_hash,
+            amount_sent_in_last_block_hash,
+            total_amount_sent_hash,
         }
     }
 }

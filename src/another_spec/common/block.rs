@@ -1,7 +1,10 @@
 use plonky2::{
     field::extension::Extendable,
     hash::hash_types::{HashOut, HashOutTarget, RichField},
-    iop::target::{BoolTarget, Target},
+    iop::{
+        target::{BoolTarget, Target},
+        witness::Witness,
+    },
     plonk::{
         circuit_builder::CircuitBuilder,
         config::{AlgebraicHasher, Hasher},
@@ -81,6 +84,26 @@ impl BlockHeaderTarget {
             is_deposit,
             content_hash,
         }
+    }
+
+    pub fn set_witness<F: RichField>(&self, pw: &mut impl Witness<F>, input: &BlockHeader<F>) {
+        pw.set_hash_target(self.previous_block_hash, input.previous_block_hash);
+        pw.set_target(self.block_number, F::from_canonical_u32(input.block_number));
+        pw.set_target(
+            self.timestamp,
+            F::from_canonical_u64(
+                input
+                    .timestamp
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+            ),
+        );
+        pw.set_bool_target(
+            self.is_deposit,
+            input.content_type == BlockContentType::Deposit,
+        );
+        pw.set_hash_target(self.content_hash, input.content_hash);
     }
 }
 

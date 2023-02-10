@@ -12,13 +12,18 @@ use plonky2::{
     },
     plonk::{
         circuit_builder::CircuitBuilder,
-        config::{AlgebraicHasher, Hasher},
+        circuit_data::CircuitData,
+        config::{AlgebraicHasher, GenericConfig, Hasher},
+        proof::{ProofWithPublicInputs, ProofWithPublicInputsTarget},
     },
 };
 
 use crate::{
-    another_spec::utils::signature::{
-        verify_bls_signature, verify_bls_signature_target, BlsSignature, BlsSignatureTarget,
+    another_spec::{
+        circuits::{ReceivedAmountProofPublicInputsTarget, SentAmountProofPublicInputsTarget},
+        utils::signature::{
+            verify_bls_signature, verify_bls_signature_target, BlsSignature, BlsSignatureTarget,
+        },
     },
     merkle_tree::gadgets::get_merkle_root_target_from_leaves,
     newspec::{
@@ -36,6 +41,7 @@ use crate::{
 use super::{
     asset::{Assets, AssetsTarget},
     block::{BlockContent, BlockContentType, BlockHeader, BlockHeaderTarget},
+    recursion::make_recursion_constraints,
 };
 
 #[derive(Clone, Debug)]
@@ -89,49 +95,57 @@ pub struct TransferBatch<F: RichField> {
     pub signature: BlsSignature,
 }
 
-impl<F: RichField> Leafable<F> for TransferBatch<F> {
-    fn empty_leaf() -> Self {
-        todo!()
-    }
-
-    fn hash<H: Hasher<F>>(&self) -> H::Hash {
+impl<F: RichField> TransferBatch<F> {
+    pub fn hash<H: Hasher<F>>(&self) -> H::Hash {
         todo!()
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct Payment<F: RichField, H: Hasher<F>> {
+pub struct Payment<F: RichField> {
     pub sender: Address,
-    pub transfer_tree_root: H::Hash,
-    pub transfer_index: usize,
-    pub transaction_merkle_proof: MerkleProof<F, H>,
-    pub transfer_merkle_proof: MerkleProof<F, H>,
     pub transfer: Transfer,
+    pub transaction_tree_root: HashOut<F>,
+    pub total_amount_received: Assets,
+    pub total_amount_sent: Assets,
 }
 
-impl<F: RichField, H: Hasher<F>> Payment<F, H> {
+#[derive(Clone, Debug)]
+pub struct PaymentProof<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize> {
+    pub content: Payment<F>,
+    pub transaction_merkle_proof: MerkleProof<F, C::InnerHasher>,
+    pub transfer_tree_root: HashOut<F>,
+    pub transfer_index: usize,
+    pub transfer_merkle_proof: MerkleProof<F, C::InnerHasher>,
+    pub received_amount_proof: ProofWithPublicInputs<F, C, D>,
+    pub sent_amount_proof: ProofWithPublicInputs<F, C, D>,
+}
+
+impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
+    PaymentProof<F, C, D>
+{
     pub fn with_tree_height(_transaction_tree_height: usize, _transfer_tree_height: usize) -> Self {
         todo!()
     }
-}
 
-pub fn has_positive_balance<F: RichField, H: Hasher<F, Hash = HashOut<F>>>(
-    _account: Address, // L2 address
-    /* private */ _block_header: BlockHeader<F>,
-) -> anyhow::Result<()> {
-    // let block_hash = block_header.get_block_hash::<H>();
-    // let (total_amount_received_hash, total_amount_sent_hash) =
-    //     is_greater_than::<F, H>(total_amount_received, total_amount_sent)?;
+    pub fn calculate(&self) -> anyhow::Result<()> {
+        verify_merkle_proof_with_leaf::<F, C::InnerHasher, _>(
+            self.transfer_tree_root,
+            self.content.sender.0,
+            self.content.transaction_tree_root,
+            &self.transaction_merkle_proof,
+        )?;
+        verify_merkle_proof_with_leaf::<F, C::InnerHasher, _>(
+            self.content.transfer.hash::<C::InnerHasher>(),
+            self.transfer_index,
+            self.transfer_tree_root,
+            &self.transfer_merkle_proof,
+        )?;
 
-    // verify_total_amount_received_in_history::<F, H>(
-    //     account,
-    //     total_amount_received_hash,
-    //     block_hash,
-    // )?;
+        // TODO: verify recursive proof
 
-    // verify_total_amount_sent_in_history::<F, H>(account, total_amount_sent_hash, block_hash)?;
-
-    todo!()
+        Ok(())
+    }
 }
 
 /// `payments` is a list of all payments to the account in the block.
@@ -140,8 +154,10 @@ pub fn verify_amount_received_in_transfer_block<F: RichField, H: Hasher<F, Hash 
     /* private */ amount_received: &Assets,
     /* private */ block_header: BlockHeader<F>,
     /* private */ transfer_batch: &TransferBatch<F>,
-    /* private */ payments: &[Payment<F, H>],
+    /* private */ payments: &[Payment<F>],
 ) -> anyhow::Result<()> {
+    anyhow::ensure!(transfer_batch.hash::<H>() == block_header.content_hash);
+
     let sender_list = payments.iter().map(|v| v.sender).collect::<Vec<_>>();
     verify_bls_signature(
         transfer_batch.transaction_tree_root,
@@ -151,22 +167,13 @@ pub fn verify_amount_received_in_transfer_block<F: RichField, H: Hasher<F, Hash 
 
     let mut computed_amount_received = Assets::default();
     for payment in payments.iter() {
-        verify_merkle_proof_with_leaf::<F, H, _>(
-            payment.transfer_tree_root,
-            payment.sender.0,
-            transfer_batch.transaction_tree_root,
-            &payment.transaction_merkle_proof,
-        )?;
+        anyhow::ensure!(payment.transaction_tree_root == transfer_batch.transaction_tree_root);
 
-        verify_merkle_proof_with_leaf::<F, H, _>(
-            payment.transfer.hash::<H>(),
-            payment.transfer_index,
-            payment.transfer_tree_root,
-            &payment.transfer_merkle_proof,
-        )?;
+        // Check that the sender is in the sender_list for the block
+        // ensure sender in transfer_batch.sender_list
 
         // TODO: Check that the sender had enough balance to send the funds
-        has_positive_balance::<F, H>(payment.sender, block_header)?;
+        anyhow::ensure!(payment.total_amount_received <= payment.total_amount_sent);
 
         anyhow::ensure!(payment.transfer.recipient == account);
 
@@ -174,8 +181,6 @@ pub fn verify_amount_received_in_transfer_block<F: RichField, H: Hasher<F, Hash 
     }
 
     anyhow::ensure!(&computed_amount_received == amount_received);
-
-    anyhow::ensure!(transfer_batch.hash::<H>() == block_header.content_hash);
 
     Ok(())
 }
@@ -199,7 +204,7 @@ pub fn verify_amount_received_in_block<F: RichField, H: Hasher<F, Hash = HashOut
     /* private */ amount_received: &Assets,
     /* private */ block_header: BlockHeader<F>,
     /* private */ block_content: BlockContent<F>,
-    /* private */ payments: &[Payment<F, H>],
+    /* private */ payments: &[Payment<F>],
 ) -> anyhow::Result<()> {
     match block_content {
         BlockContent::Deposit(deposit) => {
@@ -224,17 +229,24 @@ pub fn verify_amount_received_in_block<F: RichField, H: Hasher<F, Hash = HashOut
     }
 }
 
-pub struct ReceivedAmountProof<F: RichField, H: Hasher<F>> {
+pub struct ReceivedAmountProof<
+    F: RichField + Extendable<D>,
+    C: GenericConfig<D, F = F>,
+    const D: usize,
+> {
     pub account: Address, // L1 address (?)
     pub last_block_header: BlockHeader<F>,
     pub amount_received_before_last_block: Assets,
     pub amount_received_in_last_block: Assets,
     pub total_amount_received: Assets,
     pub block_content: BlockContent<F>,
-    pub payments: Vec<Payment<F, H>>,
+    pub payment_proofs: Vec<PaymentProof<F, C, D>>,
+    pub last_received_amount_proof: ProofWithPublicInputs<F, C, D>,
 }
 
-impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> ReceivedAmountProof<F, H> {
+impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
+    ReceivedAmountProof<F, C, D>
+{
     // verify_total_amount_received_in_history
     /// Returns `(last_block_hash, amount_received_before_last_block_hash, amount_received_in_last_block_hash, total_amount_received_hash)`
     #[allow(clippy::type_complexity)]
@@ -247,12 +259,21 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> ReceivedAmountProof<F, H> {
         // )?;
 
         // We decare and verify the amount received in the last block
-        verify_amount_received_in_block::<F, H>(
+        let payments = self
+            .payment_proofs
+            .iter()
+            .map(|v| {
+                v.calculate()?;
+
+                Ok(v.content.clone())
+            })
+            .collect::<Result<Vec<_>, anyhow::Error>>()?;
+        verify_amount_received_in_block::<F, C::InnerHasher>(
             self.account,
             &self.amount_received_in_last_block,
             self.last_block_header,
             self.block_content.clone(),
-            &self.payments,
+            &payments,
         )?;
 
         // We check that the sum is "total_amount_received_hash"
@@ -262,14 +283,17 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> ReceivedAmountProof<F, H> {
                 == self.total_amount_received.clone()
         );
 
-        let last_block_hash = self.last_block_header.hash::<H>();
+        let last_block_hash = self.last_block_header.hash::<C::InnerHasher>();
 
         let amount_received_before_last_block_hash = self
             .amount_received_before_last_block
-            .hash_with_salt::<F, H>();
-        let amount_received_in_last_block_hash =
-            self.amount_received_in_last_block.hash_with_salt::<F, H>();
-        let total_amount_received_hash = self.total_amount_received.hash_with_salt::<F, H>();
+            .hash_with_salt::<F, C::InnerHasher>();
+        let amount_received_in_last_block_hash = self
+            .amount_received_in_last_block
+            .hash_with_salt::<F, C::InnerHasher>();
+        let total_amount_received_hash = self
+            .total_amount_received
+            .hash_with_salt::<F, C::InnerHasher>();
 
         Ok((
             last_block_hash,
@@ -357,18 +381,22 @@ pub fn verify_amount_sent_in_block<F: RichField, H: Hasher<F, Hash = HashOut<F>>
     Ok(())
 }
 
-pub struct SentAmountProof<F: RichField, H: Hasher<F>> {
+pub struct SentAmountProof<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
+{
     pub account: Address,
     pub last_block_header: BlockHeader<F>,
     pub amount_sent_before_last_block: Assets,
     pub amount_sent_in_last_block: Assets,
     pub total_amount_sent: Assets,
     pub transfer_batch: TransferBatch<F>,
-    pub transaction_merkle_proof: MerkleProof<F, H>,
+    pub transaction_merkle_proof: MerkleProof<F, C::InnerHasher>,
     pub transfers: Vec<Transfer>,
+    pub last_sent_amount_proof: ProofWithPublicInputs<F, C, D>,
 }
 
-impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> SentAmountProof<F, H> {
+impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
+    SentAmountProof<F, C, D>
+{
     // verify_total_amount_sent_in_history
     /// Returns `(last_block_hash, amount_sent_before_last_block_hash, amount_sent_in_last_block_hash, total_amount_sent_hash)`
     #[allow(clippy::type_complexity)]
@@ -381,7 +409,7 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> SentAmountProof<F, H> {
         // )?;
 
         // We decare and verify the amount sent in the last block
-        verify_amount_sent_in_block::<F, H>(
+        verify_amount_sent_in_block::<F, C::InnerHasher>(
             self.account,
             &self.amount_sent_in_last_block,
             self.last_block_header,
@@ -397,13 +425,15 @@ impl<F: RichField, H: Hasher<F, Hash = HashOut<F>>> SentAmountProof<F, H> {
         );
 
         // We decare and verify the last block header
-        let last_block_hash = self.last_block_header.hash::<H>();
+        let last_block_hash = self.last_block_header.hash::<C::InnerHasher>();
 
-        let amount_sent_before_last_block_hash =
-            self.amount_sent_before_last_block.hash_with_salt::<F, H>();
-        let amount_sent_in_last_block_hash =
-            self.amount_sent_in_last_block.hash_with_salt::<F, H>();
-        let total_amount_sent_hash = self.total_amount_sent.hash_with_salt::<F, H>();
+        let amount_sent_before_last_block_hash = self
+            .amount_sent_before_last_block
+            .hash_with_salt::<F, C::InnerHasher>();
+        let amount_sent_in_last_block_hash = self
+            .amount_sent_in_last_block
+            .hash_with_salt::<F, C::InnerHasher>();
+        let total_amount_sent_hash = self.total_amount_sent.hash_with_salt::<F, C::InnerHasher>();
 
         Ok((
             last_block_hash,
@@ -428,6 +458,17 @@ impl TransferTarget {
         let amount = AssetsTarget::new(builder);
 
         Self { recipient, amount }
+    }
+
+    pub fn set_witness<F: RichField>(
+        &self,
+        pw: &mut impl Witness<F>,
+        input: &Transfer,
+    ) -> anyhow::Result<()> {
+        self.recipient.set_witness::<F>(pw, input.recipient)?;
+        self.amount.set_witness::<F>(pw, &input.amount)?;
+
+        Ok(())
     }
 }
 
@@ -516,25 +557,64 @@ impl TransferBatchTarget {
 
 #[derive(Clone, Debug)]
 pub struct PaymentTarget {
-    /// deposit の場合, payment.sender は zero address
     pub sender: AddressTarget,
-
-    pub transfer_tree_root: HashOutTarget,
-    pub transfer_index: Target,
-    pub transfer_merkle_proof: MerkleProofTarget,
-
-    pub transaction_merkle_proof: MerkleProofTarget,
-
     pub transfer: TransferTarget,
+    pub transaction_tree_root: HashOutTarget,
+    pub total_amount_received: AssetsTarget,
+    pub total_amount_sent: AssetsTarget,
 }
 
 impl PaymentTarget {
     pub fn new<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
-        transaction_tree_height: usize,
-        transfer_tree_height: usize,
     ) -> Self {
         let sender = AddressTarget::new(builder);
+        let transfer = TransferTarget::new(builder);
+        let transaction_tree_root = builder.add_virtual_hash();
+        let total_amount_received = AssetsTarget::new(builder);
+        let total_amount_sent = AssetsTarget::new(builder);
+
+        Self {
+            sender,
+            transfer,
+            transaction_tree_root,
+            total_amount_received,
+            total_amount_sent,
+        }
+    }
+
+    pub fn set_witness<F: RichField>(
+        &self,
+        _pw: &mut impl Witness<F>,
+        _payment: &Payment<F>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PaymentProofTarget<const D: usize> {
+    pub content: PaymentTarget,
+    pub transaction_merkle_proof: MerkleProofTarget,
+    pub transfer_tree_root: HashOutTarget,
+    pub transfer_index: Target,
+    pub transfer_merkle_proof: MerkleProofTarget,
+    pub received_amount_proof: ProofWithPublicInputsTarget<D>,
+    pub sent_amount_proof: ProofWithPublicInputsTarget<D>,
+}
+
+impl<const D: usize> PaymentProofTarget<D> {
+    pub fn new<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>>(
+        builder: &mut CircuitBuilder<F, D>,
+        received_amount_circuit_data: &CircuitData<F, C, D>,
+        sent_amount_circuit_data: &CircuitData<F, C, D>,
+        transaction_tree_height: usize,
+        transfer_tree_height: usize,
+    ) -> Self
+    where
+        C::Hasher: AlgebraicHasher<F>,
+    {
+        let content = PaymentTarget::new(builder);
         let transfer_tree_root = builder.add_virtual_hash();
         let transfer_index = builder.add_virtual_target();
         let transaction_merkle_proof = MerkleProofTarget {
@@ -543,49 +623,69 @@ impl PaymentTarget {
         let transfer_merkle_proof = MerkleProofTarget {
             siblings: builder.add_virtual_hashes(transfer_tree_height),
         };
-        let transfer = TransferTarget::new(builder);
+        let received_amount_proof =
+            make_recursion_constraints(builder, received_amount_circuit_data);
+        let sent_amount_proof = make_recursion_constraints(builder, sent_amount_circuit_data);
+
+        let transfer_leaf_hash = content.transfer.hash::<F, C::InnerHasher, D>(builder);
+        let transfer_index_bits =
+            builder.split_le(transfer_index, transfer_merkle_proof.siblings.len());
+        builder.verify_merkle_proof::<C::InnerHasher>(
+            transfer_leaf_hash.elements.to_vec(),
+            &transfer_index_bits,
+            transfer_tree_root,
+            &transfer_merkle_proof,
+        );
+
+        let sender_bits =
+            builder.split_le(content.sender.0, transaction_merkle_proof.siblings.len());
+        builder.verify_merkle_proof::<C::InnerHasher>(
+            transfer_tree_root.elements.to_vec(),
+            &sender_bits,
+            content.transaction_tree_root,
+            &transaction_merkle_proof,
+        );
+
+        let received_amount_proof_public_inputs =
+            ReceivedAmountProofPublicInputsTarget::from_vec(&received_amount_proof.public_inputs);
+        let total_amount_received_hash = content
+            .total_amount_received
+            .hash_with_salt::<F, C::InnerHasher, D>(builder);
+        builder.connect_hashes(
+            total_amount_received_hash,
+            received_amount_proof_public_inputs.total_amount_received_hash,
+        );
+
+        let sent_amount_proof_public_inputs =
+            SentAmountProofPublicInputsTarget::from_vec(&sent_amount_proof.public_inputs);
+        let total_amount_sent_hash = content
+            .total_amount_sent
+            .hash_with_salt::<F, C::InnerHasher, D>(builder);
+        builder.connect_hashes(
+            total_amount_sent_hash,
+            sent_amount_proof_public_inputs.total_amount_sent_hash,
+        );
 
         Self {
-            sender,
+            content,
+            transaction_merkle_proof,
             transfer_tree_root,
             transfer_index,
-            transaction_merkle_proof,
             transfer_merkle_proof,
-            transfer,
+            received_amount_proof,
+            sent_amount_proof,
         }
     }
 
-    pub fn set_witness<F: RichField, H: Hasher<F>>(
+    pub fn set_witness<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>>(
         &self,
         _pw: &mut impl Witness<F>,
-        _payment: &Payment<F, H>,
+        _payment_proof: &PaymentProof<F, C, D>,
     ) -> anyhow::Result<()> {
-        Ok(())
+        todo!()
+
+        // payment_proof.calculate()
     }
-}
-
-pub fn has_positive_balance_target<
-    F: RichField + Extendable<D>,
-    H: AlgebraicHasher<F>,
-    const D: usize,
->(
-    _builder: &mut CircuitBuilder<F, D>,
-    _account: AddressTarget, // L2 address (deposit ならば zero address)
-    /* private */ _block_header: BlockHeaderTarget,
-) {
-    // let block_hash = block_header.get_block_hash::<H>();
-    // let (total_amount_received_hash, total_amount_sent_hash) =
-    //     is_greater_than::<F, H>(total_amount_received, total_amount_sent)?;
-
-    // verify_total_amount_received_in_history::<F, H>(
-    //     account,
-    //     total_amount_received_hash,
-    //     block_hash,
-    // )?;
-
-    // verify_total_amount_sent_in_history::<F, H>(account, total_amount_sent_hash, block_hash)?;
-
-    todo!()
 }
 
 pub fn verify_amount_received_in_transfer_block_target<
@@ -600,6 +700,9 @@ pub fn verify_amount_received_in_transfer_block_target<
     /* private */ transfer_batch: &TransferBatchTarget,
     /* private */ payments: &[PaymentTarget],
 ) {
+    let transfer_batch_hash = transfer_batch.hash::<F, H, D>(builder); // deposit.hash
+    builder.connect_hashes(block_header.content_hash, transfer_batch_hash);
+
     verify_bls_signature_target(
         builder,
         transfer_batch.transaction_tree_root,
@@ -609,31 +712,13 @@ pub fn verify_amount_received_in_transfer_block_target<
 
     let mut computed_amount_received = AssetsTarget::constant::<F, D>(builder, Assets::default());
     for payment in payments.iter() {
-        let transfer_leaf_hash = payment.transfer.hash::<F, H, D>(builder);
-        let transfer_index_bits = builder.split_le(
-            payment.transfer_index,
-            payment.transfer_merkle_proof.siblings.len(),
-        );
-        builder.verify_merkle_proof::<H>(
-            transfer_leaf_hash.elements.to_vec(),
-            &transfer_index_bits,
-            payment.transfer_tree_root,
-            &payment.transfer_merkle_proof,
-        );
-
-        let sender_bits = builder.split_le(
-            payment.sender.0,
-            payment.transaction_merkle_proof.siblings.len(),
-        );
-        builder.verify_merkle_proof::<H>(
-            payment.transfer_tree_root.elements.to_vec(),
-            &sender_bits,
+        builder.connect_hashes(
+            payment.transaction_tree_root,
             transfer_batch.transaction_tree_root,
-            &payment.transaction_merkle_proof,
         );
 
         // TODO: Check that the sender had enough balance to send the funds
-        has_positive_balance_target::<F, H, D>(builder, payment.sender, block_header);
+        // is_greater_than::<F, H>(total_amount_received, total_amount_sent)?;
 
         builder.connect(payment.transfer.recipient.0, account.0);
 
@@ -642,9 +727,6 @@ pub fn verify_amount_received_in_transfer_block_target<
     }
 
     AssetsTarget::connect(builder, &computed_amount_received, amount_received);
-
-    let transfer_batch_hash = transfer_batch.hash::<F, H, D>(builder); // deposit.hash
-    builder.connect_hashes(block_header.content_hash, transfer_batch_hash);
 }
 
 pub fn verify_amount_received_in_block_target<
@@ -673,46 +755,66 @@ pub fn verify_amount_received_in_block_target<
     )
 }
 
-pub struct ReceivedAmountProofTarget {
+#[derive(Clone, Debug)]
+pub struct ReceivedAmountProofTarget<const D: usize> {
     pub account: AddressTarget,
     /* private */ pub last_block_header: BlockHeaderTarget,
     /* private */ pub amount_received_before_last_block: AssetsTarget,
     /* private */ pub amount_received_in_last_block: AssetsTarget,
     /* private */ pub total_amount_received: AssetsTarget,
     /* private */ pub block_content: TransferBatchTarget,
-    /* private */ pub payments: Vec<PaymentTarget>,
+    /* private */ pub payment_proofs: Vec<PaymentProofTarget<D>>,
+    pub last_received_amount_proof: ProofWithPublicInputsTarget<D>,
     pub last_block_hash: HashOutTarget,
     pub amount_received_before_last_block_hash: HashOutTarget,
     pub amount_received_in_last_block_hash: HashOutTarget,
     pub total_amount_received_hash: HashOutTarget,
 }
 
-impl ReceivedAmountProofTarget {
-    pub fn new<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+impl<const D: usize> ReceivedAmountProofTarget<D> {
+    pub fn new<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>>(
         builder: &mut CircuitBuilder<F, D>,
+        received_amount_circuit_data: &CircuitData<F, C, D>,
+        sent_amount_circuit_data: &CircuitData<F, C, D>,
         n_payments: usize,
         transaction_tree_height: usize,
         transfer_tree_height: usize,
-    ) -> Self {
+    ) -> Self
+    where
+        C::Hasher: AlgebraicHasher<F>,
+    {
         let account = AddressTarget::new(builder);
         let last_block_header = BlockHeaderTarget::new(builder);
         let amount_received_before_last_block = AssetsTarget::new(builder);
         let amount_received_in_last_block = AssetsTarget::new(builder);
         let total_amount_received = AssetsTarget::new(builder);
         let block_content = TransferBatchTarget::new(builder, n_payments);
-        let payments = (0..n_payments)
-            .map(|_| PaymentTarget::new(builder, transaction_tree_height, transfer_tree_height))
+        let payment_proofs = (0..n_payments)
+            .map(|_| {
+                PaymentProofTarget::new::<F, C>(
+                    builder,
+                    received_amount_circuit_data,
+                    sent_amount_circuit_data,
+                    transaction_tree_height,
+                    transfer_tree_height,
+                )
+            })
             .collect::<Vec<_>>();
 
         // TODO: We decare and verify the amount received before the last block
-        // verify_total_amount_received_in_history(
-        //     account,
-        //     amount_received_before_last_block_hash,
-        //     last_block_header.previous_block_hash,
-        // )?;
+        let last_received_amount_proof =
+            make_recursion_constraints(builder, received_amount_circuit_data);
+
+        let _last_received_amount_public_inputs = ReceivedAmountProofPublicInputsTarget::from_vec(
+            &last_received_amount_proof.public_inputs,
+        );
 
         // We decare and verify the amount received in the last block
-        verify_amount_received_in_block_target::<F, H, D>(
+        let payments = payment_proofs
+            .iter()
+            .map(|v| v.content.clone())
+            .collect::<Vec<_>>();
+        verify_amount_received_in_block_target::<F, C::InnerHasher, D>(
             builder,
             account,
             &amount_received_in_last_block,
@@ -733,12 +835,13 @@ impl ReceivedAmountProofTarget {
             &total_amount_received,
         );
 
-        let last_block_hash = last_block_header.hash::<F, H, D>(builder);
+        let last_block_hash = last_block_header.hash::<F, C::InnerHasher, D>(builder);
         let amount_received_before_last_block_hash =
-            amount_received_before_last_block.hash_with_salt::<F, H, D>(builder);
+            amount_received_before_last_block.hash_with_salt::<F, C::InnerHasher, D>(builder);
         let amount_received_in_last_block_hash =
-            amount_received_in_last_block.hash_with_salt::<F, H, D>(builder);
-        let total_amount_received_hash = total_amount_received.hash_with_salt::<F, H, D>(builder);
+            amount_received_in_last_block.hash_with_salt::<F, C::InnerHasher, D>(builder);
+        let total_amount_received_hash =
+            total_amount_received.hash_with_salt::<F, C::InnerHasher, D>(builder);
 
         Self {
             account,
@@ -747,12 +850,57 @@ impl ReceivedAmountProofTarget {
             amount_received_in_last_block,
             total_amount_received,
             block_content,
-            payments,
+            payment_proofs,
+            last_received_amount_proof,
             last_block_hash,
             amount_received_before_last_block_hash,
             amount_received_in_last_block_hash,
             total_amount_received_hash,
         }
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn set_witness<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>>(
+        &self,
+        pw: &mut impl Witness<F>,
+        input: &ReceivedAmountProof<F, C, D>,
+    ) -> anyhow::Result<(HashOut<F>, HashOut<F>, HashOut<F>, HashOut<F>)>
+    where
+        C::Hasher: AlgebraicHasher<F>,
+    {
+        self.account.set_witness(pw, input.account)?;
+        self.last_block_header
+            .set_witness(pw, &input.last_block_header);
+        self.amount_received_before_last_block
+            .set_witness(pw, &input.amount_received_before_last_block)?;
+        self.amount_received_in_last_block
+            .set_witness(pw, &input.amount_received_in_last_block)?;
+        self.total_amount_received
+            .set_witness(pw, &input.total_amount_received)?;
+        let block_content = match &input.block_content {
+            BlockContent::TransferBatch(transfer_batch) => transfer_batch.clone(),
+            BlockContent::Deposit(_deposit) => TransferBatch {
+                aggregator_address: Address::default(),
+                senders: vec![Address::default()],
+                transaction_tree_root: HashOut::ZERO,
+                signature: BlsSignature(vec![]),
+            },
+        };
+        self.block_content.set_witness::<F, C::InnerHasher>(
+            pw,
+            &block_content,
+            input.last_block_header.content_type == BlockContentType::Deposit,
+        )?;
+
+        for (target, value) in self.payment_proofs.iter().zip(input.payment_proofs.iter()) {
+            target.set_witness(pw, value)?;
+        }
+        pw.set_proof_with_pis_target::<C, D>(
+            &self.last_received_amount_proof,
+            &input.last_received_amount_proof,
+        );
+
+        input.calculate()
     }
 }
 
@@ -835,7 +983,8 @@ pub fn verify_amount_sent_in_block_target<
     builder.connect(tmp.target, constant_false.target);
 }
 
-pub struct SentAmountProofTarget {
+#[derive(Clone, Debug)]
+pub struct SentAmountProofTarget<const D: usize> {
     pub account: AddressTarget,
     /* private */ pub last_block_header: BlockHeaderTarget,
     /* private */ pub amount_sent_before_last_block: AssetsTarget,
@@ -844,20 +993,25 @@ pub struct SentAmountProofTarget {
     /* private */ pub transfer_batch: TransferBatchTarget,
     /* private */ pub transaction_merkle_proof: MerkleProofTarget,
     /* private */ pub transfers: Vec<TransferTarget>,
+    pub last_sent_amount_proof: ProofWithPublicInputsTarget<D>,
     pub last_block_hash: HashOutTarget,
     pub amount_sent_before_last_block_hash: HashOutTarget,
     pub amount_sent_in_last_block_hash: HashOutTarget,
     pub total_amount_sent_hash: HashOutTarget,
 }
 
-impl SentAmountProofTarget {
+impl<const D: usize> SentAmountProofTarget<D> {
     // verify_total_amount_sent_in_history
-    pub fn new<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
+    pub fn new<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>>(
         builder: &mut CircuitBuilder<F, D>,
+        sent_amount_circuit_data: &CircuitData<F, C, D>,
         n_payments: usize,
         n_transfers: usize,
         transaction_tree_height: usize,
-    ) -> Self {
+    ) -> Self
+    where
+        C::Hasher: AlgebraicHasher<F>,
+    {
         let account = AddressTarget::new(builder);
         let last_block_header = BlockHeaderTarget::new(builder);
         let amount_sent_before_last_block = AssetsTarget::new(builder);
@@ -871,15 +1025,14 @@ impl SentAmountProofTarget {
             .map(|_| TransferTarget::new(builder))
             .collect::<Vec<_>>();
 
-        // TODO: We decare and verify the amount sent before the last block
-        // verify_total_amount_sent_in_history::<F, H>(
-        //     account,
-        //     amount_sent_before_last_block_hash,
-        //     last_block_header.previous_block_hash,
-        // )?;
+        // We decare and verify the amount sent before the last block
+        let last_sent_amount_proof = make_recursion_constraints(builder, sent_amount_circuit_data);
+
+        let _last_sent_amount_public_inputs =
+            SentAmountProofPublicInputsTarget::from_vec(&last_sent_amount_proof.public_inputs);
 
         // We decare and verify the amount sent in the last block
-        verify_amount_sent_in_block_target::<F, H, D>(
+        verify_amount_sent_in_block_target::<F, C::InnerHasher, D>(
             builder,
             account,
             &amount_sent_in_last_block,
@@ -898,13 +1051,14 @@ impl SentAmountProofTarget {
         AssetsTarget::connect(builder, &actual_total_amount_sent, &total_amount_sent);
 
         // We decare and verify the last block header
-        let last_block_hash = last_block_header.hash::<F, H, D>(builder);
+        let last_block_hash = last_block_header.hash::<F, C::InnerHasher, D>(builder);
 
         let amount_sent_before_last_block_hash =
-            amount_sent_before_last_block.hash_with_salt::<F, H, D>(builder);
+            amount_sent_before_last_block.hash_with_salt::<F, C::InnerHasher, D>(builder);
         let amount_sent_in_last_block_hash =
-            amount_sent_in_last_block.hash_with_salt::<F, H, D>(builder);
-        let total_amount_sent_hash = total_amount_sent.hash_with_salt::<F, H, D>(builder);
+            amount_sent_in_last_block.hash_with_salt::<F, C::InnerHasher, D>(builder);
+        let total_amount_sent_hash =
+            total_amount_sent.hash_with_salt::<F, C::InnerHasher, D>(builder);
 
         Self {
             account,
@@ -915,10 +1069,54 @@ impl SentAmountProofTarget {
             transfer_batch,
             transaction_merkle_proof,
             transfers,
+            last_sent_amount_proof,
             last_block_hash,
             amount_sent_before_last_block_hash,
             amount_sent_in_last_block_hash,
             total_amount_sent_hash,
         }
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn set_witness<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>>(
+        &self,
+        pw: &mut impl Witness<F>,
+        input: &SentAmountProof<F, C, D>,
+    ) -> anyhow::Result<(HashOut<F>, HashOut<F>, HashOut<F>, HashOut<F>)>
+    where
+        C::Hasher: AlgebraicHasher<F>,
+    {
+        self.account.set_witness(pw, input.account)?;
+        self.last_block_header
+            .set_witness(pw, &input.last_block_header);
+        self.amount_sent_before_last_block
+            .set_witness(pw, &input.amount_sent_before_last_block)?;
+        self.amount_sent_in_last_block
+            .set_witness(pw, &input.amount_sent_in_last_block)?;
+        self.total_amount_sent
+            .set_witness(pw, &input.total_amount_sent)?;
+        self.transfer_batch.set_witness::<F, C::InnerHasher>(
+            pw,
+            &input.transfer_batch,
+            input.last_block_header.content_type == BlockContentType::Deposit,
+        )?;
+        for (target, value) in self
+            .transaction_merkle_proof
+            .siblings
+            .iter()
+            .zip(input.transaction_merkle_proof.siblings.iter())
+        {
+            pw.set_hash_target(*target, *value);
+        }
+
+        for (target, value) in self.transfers.iter().zip(input.transfers.iter()) {
+            target.set_witness(pw, value)?;
+        }
+        pw.set_proof_with_pis_target::<C, D>(
+            &self.last_sent_amount_proof,
+            &input.last_sent_amount_proof,
+        );
+
+        input.calculate()
     }
 }

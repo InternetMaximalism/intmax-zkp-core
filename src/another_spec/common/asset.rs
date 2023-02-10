@@ -64,7 +64,7 @@ impl AssetsTarget {
         _pw: &mut impl Witness<F>,
         _assets: &Assets,
     ) -> anyhow::Result<()> {
-        Ok(())
+        todo!()
     }
 
     pub fn constant<F: RichField + Extendable<D>, const D: usize>(

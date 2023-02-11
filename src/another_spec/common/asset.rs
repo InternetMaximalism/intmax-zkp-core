@@ -29,12 +29,6 @@ impl PartialOrd for Assets {
     }
 }
 
-impl Ord for Assets {
-    fn cmp(&self, _other: &Self) -> std::cmp::Ordering {
-        todo!()
-    }
-}
-
 impl Add for Assets {
     type Output = Self;
 

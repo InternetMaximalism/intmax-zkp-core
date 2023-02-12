@@ -15,9 +15,9 @@ pub trait NodeData<F: RichField, H: Hasher<F>, V: Leafable<F>> {
 /// Sparse Merkle Tree which is compatible to the native plonky2 Merkle Tree.
 #[derive(Debug)]
 pub struct MerkleTreeTemplate<F: RichField, H: Hasher<F>, V: Leafable<F>, N: NodeData<F, H, V>> {
-    height: usize,
-    storage: N,
-    zero_hashes: Vec<H::Hash>,
+    pub height: usize,
+    pub storage: N,
+    pub zero_hashes: Vec<H::Hash>,
     _value: PhantomData<V>,
 }
 

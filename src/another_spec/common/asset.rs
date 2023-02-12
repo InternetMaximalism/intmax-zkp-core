@@ -181,7 +181,7 @@ mod tests {
         assert_eq!(a + b, c);
     }
 
-    #[should_panic(expected = "different kinda assets cannot be added together")]
+    #[should_panic(expected = "different kind of assets cannot be added together")]
     #[test]
     fn test_difference_assets_addition() {
         let a = Asset {

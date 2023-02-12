@@ -10,7 +10,7 @@ pub struct UserAssetTree<F: RichField, H: Hasher<F>> {
     /// asset_id -> leaf_index
     pub asset_id_map: HashMap<usize, usize>,
 
-    max_leaf_index: usize,
+    _max_leaf_index: usize,
 }
 
 impl<F: RichField, H: Hasher<F>> UserAssetTree<F, H> {
@@ -18,7 +18,7 @@ impl<F: RichField, H: Hasher<F>> UserAssetTree<F, H> {
         Self {
             merkle_tree: MerkleTree::new(height),
             asset_id_map: HashMap::new(),
-            max_leaf_index: 0,
+            _max_leaf_index: 0,
         }
     }
 }

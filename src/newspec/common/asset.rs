@@ -2,7 +2,10 @@ use num::BigUint;
 use plonky2::{
     field::extension::Extendable,
     hash::hash_types::{HashOutTarget, RichField},
-    iop::{target::Target, witness::Witness},
+    iop::{
+        target::{BoolTarget, Target},
+        witness::Witness,
+    },
     plonk::{
         circuit_builder::CircuitBuilder,
         config::{AlgebraicHasher, Hasher},
@@ -88,6 +91,22 @@ impl AssetIdTarget {
         Self(builder.constant(F::from_canonical_usize(asset_id.0)))
     }
 
+    pub fn connect<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+        x: Self,
+        y: Self,
+    ) {
+        builder.connect(x.0, y.0);
+    }
+
+    pub fn is_equal<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+        x: Self,
+        y: Self,
+    ) -> BoolTarget {
+        builder.is_equal(x.0, y.0)
+    }
+
     pub(crate) fn to_vec(self) -> Vec<Target> {
         vec![self.0]
     }
@@ -128,6 +147,29 @@ impl AssetTarget {
             asset_id: AssetIdTarget::constant(builder, asset.asset_id),
             amount: builder.constant_biguint(&asset.amount),
         }
+    }
+
+    pub fn connect<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+        x: &Self,
+        y: &Self,
+    ) {
+        AssetIdTarget::connect(builder, x.asset_id, y.asset_id);
+        builder.connect_biguint(&x.amount, &y.amount);
+    }
+
+    pub fn is_equal<F: RichField + Extendable<D>, const D: usize>(
+        builder: &mut CircuitBuilder<F, D>,
+        x: &Self,
+        y: &Self,
+    ) -> BoolTarget {
+        let mut result = AssetIdTarget::is_equal(builder, x.asset_id, y.asset_id);
+        for (a, b) in x.amount.limbs.iter().zip(y.amount.limbs.iter()) {
+            let cond = builder.is_equal(a.0, b.0);
+            result = builder.and(result, cond);
+        }
+
+        result
     }
 
     pub(crate) fn to_vec(&self) -> Vec<Target> {

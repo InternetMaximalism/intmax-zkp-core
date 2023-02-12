@@ -55,10 +55,12 @@ impl AssetsTarget {
 
     pub fn set_witness<F: RichField>(
         &self,
-        _pw: &mut impl Witness<F>,
-        _assets: &Assets,
+        pw: &mut impl Witness<F>,
+        assets: &Assets,
     ) -> anyhow::Result<()> {
-        todo!()
+        self.0.set_witness(pw, &assets.0)?;
+
+        Ok(())
     }
 
     pub fn constant<F: RichField + Extendable<D>, const D: usize>(
@@ -70,19 +72,19 @@ impl AssetsTarget {
     }
 
     pub fn connect<F: RichField + Extendable<D>, const D: usize>(
-        _builder: &mut CircuitBuilder<F, D>,
-        _x: &Self,
-        _y: &Self,
+        builder: &mut CircuitBuilder<F, D>,
+        x: &Self,
+        y: &Self,
     ) {
-        todo!()
+        AssetTarget::connect(builder, &x.0, &y.0);
     }
 
     pub fn is_equal<F: RichField + Extendable<D>, const D: usize>(
-        _builder: &mut CircuitBuilder<F, D>,
-        _x: &Self,
-        _y: &Self,
+        builder: &mut CircuitBuilder<F, D>,
+        x: &Self,
+        y: &Self,
     ) -> BoolTarget {
-        todo!()
+        AssetTarget::is_equal(builder, &x.0, &y.0)
     }
 
     pub fn hash_with_salt<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(

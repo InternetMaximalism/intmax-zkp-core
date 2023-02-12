@@ -100,14 +100,10 @@ impl AssetsTarget {
         todo!()
     }
 
-    pub fn is_greater_than_target<
-        F: RichField + Extendable<D>,
-        H: AlgebraicHasher<F>,
-        const D: usize,
-    >(
+    pub fn is_greater_than<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
         &self,
         _builder: &mut CircuitBuilder<F, D>,
-        /* private */ _other: &AssetsTarget,
+        _other: &AssetsTarget,
     ) -> BoolTarget {
         todo!()
     }

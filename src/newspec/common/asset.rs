@@ -14,7 +14,7 @@ use super::traits::{Leafable, LeafableTarget};
 
 pub const AMOUNT_LIMBS: usize = 8;
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AssetId(pub usize);
 
 impl AssetId {

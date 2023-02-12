@@ -1,6 +1,6 @@
 use plonky2::{
     field::extension::Extendable,
-    hash::hash_types::{HashOut, RichField},
+    hash::hash_types::RichField,
     iop::{target::Target, witness::Witness},
     plonk::circuit_builder::CircuitBuilder,
 };
@@ -16,12 +16,14 @@ impl Address {
         vec![F::from_canonical_usize(self.0)]
     }
 }
-
+#[derive(Clone, Debug)]
 pub struct PrivateKey(pub Vec<u8>);
+
+#[derive(Clone, Debug)]
 pub struct PublicKey(pub Vec<u8>);
 
-#[derive(Clone, Debug, Default)]
-pub struct Account<F: RichField> {
+#[derive(Clone, Debug)]
+pub struct Account {
     pub private_key: PrivateKey,
     pub public_key: PublicKey,
     pub address: Address,

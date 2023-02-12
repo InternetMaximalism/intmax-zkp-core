@@ -4,8 +4,7 @@ use plonky2::{
 };
 
 use crate::newspec::{
-    common::transaction::{DepositTransaction, Transaction},
-    utils::merkle_tree::merkle_tree::MerkleTree,
+    common::transaction::DepositTransaction, utils::merkle_tree::merkle_tree::MerkleTree,
 };
 
 // Notice: Solidity friendly な hash を用いる必要がある.

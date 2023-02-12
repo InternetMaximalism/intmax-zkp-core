@@ -17,10 +17,13 @@ impl Address {
     }
 }
 
+pub struct PrivateKey(pub Vec<u8>);
+pub struct PublicKey(pub Vec<u8>);
+
 #[derive(Clone, Debug, Default)]
 pub struct Account<F: RichField> {
-    pub private_key: Vec<F>,
-    pub public_key: HashOut<F>,
+    pub private_key: PrivateKey,
+    pub public_key: PublicKey,
     pub address: Address,
 }
 

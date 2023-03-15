@@ -1,0 +1,30 @@
+name: Dependency Check
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'
+
+jobs:
+  dependency-check:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2022-09-08
+          override: true
+          components: rustfmt, clippy
+      - uses: actions-rs/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      # - uses: actions-rs/cargo@v1
+      #   with:
+      #     command: audit
+      - if: failure()
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          # avatar_url: ${{ secrets.AVATAR_URL }}

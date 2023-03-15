@@ -27,4 +27,4 @@ jobs:
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          # avatar_url: ${{ secrets.AVATAR_URL }}
+          avatar_url: ${{ secrets.AVATAR_URL }}

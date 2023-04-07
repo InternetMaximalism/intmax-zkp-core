@@ -19,71 +19,30 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::RollupConstants,
+    poseidon::gadgets::poseidon_two_to_one,
+    sparse_merkle_tree::{
+        gadgets::process::process_smt::SmtProcessProof, goldilocks_poseidon::WrappedHashOut,
+    },
     transaction::gadgets::{
         merge::{MergeProof, MergeTransitionTarget},
         purge::PurgeTransitionTarget,
     },
-    utils::{gadgets::hash::poseidon_two_to_one, hash::WrappedHashOut},
-    zkdsa::account::Address,
+    zkdsa::{account::Address, gadgets::account::AddressTarget},
 };
 
-use super::gadgets::{
-    merge::MergeTransition,
-    purge::{PurgeInputProcessProof, PurgeOutputProcessProof, PurgeTransition},
-};
+// type C = PoseidonGoldilocksConfig;
+// type H = <C as GenericConfig<D>>::InnerHasher;
+// type F = <C as GenericConfig<D>>::F;
+// const D: usize = 2;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MergeAndPurgeTransition<F: RichField, H: Hasher<F>> {
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MergeAndPurgeTransition<F: RichField> {
     pub sender_address: Address<F>,
-    pub merge_witnesses: Vec<MergeProof<F, H, Vec<bool>>>,
-    pub purge_input_witnesses: Vec<PurgeInputProcessProof<F, H, Vec<bool>>>,
-    pub purge_output_witnesses: Vec<PurgeOutputProcessProof<F, H, Vec<bool>>>,
-    pub nonce: HashOut<F>,
-    pub old_user_asset_root: HashOut<F>,
-}
-
-impl<F: RichField, H: Hasher<F>> Default for MergeAndPurgeTransition<F, H> {
-    fn default() -> Self {
-        Self {
-            sender_address: Default::default(),
-            merge_witnesses: Default::default(),
-            purge_input_witnesses: Default::default(),
-            purge_output_witnesses: Default::default(),
-            nonce: Default::default(),
-            old_user_asset_root: Default::default(),
-        }
-    }
-}
-
-impl<F: RichField, H: AlgebraicHasher<F>> MergeAndPurgeTransition<F, H> {
-    /// Returns `( middle_user_asset_root, new_user_asset_root, diff_root, tx_hash)`
-    pub fn calculate(
-        &self,
-        log_n_recipients: usize,
-        log_n_kinds: usize,
-    ) -> (HashOut<F>, HashOut<F>, HashOut<F>, HashOut<F>) {
-        let merge_witness = MergeTransition {
-            proofs: self.merge_witnesses.clone(),
-            old_user_asset_root: self.old_user_asset_root,
-        };
-        let middle_user_asset_root = merge_witness.calculate();
-        let purge_transition = PurgeTransition {
-            sender_address: self.sender_address,
-            input_witnesses: self.purge_input_witnesses.clone(),
-            output_witnesses: self.purge_output_witnesses.clone(),
-            old_user_asset_root: middle_user_asset_root,
-            nonce: self.nonce,
-        };
-        let (new_user_asset_root, diff_root, tx_hash) =
-            purge_transition.calculate(log_n_recipients, log_n_kinds);
-
-        (
-            middle_user_asset_root,
-            new_user_asset_root,
-            diff_root,
-            tx_hash,
-        )
-    }
+    pub merge_witnesses: Vec<MergeProof<F>>,
+    pub purge_input_witnesses: Vec<(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)>,
+    pub purge_output_witnesses: Vec<(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)>,
+    pub nonce: WrappedHashOut<F>,
+    pub old_user_asset_root: WrappedHashOut<F>,
 }
 
 pub struct MergeAndPurgeTransitionTarget {
@@ -92,83 +51,38 @@ pub struct MergeAndPurgeTransitionTarget {
 }
 
 impl MergeAndPurgeTransitionTarget {
-    pub fn add_virtual_to<F: RichField + Extendable<D>, H: AlgebraicHasher<F>, const D: usize>(
-        builder: &mut CircuitBuilder<F, D>,
-        rollup_constants: RollupConstants,
-    ) -> Self {
-        let merge_proof_target: MergeTransitionTarget =
-            MergeTransitionTarget::add_virtual_to::<F, H, D>(
-                builder,
-                rollup_constants.log_max_n_users,
-                rollup_constants.log_max_n_txs,
-                rollup_constants.log_n_txs,
-                rollup_constants.log_n_recipients,
-                rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
-                rollup_constants.n_merges,
-            );
-
-        let purge_proof_target: PurgeTransitionTarget =
-            PurgeTransitionTarget::make_constraints::<F, H, D>(
-                builder,
-                rollup_constants.log_max_n_txs,
-                rollup_constants.log_max_n_contracts + rollup_constants.log_max_n_variables,
-                rollup_constants.log_n_recipients,
-                rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
-                rollup_constants.n_diffs,
-            );
-        builder.connect_hashes(
-            merge_proof_target.new_user_asset_root,
-            purge_proof_target.old_user_asset_root,
-        );
-
-        MergeAndPurgeTransitionTarget {
-            merge_proof_target,
-            purge_proof_target,
-        }
-    }
-
     #[allow(clippy::too_many_arguments)]
-    pub fn set_witness<F: RichField, H: AlgebraicHasher<F>>(
+    pub fn set_witness<F: RichField>(
         &self,
         pw: &mut impl Witness<F>,
-        witness: &MergeAndPurgeTransition<F, H>,
+        sender_address: Address<F>,
+        merge_witnesses: &[MergeProof<F>],
+        purge_input_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
+        purge_output_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
+        nonce: WrappedHashOut<F>,
+        old_user_asset_root: WrappedHashOut<F>,
     ) -> MergeAndPurgeTransitionPublicInputs<F> {
-        let merge_witness = MergeTransition {
-            proofs: witness.merge_witnesses.clone(),
-            old_user_asset_root: witness.old_user_asset_root,
-        };
-        let middle_user_asset_root = self
-            .merge_proof_target
-            .set_witness::<F, H, _>(pw, &merge_witness);
-        let purge_transition = PurgeTransition {
-            sender_address: witness.sender_address,
-            input_witnesses: witness.purge_input_witnesses.clone(),
-            output_witnesses: witness.purge_output_witnesses.clone(),
-            old_user_asset_root: middle_user_asset_root,
-            nonce: witness.nonce,
-        };
-        let (new_user_asset_root, diff_root, tx_hash) = self
-            .purge_proof_target
-            .set_witness::<F, H, _>(pw, &purge_transition);
+        let middle_user_asset_root =
+            self.merge_proof_target
+                .set_witness(pw, merge_witnesses, *old_user_asset_root);
+        let (new_user_asset_root, diff_root, tx_hash) = self.purge_proof_target.set_witness(
+            pw,
+            sender_address,
+            purge_input_witnesses,
+            purge_output_witnesses,
+            middle_user_asset_root,
+            nonce,
+        );
 
         MergeAndPurgeTransitionPublicInputs {
-            sender_address: witness.sender_address,
-            old_user_asset_root: witness.old_user_asset_root.into(),
-            middle_user_asset_root: middle_user_asset_root.into(),
-            new_user_asset_root: new_user_asset_root.into(),
-            diff_root: diff_root.into(),
-            tx_hash: tx_hash.into(),
+            sender_address,
+            old_user_asset_root,
+            middle_user_asset_root,
+            new_user_asset_root,
+            diff_root,
+            tx_hash,
         }
     }
-}
-
-pub struct MergeAndPurgeTransitionCircuit<
-    F: RichField + Extendable<D>,
-    C: GenericConfig<D, F = F>,
-    const D: usize,
-> {
-    pub data: CircuitData<F, C, D>,
-    pub targets: MergeAndPurgeTransitionTarget,
 }
 
 pub fn make_user_proof_circuit<
@@ -183,16 +97,38 @@ where
     C::Hasher: AlgebraicHasher<F>,
 {
     let mut builder = CircuitBuilder::<F, D>::new(config);
+    // builder.debug_gate_row = Some(282);
 
-    let targets = MergeAndPurgeTransitionTarget::add_virtual_to::<F, C::InnerHasher, D>(
-        &mut builder,
-        rollup_constants,
+    let merge_proof_target: MergeTransitionTarget =
+        MergeTransitionTarget::add_virtual_to::<F, C::Hasher, D>(
+            &mut builder,
+            rollup_constants.log_max_n_users,
+            rollup_constants.log_max_n_txs,
+            rollup_constants.log_n_txs,
+            rollup_constants.log_n_recipients,
+            rollup_constants.n_merges,
+        );
+
+    let purge_proof_target: PurgeTransitionTarget =
+        PurgeTransitionTarget::add_virtual_to::<F, C::Hasher, D>(
+            &mut builder,
+            rollup_constants.log_max_n_txs,
+            rollup_constants.log_max_n_contracts,
+            rollup_constants.log_max_n_variables,
+            rollup_constants.log_n_recipients,
+            rollup_constants.log_n_contracts,
+            rollup_constants.log_n_variables,
+            rollup_constants.n_diffs,
+        );
+    builder.connect_hashes(
+        merge_proof_target.new_user_asset_root,
+        purge_proof_target.old_user_asset_root,
     );
 
-    let tx_hash = poseidon_two_to_one::<F, C::InnerHasher, D>(
+    let tx_hash = poseidon_two_to_one::<F, C::Hasher, D>(
         &mut builder,
-        targets.purge_proof_target.diff_root,
-        targets.purge_proof_target.nonce,
+        purge_proof_target.diff_root,
+        purge_proof_target.nonce,
     );
 
     // let public_inputs = MergeAndPurgeTransitionPublicInputsTarget {
@@ -204,12 +140,20 @@ where
     //     tx_hash,
     // };
     // builder.register_public_inputs(&public_inputs.encode());
-    builder.register_public_inputs(&targets.merge_proof_target.old_user_asset_root.elements); // public_inputs[0..4]
-    builder.register_public_inputs(&targets.merge_proof_target.new_user_asset_root.elements); // public_inputs[4..8]
-    builder.register_public_inputs(&targets.purge_proof_target.new_user_asset_root.elements); // public_inputs[8..12]
-    builder.register_public_inputs(&targets.purge_proof_target.diff_root.elements); // public_inputs[12..16]
-    builder.register_public_inputs(&targets.purge_proof_target.sender_address.0.elements); // public_inputs[16..20]
+    builder.register_public_inputs(&merge_proof_target.old_user_asset_root.elements); // public_inputs[0..4]
+    builder.register_public_inputs(&merge_proof_target.new_user_asset_root.elements); // public_inputs[4..8]
+    builder.register_public_inputs(&purge_proof_target.new_user_asset_root.elements); // public_inputs[8..12]
+    builder.register_public_inputs(&purge_proof_target.diff_root.elements); // public_inputs[12..16]
+    builder.register_public_inputs(&purge_proof_target.sender_address.0.elements); // public_inputs[16..20]
     builder.register_public_inputs(&tx_hash.elements); // public_inputs[20..24]
+
+    let targets = MergeAndPurgeTransitionTarget {
+        // old_user_asset_root: merge_proof_target.old_user_asset_root,
+        // new_user_asset_root: purge_proof_target.new_user_asset_root,
+        merge_proof_target,
+        purge_proof_target,
+        // address: purge_proof_target.sender_address.clone(),
+    };
 
     let merge_and_purge_circuit_data = builder.build::<C>();
 
@@ -219,8 +163,17 @@ where
     }
 }
 
+pub struct MergeAndPurgeTransitionCircuit<
+    F: RichField + Extendable<D>,
+    C: GenericConfig<D, F = F>,
+    const D: usize,
+> {
+    pub data: CircuitData<F, C, D>,
+    pub targets: MergeAndPurgeTransitionTarget,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound = "F: RichField")]
+#[serde(bound(deserialize = "Address<F>: Deserialize<'de>, WrappedHashOut<F>: Deserialize<'de>"))]
 pub struct MergeAndPurgeTransitionPublicInputs<F: RichField> {
     pub sender_address: Address<F>,
     pub old_user_asset_root: WrappedHashOut<F>,
@@ -247,6 +200,40 @@ impl<F: RichField> Default for MergeAndPurgeTransitionPublicInputs<F> {
     }
 }
 
+#[test]
+fn test_default_user_transaction() {
+    use plonky2::field::{goldilocks_field::GoldilocksField, types::Field};
+
+    type F = GoldilocksField;
+
+    let default_user_transaction = MergeAndPurgeTransitionPublicInputs::<F>::default();
+
+    let tx_hash = WrappedHashOut::from(HashOut {
+        elements: [
+            F::from_canonical_u64(4330397376401421145),
+            F::from_canonical_u64(14124799381142128323),
+            F::from_canonical_u64(8742572140681234676),
+            F::from_canonical_u64(14345658006221440202),
+        ],
+    });
+
+    assert_eq!(default_user_transaction.sender_address, Default::default());
+    assert_eq!(
+        default_user_transaction.old_user_asset_root,
+        Default::default()
+    );
+    assert_eq!(
+        default_user_transaction.middle_user_asset_root,
+        Default::default()
+    );
+    assert_eq!(
+        default_user_transaction.new_user_asset_root,
+        Default::default()
+    );
+    assert_eq!(default_user_transaction.diff_root, Default::default());
+    assert_eq!(default_user_transaction.tx_hash, tx_hash);
+}
+
 impl<F: RichField> MergeAndPurgeTransitionPublicInputs<F> {
     pub fn encode(&self) -> Vec<F> {
         let public_inputs = vec![
@@ -254,7 +241,7 @@ impl<F: RichField> MergeAndPurgeTransitionPublicInputs<F> {
             self.middle_user_asset_root.elements,
             self.new_user_asset_root.elements,
             self.diff_root.elements,
-            self.sender_address.elements,
+            self.sender_address.to_hash_out().elements,
             self.tx_hash.elements,
         ]
         .concat();
@@ -269,7 +256,10 @@ impl<F: RichField> MergeAndPurgeTransitionPublicInputs<F> {
         let middle_user_asset_root = HashOut::from_partial(&public_inputs[4..8]).into();
         let new_user_asset_root = HashOut::from_partial(&public_inputs[8..12]).into();
         let diff_root = HashOut::from_partial(&public_inputs[12..16]).into();
-        let sender_address = Address(HashOut::from_partial(&public_inputs[16..20]));
+        let sender_address = Address(public_inputs[16]);
+        assert_eq!(public_inputs[17], F::ZERO);
+        assert_eq!(public_inputs[18], F::ZERO);
+        assert_eq!(public_inputs[19], F::ZERO);
         let tx_hash = HashOut::from_partial(&public_inputs[20..24]).into();
 
         Self {
@@ -285,7 +275,7 @@ impl<F: RichField> MergeAndPurgeTransitionPublicInputs<F> {
 
 #[derive(Clone, Debug)]
 pub struct MergeAndPurgeTransitionPublicInputsTarget {
-    pub sender_address: HashOutTarget,
+    pub sender_address: AddressTarget,
     pub old_user_asset_root: HashOutTarget,
     pub middle_user_asset_root: HashOutTarget,
     pub new_user_asset_root: HashOutTarget,
@@ -297,7 +287,7 @@ impl MergeAndPurgeTransitionPublicInputsTarget {
     pub fn add_virtual_to<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
-        let sender_address = builder.add_virtual_hash();
+        let sender_address = AddressTarget::add_virtual_to(builder);
         let old_user_asset_root = builder.add_virtual_hash();
         let middle_user_asset_root = builder.add_virtual_hash();
         let new_user_asset_root = builder.add_virtual_hash();
@@ -319,7 +309,8 @@ impl MergeAndPurgeTransitionPublicInputsTarget {
         pw: &mut impl Witness<F>,
         public_inputs: &MergeAndPurgeTransitionPublicInputs<F>,
     ) {
-        pw.set_hash_target(self.sender_address, *public_inputs.sender_address);
+        self.sender_address
+            .set_witness(pw, public_inputs.sender_address);
         pw.set_hash_target(self.old_user_asset_root, *public_inputs.old_user_asset_root);
         pw.set_hash_target(
             self.middle_user_asset_root,
@@ -335,7 +326,7 @@ impl MergeAndPurgeTransitionPublicInputsTarget {
         a: &Self,
         b: &Self,
     ) {
-        builder.connect_hashes(a.sender_address, b.sender_address);
+        builder.connect_hashes(a.sender_address.0, b.sender_address.0);
         builder.connect_hashes(a.old_user_asset_root, b.old_user_asset_root);
         builder.connect_hashes(a.middle_user_asset_root, b.middle_user_asset_root);
         builder.connect_hashes(a.new_user_asset_root, b.new_user_asset_root);
@@ -349,7 +340,7 @@ impl MergeAndPurgeTransitionPublicInputsTarget {
             self.middle_user_asset_root.elements,
             self.new_user_asset_root.elements,
             self.diff_root.elements,
-            self.sender_address.elements,
+            self.sender_address.0.elements,
             self.tx_hash.elements,
         ]
         .concat();
@@ -372,9 +363,9 @@ impl MergeAndPurgeTransitionPublicInputsTarget {
         let diff_root = HashOutTarget {
             elements: public_inputs_t[12..16].try_into().unwrap(),
         };
-        let sender_address = HashOutTarget {
+        let sender_address = AddressTarget(HashOutTarget {
             elements: public_inputs_t[16..20].try_into().unwrap(),
-        };
+        });
         let tx_hash = HashOutTarget {
             elements: public_inputs_t[20..24].try_into().unwrap(),
         };
@@ -414,10 +405,40 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     }
 }
 
+// pub fn parse_merge_and_purge_public_inputs(
+//     public_inputs_t: &[Target],
+// ) -> MergeAndPurgeTransitionPublicInputsTarget {
+//     let old_user_asset_root = HashOutTarget {
+//         elements: public_inputs_t[0..4].try_into().unwrap(),
+//     };
+//     let middle_user_asset_root = HashOutTarget {
+//         elements: public_inputs_t[4..8].try_into().unwrap(),
+//     };
+//     let new_user_asset_root = HashOutTarget {
+//         elements: public_inputs_t[8..12].try_into().unwrap(),
+//     };
+//     let diff_root = HashOutTarget {
+//         elements: public_inputs_t[12..16].try_into().unwrap(),
+//     };
+//     let sender_address = HashOutTarget {
+//         elements: public_inputs_t[16..20].try_into().unwrap(),
+//     };
+//     let tx_hash = HashOutTarget {
+//         elements: public_inputs_t[20..24].try_into().unwrap(),
+//     };
+
+//     MergeAndPurgeTransitionPublicInputsTarget {
+//         sender_address,
+//         old_user_asset_root,
+//         middle_user_asset_root,
+//         new_user_asset_root,
+//         diff_root,
+//         tx_hash,
+//     }
+// }
+
 impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     MergeAndPurgeTransitionCircuit<F, C, D>
-where
-    C::Hasher: AlgebraicHasher<F>,
 {
     pub fn parse_public_inputs(&self) -> MergeAndPurgeTransitionPublicInputsTarget {
         let public_inputs_t = self.data.prover_only.public_inputs.clone();
@@ -441,10 +462,23 @@ where
 
     pub fn set_witness_and_prove(
         &self,
-        witness: &MergeAndPurgeTransition<F, C::InnerHasher>,
+        sender_address: Address<F>,
+        merge_witnesses: &[MergeProof<F>],
+        purge_input_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
+        purge_output_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
+        nonce: WrappedHashOut<F>,
+        old_user_asset_root: WrappedHashOut<F>,
     ) -> anyhow::Result<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>> {
         let mut pw = PartialWitness::new();
-        self.targets.set_witness(&mut pw, witness);
+        self.targets.set_witness(
+            &mut pw,
+            sender_address,
+            merge_witnesses,
+            purge_input_witnesses,
+            purge_output_witnesses,
+            nonce,
+            old_user_asset_root,
+        );
 
         self.prove(pw)
     }
@@ -465,7 +499,12 @@ pub fn prove_user_transaction<
     const D: usize,
 >(
     rollup_constants: RollupConstants,
-    witness: &MergeAndPurgeTransition<F, C::InnerHasher>,
+    sender_address: Address<F>,
+    merge_witnesses: &[MergeProof<F>],
+    purge_input_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
+    purge_output_witnesses: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
+    nonce: WrappedHashOut<F>,
+    old_user_asset_root: WrappedHashOut<F>,
 ) -> anyhow::Result<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>>
 where
     C::Hasher: AlgebraicHasher<F>,
@@ -473,114 +512,21 @@ where
     // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
     let config = CircuitConfig::standard_recursion_config();
     let merge_and_purge_circuit = make_user_proof_circuit::<F, C, D>(config, rollup_constants);
-    println!(
-        "degree_bits: {}",
-        merge_and_purge_circuit.data.common.degree_bits()
-    );
 
     let mut pw = PartialWitness::new();
-    let _public_inputs = merge_and_purge_circuit
-        .targets
-        .set_witness(&mut pw, witness);
+    let _public_inputs = merge_and_purge_circuit.targets.set_witness(
+        &mut pw,
+        sender_address,
+        merge_witnesses,
+        purge_input_witnesses,
+        purge_output_witnesses,
+        nonce,
+        old_user_asset_root,
+    );
 
-    println!("start proving");
-    let start = std::time::Instant::now();
     let user_tx_proof = merge_and_purge_circuit
         .prove(pw)
         .map_err(|err| anyhow::anyhow!("fail to prove user transaction: {}", err))?;
-    let end = start.elapsed();
-    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
     Ok(user_tx_proof)
-}
-
-#[cfg(test)]
-mod tests {
-    use plonky2::{hash::hash_types::HashOut, plonk::config::GenericConfig};
-
-    use crate::{
-        config::RollupConstants,
-        transaction::circuits::{
-            prove_user_transaction, MergeAndPurgeTransition, MergeAndPurgeTransitionPublicInputs,
-        },
-        utils::hash::WrappedHashOut,
-    };
-
-    #[test]
-    fn test_prove_user_transaction() {
-        use plonky2::plonk::config::PoseidonGoldilocksConfig;
-
-        const LOG_MAX_N_USERS: usize = 16;
-        const LOG_MAX_N_TXS: usize = 24;
-        const LOG_MAX_N_CONTRACTS: usize = LOG_MAX_N_USERS;
-        const LOG_MAX_N_VARIABLES: usize = 8;
-        const LOG_N_TXS: usize = 4;
-        const LOG_N_RECIPIENTS: usize = LOG_MAX_N_USERS;
-        const LOG_N_CONTRACTS: usize = LOG_MAX_N_CONTRACTS;
-        const LOG_N_VARIABLES: usize = LOG_MAX_N_VARIABLES;
-        const N_REGISTRATIONS: usize = 16;
-        const N_DEPOSITS: usize = 16;
-        const N_MERGES: usize = 16;
-        const N_DIFFS: usize = 16;
-        const N_BLOCKS: usize = 4;
-
-        const D: usize = 2;
-        type C = PoseidonGoldilocksConfig;
-        type F = <C as GenericConfig<D>>::F;
-        let rollup_constants: RollupConstants = RollupConstants {
-            log_max_n_users: LOG_MAX_N_USERS,
-            log_max_n_txs: LOG_MAX_N_TXS,
-            log_max_n_contracts: LOG_MAX_N_CONTRACTS,
-            log_max_n_variables: LOG_MAX_N_VARIABLES,
-            log_n_txs: LOG_N_TXS,
-            log_n_recipients: LOG_N_RECIPIENTS,
-            log_n_contracts: LOG_N_CONTRACTS,
-            log_n_variables: LOG_N_VARIABLES,
-            n_registrations: N_REGISTRATIONS,
-            n_diffs: N_DIFFS,
-            n_merges: N_MERGES,
-            n_deposits: N_DEPOSITS,
-            n_blocks: N_BLOCKS,
-        };
-
-        let merge_and_purge_transition = MergeAndPurgeTransition::default();
-
-        let _default_user_transaction_proof =
-            prove_user_transaction::<F, C, D>(rollup_constants, &merge_and_purge_transition)
-                .unwrap();
-    }
-
-    #[test]
-    fn test_default_user_transaction() {
-        use plonky2::field::{goldilocks_field::GoldilocksField, types::Field};
-
-        type F = GoldilocksField;
-
-        let default_user_transaction = MergeAndPurgeTransitionPublicInputs::<F>::default();
-
-        let tx_hash = WrappedHashOut::from(HashOut {
-            elements: [
-                F::from_canonical_u64(4330397376401421145),
-                F::from_canonical_u64(14124799381142128323),
-                F::from_canonical_u64(8742572140681234676),
-                F::from_canonical_u64(14345658006221440202),
-            ],
-        });
-
-        assert_eq!(default_user_transaction.sender_address, Default::default());
-        assert_eq!(
-            default_user_transaction.old_user_asset_root,
-            Default::default()
-        );
-        assert_eq!(
-            default_user_transaction.middle_user_asset_root,
-            Default::default()
-        );
-        assert_eq!(
-            default_user_transaction.new_user_asset_root,
-            Default::default()
-        );
-        assert_eq!(default_user_transaction.diff_root, Default::default());
-        assert_eq!(default_user_transaction.tx_hash, tx_hash);
-    }
 }

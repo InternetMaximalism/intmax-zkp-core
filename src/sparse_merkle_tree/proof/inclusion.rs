@@ -62,7 +62,7 @@ impl<K, V, I> SparseMerkleInclusionProof<K, V, I> {
 
 #[test]
 fn test_serialize_merkle_proof() {
-    use crate::utils::hash::GoldilocksHashOut;
+    use super::super::goldilocks_poseidon::GoldilocksHashOut;
 
     let merkle_proof = SparseMerkleInclusionProof {
         root: GoldilocksHashOut::from_u32(1),

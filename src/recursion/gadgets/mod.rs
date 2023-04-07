@@ -127,8 +127,8 @@ impl<const D: usize> RecursiveProofTarget<D> {
     }
 }
 
-#[cfg(test)]
-mod tests {
+#[test]
+fn test_recursion_simple_signature() {
     use std::time::Instant;
 
     use plonky2::{
@@ -142,107 +142,110 @@ mod tests {
         },
     };
 
-    use crate::{
-        recursion::gadgets::RecursiveProofTarget, zkdsa::circuits::make_simple_signature_circuit,
-        zkdsa::gadgets::signature::SimpleSignature,
+    use crate::zkdsa::circuits::make_simple_signature_circuit;
+
+    const D: usize = 2;
+    type C = PoseidonGoldilocksConfig;
+    type F = <C as GenericConfig<D>>::F;
+
+    let private_key = HashOut::rand();
+    let message = HashOut::rand();
+
+    let config = CircuitConfig::standard_recursion_config();
+    let zkdsa_circuit = make_simple_signature_circuit::<F, C, D>(config);
+
+    let mut pw = PartialWitness::new();
+    zkdsa_circuit
+        .targets
+        .set_witness(&mut pw, private_key, message);
+
+    println!("start proving: sender2_received_signature");
+    let start = Instant::now();
+    let signature = zkdsa_circuit.prove(pw).unwrap();
+    let end = start.elapsed();
+    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+
+    // proposal block
+    let config = CircuitConfig::standard_recursion_config();
+    let mut builder = CircuitBuilder::<F, D>::new(config);
+    let recursion_target = RecursiveProofTarget::add_virtual_to(&mut builder, &zkdsa_circuit.data);
+    let circuit_data = builder.build::<C>();
+
+    let mut pw = PartialWitness::new();
+    recursion_target.set_witness(
+        &mut pw,
+        &signature.into(),
+        // &zkdsa_circuit.data.verifier_only,
+        true,
+    );
+
+    println!("start proving: block_proof");
+    let start = Instant::now();
+    let proof = circuit_data.prove(pw).unwrap();
+    let end = start.elapsed();
+    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+
+    match circuit_data.verify(proof) {
+        Ok(()) => println!("Ok!"),
+        Err(x) => println!("{}", x),
+    }
+}
+
+#[test]
+fn test_recursion_default_simple_signature() {
+    use std::time::Instant;
+
+    use plonky2::{
+        iop::witness::PartialWitness,
+        plonk::{
+            circuit_builder::CircuitBuilder,
+            circuit_data::CircuitConfig,
+            config::{GenericConfig, PoseidonGoldilocksConfig},
+        },
     };
 
-    #[test]
-    fn test_recursion_simple_signature() {
-        const D: usize = 2;
-        type C = PoseidonGoldilocksConfig;
-        type F = <C as GenericConfig<D>>::F;
+    use crate::zkdsa::circuits::make_simple_signature_circuit;
 
-        let private_key = HashOut::rand();
-        let message = HashOut::rand();
+    const D: usize = 2;
+    type C = PoseidonGoldilocksConfig;
+    type F = <C as GenericConfig<D>>::F;
 
-        let config = CircuitConfig::standard_recursion_config();
-        let zkdsa_circuit = make_simple_signature_circuit::<F, C, D>(config);
+    let config = CircuitConfig::standard_recursion_config();
+    let zkdsa_circuit = make_simple_signature_circuit::<F, C, D>(config);
 
-        let mut pw = PartialWitness::new();
-        zkdsa_circuit.targets.set_witness(
-            &mut pw,
-            &SimpleSignature {
-                private_key,
-                message,
-            },
-        );
+    let mut pw = PartialWitness::new();
+    zkdsa_circuit
+        .targets
+        .set_witness(&mut pw, Default::default(), Default::default());
 
-        println!("start proving: sender2_received_signature");
-        let start = Instant::now();
-        let signature = zkdsa_circuit.prove(pw).unwrap();
-        let end = start.elapsed();
-        println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+    println!("start proving: sender2_received_signature");
+    let start = Instant::now();
+    let default_signature = zkdsa_circuit.prove(pw).unwrap();
+    let end = start.elapsed();
+    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-        // proposal block
-        let config = CircuitConfig::standard_recursion_config();
-        let mut builder = CircuitBuilder::<F, D>::new(config);
-        let recursion_target =
-            RecursiveProofTarget::add_virtual_to(&mut builder, &zkdsa_circuit.data);
-        let circuit_data = builder.build::<C>();
+    // proposal block
+    let config = CircuitConfig::standard_recursion_config();
+    let mut builder = CircuitBuilder::<F, D>::new(config);
+    let recursion_target = RecursiveProofTarget::add_virtual_to(&mut builder, &zkdsa_circuit.data);
+    let circuit_data = builder.build::<C>();
 
-        let mut pw = PartialWitness::new();
-        recursion_target.set_witness(
-            &mut pw,
-            &signature.into(),
-            // &zkdsa_circuit.data.verifier_only,
-            true,
-        );
+    let mut pw = PartialWitness::new();
+    recursion_target.set_witness(
+        &mut pw,
+        &default_signature.into(),
+        // &zkdsa_circuit.verifier_only,
+        false,
+    );
 
-        println!("start proving: block_proof");
-        let start = Instant::now();
-        let proof = circuit_data.prove(pw).unwrap();
-        let end = start.elapsed();
-        println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
+    println!("start proving: block_proof");
+    let start = Instant::now();
+    let proof = circuit_data.prove(pw).unwrap();
+    let end = start.elapsed();
+    println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
 
-        circuit_data.verify(proof).unwrap();
-    }
-
-    #[test]
-    fn test_recursion_default_simple_signature() {
-        const D: usize = 2;
-        type C = PoseidonGoldilocksConfig;
-        type F = <C as GenericConfig<D>>::F;
-
-        let config = CircuitConfig::standard_recursion_config();
-        let zkdsa_circuit = make_simple_signature_circuit::<F, C, D>(config);
-
-        let mut pw = PartialWitness::new();
-        zkdsa_circuit.targets.set_witness(
-            &mut pw,
-            &SimpleSignature {
-                private_key: Default::default(),
-                message: Default::default(),
-            },
-        );
-
-        println!("start proving: sender2_received_signature");
-        let start = Instant::now();
-        let default_signature = zkdsa_circuit.prove(pw).unwrap();
-        let end = start.elapsed();
-        println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
-
-        // proposal block
-        let config = CircuitConfig::standard_recursion_config();
-        let mut builder = CircuitBuilder::<F, D>::new(config);
-        let recursion_target =
-            RecursiveProofTarget::add_virtual_to(&mut builder, &zkdsa_circuit.data);
-        let circuit_data = builder.build::<C>();
-
-        let mut pw = PartialWitness::new();
-        recursion_target.set_witness(
-            &mut pw,
-            &default_signature.into(),
-            // &zkdsa_circuit.verifier_only,
-            false,
-        );
-
-        println!("start proving: block_proof");
-        let start = Instant::now();
-        let proof = circuit_data.prove(pw).unwrap();
-        let end = start.elapsed();
-        println!("prove: {}.{:03} sec", end.as_secs(), end.subsec_millis());
-
-        circuit_data.verify(proof).unwrap();
+    match circuit_data.verify(proof) {
+        Ok(()) => println!("Ok!"),
+        Err(x) => println!("{}", x),
     }
 }

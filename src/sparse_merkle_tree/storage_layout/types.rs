@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::utils::hash::GoldilocksHashOut;
+use super::super::goldilocks_poseidon::GoldilocksHashOut;
 
 type V = GoldilocksHashOut;
 type Byte16 = [u8; 16];

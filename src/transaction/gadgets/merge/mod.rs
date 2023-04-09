@@ -506,9 +506,11 @@ fn test_merge_proof_by_plonky2() {
     let deposit_nonce = HashOut::ZERO;
     // let deposit_tx_hash =
     //     PoseidonHash::two_to_one(*merge_inclusion_proof2.root, deposit_nonce).into();
-    let deposit_tx_hash = merge_inclusion_proof2.root;
+    let deposit_tx_hash = PoseidonHash::two_to_one(*merge_inclusion_proof2.root, *GoldilocksHashOut::from_u64(0));
+    let scroll_tx_hash = PoseidonHash::two_to_one(HashOut::ZERO, *GoldilocksHashOut::from_u64(1));
+    let polygon_tx_hash = PoseidonHash::two_to_one(HashOut::ZERO, *GoldilocksHashOut::from_u64(2));
 
-    let merge_inclusion_proof1 = get_merkle_proof(&[deposit_tx_hash], 0, LOG_N_TXS);
+    let merge_inclusion_proof1 = get_merkle_proof(&[deposit_tx_hash.into(), scroll_tx_hash.into(), polygon_tx_hash.into()], 0, LOG_N_TXS);
 
     let default_hash = HashOut::ZERO;
     let default_inclusion_proof = SparseMerkleInclusionProof::with_root(Default::default());
@@ -525,7 +527,7 @@ fn test_merge_proof_by_plonky2() {
     };
     let block_hash = get_block_hash(&prev_block_header);
 
-    let deposit_merge_key = PoseidonHash::two_to_one(*deposit_tx_hash, block_hash).into();
+    let deposit_merge_key = PoseidonHash::two_to_one(deposit_tx_hash, block_hash).into();
 
     // user asset tree に deposit を merge する.
     user_asset_tree

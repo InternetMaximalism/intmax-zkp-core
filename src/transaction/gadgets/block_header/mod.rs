@@ -5,7 +5,7 @@ use plonky2::{
     plonk::{circuit_builder::CircuitBuilder, config::AlgebraicHasher},
 };
 
-use crate::utils::gadgets::hash::poseidon_two_to_one;
+use crate::poseidon::gadgets::poseidon_two_to_one;
 
 use super::super::block_header::BlockHeader;
 
@@ -23,7 +23,7 @@ pub struct BlockHeaderTarget {
 }
 
 impl BlockHeaderTarget {
-    pub fn make_constraints<F: RichField + Extendable<D>, const D: usize>(
+    pub fn add_virtual_to<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
         let block_number = builder.add_virtual_target();

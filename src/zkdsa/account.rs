@@ -9,18 +9,18 @@ use plonky2::{
         hash_types::{HashOut, RichField},
         poseidon::PoseidonHash,
     },
-    plonk::config::{GenericHashOut, Hasher},
+    plonk::config::Hasher,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::utils::hash::WrappedHashOut;
+use crate::sparse_merkle_tree::goldilocks_poseidon::WrappedHashOut;
 
 pub type SecretKey<F> = HashOut<F>;
 pub type PublicKey<F> = HashOut<F>;
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct Address<F: Field>(pub HashOut<F>);
+pub struct Address<F: Field>(pub F);
 
 impl<F: RichField> std::fmt::Display for Address<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -44,20 +44,15 @@ impl<F: RichField> FromStr for Address<F> {
 
 #[test]
 fn test_fmt_address() {
-    use crate::utils::hash::GoldilocksHashOut;
-
-    let value = Address(*GoldilocksHashOut::from_u32(1));
+    let value = Address(GoldilocksField::from_canonical_u32(1));
     let encoded_value = format!("{}", value);
-    assert_eq!(
-        encoded_value,
-        "0x0000000000000000000000000000000000000000000000000000000000000001"
-    );
+    assert_eq!(encoded_value, "0x0000000000000001");
     let decoded_value: Address<GoldilocksField> = Address::from_str("0x01").unwrap();
     assert_eq!(decoded_value, value);
 
     let value: Address<GoldilocksField> = Address::rand();
     let encoded_value = format!("{}", value);
-    assert_eq!(encoded_value.len(), 66);
+    assert_eq!(encoded_value.len(), 18);
     let decoded_value = Address::from_str(&encoded_value).unwrap();
     assert_eq!(decoded_value, value);
 }
@@ -70,9 +65,8 @@ impl<F: RichField> Serialize for Address<F> {
     where
         S: Serializer,
     {
-        let mut bytes = self.0.to_bytes(); // little endian
-        bytes.reverse(); // big endian
-        let raw = format!("0x{}", hex::encode(&bytes));
+        let bytes = self.0.to_canonical_u64().to_be_bytes(); // big endian
+        let raw = format!("0x{}", hex::encode(bytes));
 
         raw.serialize(serializer)
     }
@@ -92,13 +86,15 @@ impl<'de, F: RichField> Deserialize<'de> for Address<F> {
         let mut bytes = hex::decode(raw_without_prefix).map_err(|err| {
             serde::de::Error::custom(format!("fail to parse a hex string: {err}"))
         })?;
-        if bytes.len() > 32 {
+        if bytes.len() > 8 {
             return Err(serde::de::Error::custom("too long hexadecimal sequence"));
         }
         bytes.reverse(); // little endian
-        bytes.resize(32, 0);
+        bytes.resize(8, 0);
 
-        Ok(Address(HashOut::from_bytes(&bytes)))
+        Ok(Address(F::from_canonical_u64(u64::from_le_bytes(
+            bytes.try_into().unwrap(),
+        ))))
     }
 }
 
@@ -106,27 +102,22 @@ impl<'de, F: RichField> Deserialize<'de> for Address<F> {
 fn test_serialize_address() {
     use plonky2::field::goldilocks_field::GoldilocksField;
 
-    use crate::utils::hash::GoldilocksHashOut;
-
-    let value = Address(*GoldilocksHashOut::from_u32(1));
+    let value = Address(GoldilocksField::from_canonical_u32(1));
     let encoded_value = serde_json::to_string(&value).unwrap();
-    assert_eq!(
-        encoded_value,
-        "\"0x0000000000000000000000000000000000000000000000000000000000000001\""
-    );
+    assert_eq!(encoded_value, "\"0x0000000000000001\"");
     let encoded_value = "\"0x01\"";
     let decoded_value: Address<GoldilocksField> = serde_json::from_str(encoded_value).unwrap();
     assert_eq!(decoded_value, value);
 
     let value: Address<GoldilocksField> = Address::rand();
     let encoded_value = serde_json::to_string(&value).unwrap();
-    assert_eq!(encoded_value.len(), 68); // include 0x-prefix and quotation marks
+    assert_eq!(encoded_value.len(), 20); // include 0x-prefix and quotation marks
     let decoded_value: Address<GoldilocksField> = serde_json::from_str(&encoded_value).unwrap();
     assert_eq!(decoded_value, value);
 }
 
 impl<F: Field> std::ops::Deref for Address<F> {
-    type Target = HashOut<F>;
+    type Target = F;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -135,26 +126,38 @@ impl<F: Field> std::ops::Deref for Address<F> {
 
 impl<F: Field> Address<F> {
     pub fn to_hash_out(&self) -> HashOut<F> {
-        self.0
+        HashOut::from_partial(&[self.0])
+    }
+
+    pub fn from_hash_out(value: HashOut<F>) -> Self {
+        assert_eq!(value.elements[1], F::ZERO);
+        assert_eq!(value.elements[2], F::ZERO);
+        assert_eq!(value.elements[3], F::ZERO);
+
+        Self(value.elements[0])
     }
 
     pub fn read(inputs: &mut core::slice::Iter<F>) -> Self {
-        Self(HashOut {
-            elements: [
-                *inputs.next().unwrap(),
-                *inputs.next().unwrap(),
-                *inputs.next().unwrap(),
-                *inputs.next().unwrap(),
-            ],
-        })
+        let result = *inputs.next().unwrap();
+
+        for _ in 1..4 {
+            inputs.next().unwrap();
+        }
+
+        Self(result)
     }
 
     pub fn write(&self, inputs: &mut Vec<F>) {
-        inputs.append(&mut self.0.elements.to_vec())
+        inputs.push(self.0);
+        for _ in 1..4 {
+            inputs.push(F::ZERO);
+        }
     }
+}
 
+impl<F: Field + Sample> Address<F> {
     pub fn rand() -> Self {
-        Self(HashOut::rand())
+        Self(F::rand())
     }
 }
 
@@ -163,7 +166,7 @@ pub fn private_key_to_public_key<F: RichField>(private_key: SecretKey<F>) -> Pub
 }
 
 pub fn public_key_to_address<F: RichField>(public_key: PublicKey<F>) -> Address<F> {
-    Address(public_key)
+    Address(public_key.elements[0])
 }
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]

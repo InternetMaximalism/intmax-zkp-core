@@ -12,24 +12,21 @@ use super::super::account::Address;
 pub struct AddressTarget(pub HashOutTarget);
 
 impl AddressTarget {
-    pub fn new<F: RichField + Extendable<D>, const D: usize>(
+    pub fn add_virtual_to<F: RichField + Extendable<D>, const D: usize>(
         builder: &mut CircuitBuilder<F, D>,
     ) -> Self {
         let target = builder.add_virtual_hash();
 
-        Self(target)
-    }
-
-    pub fn constant_default<F: RichField + Extendable<D>, const D: usize>(
-        builder: &mut CircuitBuilder<F, D>,
-    ) -> Self {
-        let target = builder.constant_hash(HashOut::ZERO);
+        let zero = builder.zero();
+        builder.connect(target.elements[1], zero);
+        builder.connect(target.elements[2], zero);
+        builder.connect(target.elements[3], zero);
 
         Self(target)
     }
 
     pub fn set_witness<F: Field>(&self, pw: &mut impl Witness<F>, value: Address<F>) {
-        pw.set_hash_target(self.0, value.0);
+        pw.set_hash_target(self.0, HashOut::from_partial(&[value.0]));
     }
 
     pub fn read(inputs_t: &mut core::slice::Iter<Target>) -> Self {

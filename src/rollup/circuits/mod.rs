@@ -14,7 +14,7 @@ use plonky2::{
         config::{AlgebraicHasher, GenericConfig, Hasher},
         proof::{Proof, ProofWithPublicInputs},
     },
-    util::log2_strict,
+    util::log2_ceil,
 };
 use serde::{Deserialize, Serialize};
 
@@ -25,31 +25,26 @@ use crate::{
         tree::{get_merkle_proof, get_merkle_root},
     },
     recursion::gadgets::RecursiveProofTarget,
-    rollup::{
-        address_list::TransactionSenderWithValidity,
-        gadgets::{
-            address_list::TransactionSenderWithValidityTarget,
-            approval_block::{ApprovalBlockProduction, ApprovalBlockProductionTarget},
-            block_headers_tree::calc_block_headers_proof,
-            deposit_block::{DepositBlockProduction, DepositBlockProductionTarget},
-            proposal_block::ProposalBlockProductionTarget,
+    rollup::gadgets::{
+        approval_block::ApprovalBlockProductionTarget,
+        block_headers_tree::calc_block_headers_proof,
+        deposit_block::{
+            DepositBlockProductionTarget, DepositInfo, DepositInfoTarget, VariableIndex,
         },
+        proposal_block::ProposalBlockProductionTarget,
     },
-    sparse_merkle_tree::gadgets::process::process_smt::SmtProcessProof,
+    sparse_merkle_tree::{
+        gadgets::process::process_smt::SmtProcessProof, goldilocks_poseidon::WrappedHashOut,
+    },
     transaction::{
-        asset::{ContributedAsset, TokenKind, VariableIndex},
-        block_header::BlockHeader,
+        block_header::{get_block_hash, BlockHeader},
         circuits::{
             make_user_proof_circuit, MergeAndPurgeTransition, MergeAndPurgeTransitionCircuit,
             MergeAndPurgeTransitionProofWithPublicInputs,
             MergeAndPurgeTransitionPublicInputsTarget,
         },
-        gadgets::{
-            asset_mess::ContributedAssetTarget,
-            block_header::{get_block_hash_target, BlockHeaderTarget},
-        },
+        gadgets::block_header::{get_block_hash_target, BlockHeaderTarget},
     },
-    utils::hash::WrappedHashOut,
     zkdsa::{
         account::Address,
         circuits::{
@@ -60,18 +55,30 @@ use crate::{
     },
 };
 
+use super::{
+    address_list::TransactionSenderWithValidity,
+    gadgets::address_list::TransactionSenderWithValidityTarget,
+};
+
+// type C = PoseidonGoldilocksConfig;
+// type H = <C as GenericConfig<D>>::InnerHasher;
+// type F = <C as GenericConfig<D>>::F;
+// const D: usize = 2;
 const LOG_MAX_N_BLOCKS: usize = 32;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(bound = "F: RichField + Extendable<D>, C: GenericConfig<D, F = F>")]
 pub struct BlockDetail<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize> {
     pub block_number: u32,
     pub user_tx_proofs: Vec<MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>>,
-    pub deposit_process_proofs: DepositBlockProduction<F, C::InnerHasher, Vec<bool>>,
+    pub deposit_process_proofs: Vec<(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)>,
+    pub scroll_process_proofs: Vec<(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)>,
+    pub polygon_process_proofs: Vec<(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)>,
     pub world_state_process_proofs: Vec<SmtProcessProof<F>>,
     pub world_state_revert_proofs: Vec<SmtProcessProof<F>>,
     pub received_signature_proofs: Vec<Option<SimpleSignatureProofWithPublicInputs<F, C, D>>>,
     pub latest_account_process_proofs: Vec<SmtProcessProof<F>>,
-    pub block_headers_proof_siblings: Vec<HashOut<F>>,
+    pub block_headers_proof_siblings: Vec<WrappedHashOut<F>>,
     pub prev_block_header: BlockHeader<F>,
 }
 
@@ -83,38 +90,53 @@ pub struct BlockDetail<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>,
 //     }
 // }
 
+#[test]
+fn test_serde_block_detail() {
+    use plonky2::plonk::config::PoseidonGoldilocksConfig;
+
+    const D: usize = 2;
+    type C = PoseidonGoldilocksConfig;
+    type F = <C as GenericConfig<D>>::F;
+    const N_TXS: usize = 4;
+
+    let block_detail: BlockDetail<F, C, D> = BlockDetail::new(N_TXS);
+    let actual_encoded_block_detail = serde_json::to_string(&block_detail).unwrap();
+    let encoded_block_detail = "{\"block_number\":1,\"user_tx_proofs\":[],\"deposit_process_proofs\":[],\"scroll_process_proofs\":[],\"polygon_process_proofs\":[],\"world_state_process_proofs\":[],\"world_state_revert_proofs\":[],\"received_signature_proofs\":[],\"latest_account_process_proofs\":[],\"block_headers_proof_siblings\":[\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"0xc71603f33a1144ca7953db0ab48808f4c4055e3364a246c33c18a9786cb0b359\",\"0x2196fc41328ae503de8f9ad762a30af28d85581b9901b2cfb61a4ad1aaf14fcc\",\"0x67703a0cc73ca54246fb94bfe956c05f9a247cc59da2de6461e00af7295ce05a\",\"0xf522eaa0af88a040167d7cf3bf854d278cc1b30d2e2c09475154921a06462644\",\"0xd0053597686f6672b77e23f0fc59019786ac9b34bd97d439e9e6b5c8d15b61ae\",\"0x49561260080d30c3dda8f741c47dfb105a1d2a648eee8f0325225f1a5d49614a\",\"0xb768e4fc8b0b79f516c9da6ea83aa4b13c9a42c646c4c1f9e979ed3ee20855e3\",\"0x2bd367124a2989b3d31bd45195f9a9278d72cff3db0a7a5afe6fd7720cfd2916\",\"0xfcf1da35791ff4452cf0c633ee9d9197954ec02c35af849e3ca2442157c9f14e\",\"0xc27e8f4600af2a41707c71f51d338df791e919b1e4a3ea53ccf7b63f7b1140c3\",\"0x218bc75b3bc83675e1c5ac76b0d9d44c0d1baab6f05098e38d6ebaad0ab5d3c3\",\"0x61618c69e9d26f4c8ee39e4c215804e2fb01846fee718016ed2589168e839d21\",\"0xec76a20799cf5dc50841b1fa4588f4f8c975d7aec7a1c669296ff821d8378f7f\",\"0xf55d5d12107b371efb4650fb6b8880811f7867621b8c1c1a0168a392cc7b542c\",\"0x6c9890682b94dee9cd45643c378df78c64e3f7a7160f8f0de73c5360c4b3ecd8\",\"0x9e1c5239e937026b57b8f931187d6dc4b555892ea200cfe4ab95f0ae94f7cde6\",\"0x0aa45be01f9e161002f8e22c79467775279949e14530c2505587ad00b6ddf0cb\",\"0xd2e3dd2bdd2907959ef35a5aeb905682388540a0f77810a8d108cd9026164f3b\",\"0x33a8e0b809ce2532ae94d561f2e16def904fa2e7b99bd3f1707d95a1148000a1\",\"0x7c9f51793bca6ffb713d0a918edaa60557184cbbc85f535743926baabe5db81f\",\"0xfa58391e7c0d394d317903270df6e518b34770c62a38e6697621f88cdcdfb5fd\",\"0x60e99b7ea5b1187d4293a24d51cc07ac39f874beb115877f8bd1878dd7f1026d\",\"0xc043477d124292017879345b4f881eb71d31cd8564acce2a617f3c6d0b4b8b44\",\"0x5793fc6d609c47c365b9470bc3e00cd4f19dece13278be693612ac9d812a8f8c\",\"0xe0c55886db8e5a00bfa58f8faf71ab1e1f12ae8ff82875c95b3c0f2c8ee070cc\",\"0x8f3c07c1b1e0b6c9c69aade405671398bf062e3f77dc0b13671c5e28b2f9dc9a\",\"0x06ff527899c10074411162bf4a7f70b84e6acab68322cba1e9e10aca93469e78\",\"0x08b8d7b96221d9f59ed49f4906c24becbe646c8d1b68665bf42d09eff74e4b90\",\"0xe0fd1bfa878b3cd2cc7e2bf5f351da7a2a1963d1913370406b4ae756e5e20763\",\"0x80faf1e491cd910ae2566bc52d26d7ea099b512bfeff20768a0dd4cf966a4a93\",\"0x20ca8d0d3b8c55d18b0f02df1c469ca317afad6c010c855f7765a145976afdbc\"],\"prev_block_header\":{\"block_number\":\"0x00000000\",\"prev_block_hash\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"block_headers_digest\":\"0xd65af5933a094e8329332a714327ba72b1e4dac93c0cde8ee479b9bb36c3fc43\",\"transactions_digest\":\"0xd0053597686f6672b77e23f0fc59019786ac9b34bd97d439e9e6b5c8d15b61ae\",\"deposit_digest\":\"0xf522eaa0af88a040167d7cf3bf854d278cc1b30d2e2c09475154921a06462644\",\"proposed_world_state_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"approved_world_state_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"latest_account_digest\":\"0x0000000000000000000000000000000000000000000000000000000000000000\"}}";
+    assert_eq!(actual_encoded_block_detail, encoded_block_detail);
+    let decoded_block_detail: BlockDetail<F, C, D> =
+        serde_json::from_str(encoded_block_detail).unwrap();
+    assert_eq!(decoded_block_detail, block_detail);
+}
+
 impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     BlockDetail<F, C, D>
 {
-    pub fn new(log_num_txs_in_block: usize, log_n_recipients: usize, log_n_kinds: usize) -> Self {
+    pub fn new(log_num_txs_in_block: usize) -> Self {
         let prev_block_header = BlockHeader::new(log_num_txs_in_block);
-        let prev_block_hash = prev_block_header.get_block_hash();
+        let prev_block_hash = get_block_hash(&prev_block_header);
         let prev_block_number = prev_block_header.block_number;
-        let mut block_headers: Vec<HashOut<F>> = vec![HashOut::ZERO; prev_block_number as usize];
-        block_headers.push(prev_block_hash);
+        let mut block_headers: Vec<WrappedHashOut<F>> =
+            vec![WrappedHashOut::ZERO; prev_block_number as usize];
+        block_headers.push(prev_block_hash.into());
         let block_number = prev_block_number + 1;
         let user_tx_proofs = vec![];
         let received_signature_proofs = vec![];
         let world_state_process_proofs = vec![];
         let world_state_revert_proofs = vec![];
         let latest_account_process_proofs = vec![];
-        let block_headers_proof_siblings = get_merkle_proof::<F, C::InnerHasher>(
-            &block_headers,
-            prev_block_number as usize,
-            LOG_MAX_N_BLOCKS,
-        )
-        .siblings;
+        let block_headers_proof_siblings =
+            get_merkle_proof(&block_headers, prev_block_number as usize, LOG_MAX_N_BLOCKS).siblings;
 
-        let deposit_process_proofs = DepositBlockProduction {
-            deposit_process_proofs: vec![],
-            log_n_recipients,
-            log_n_kinds,
-        };
+        let deposit_process_proofs = vec![];
+        let scroll_process_proofs = vec![];
+        let polygon_process_proofs = vec![];
 
         Self {
             block_number,
             user_tx_proofs,
             deposit_process_proofs,
+            scroll_process_proofs,
+            polygon_process_proofs,
             world_state_process_proofs,
             world_state_revert_proofs,
             received_signature_proofs,
@@ -128,6 +150,8 @@ impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
 #[derive(Clone)]
 pub struct BlockProductionTarget<const D: usize> {
     pub deposit_block_target: DepositBlockProductionTarget,
+    pub scroll_block_target: DepositBlockProductionTarget,
+    pub polygon_block_target: DepositBlockProductionTarget,
     pub proposal_block_target: ProposalBlockProductionTarget,
     pub approval_block_target: ApprovalBlockProductionTarget,
     pub user_tx_proofs: Vec<RecursiveProofTarget<D>>,
@@ -146,13 +170,15 @@ impl<const D: usize> BlockProductionTarget<D> {
         block_number: u32,
         user_tx_proofs: &[MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>],
         default_user_tx_proof: &MergeAndPurgeTransitionProofWithPublicInputs<F, C, D>,
-        deposit_process_proofs: &DepositBlockProduction<F, C::InnerHasher, Vec<bool>>,
+        deposit_process_proofs: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
+        scroll_process_proofs: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
+        polygon_process_proofs: &[(SmtProcessProof<F>, SmtProcessProof<F>, SmtProcessProof<F>)],
         world_state_process_proofs: &[SmtProcessProof<F>],
         world_state_revert_proofs: &[SmtProcessProof<F>],
         received_signature_proofs: &[Option<SimpleSignatureProofWithPublicInputs<F, C, D>>],
         default_simple_signature_proof: &SimpleSignatureProofWithPublicInputs<F, C, D>,
         latest_account_process_proofs: &[SmtProcessProof<F>],
-        block_headers_proof_siblings: &[HashOut<F>],
+        block_headers_proof_siblings: &[WrappedHashOut<F>],
         prev_block_header: BlockHeader<F>,
     ) -> BlockProductionPublicInputs<F>
     where
@@ -160,10 +186,17 @@ impl<const D: usize> BlockProductionTarget<D> {
     {
         let n_txs = self.user_tx_proofs.len();
         let n_deposits = self.deposit_block_target.deposit_process_proofs.len();
+        let n_scroll_flags = self.scroll_block_target.deposit_process_proofs.len();
+        let n_polygon_flags = self.polygon_block_target.deposit_process_proofs.len();
         let interior_deposit_digest = self
             .deposit_block_target
-            .set_witness(pw, deposit_process_proofs)
-            .unwrap();
+            .set_witness(pw, deposit_process_proofs);
+        let interior_scroll_digest = self
+            .scroll_block_target
+            .set_witness(pw, scroll_process_proofs);
+        let interior_polygon_digest = self
+            .polygon_block_target
+            .set_witness(pw, polygon_process_proofs);
         let old_world_state_root = prev_block_header.approved_world_state_digest.into();
         let user_transactions = user_tx_proofs
             .iter()
@@ -183,17 +216,17 @@ impl<const D: usize> BlockProductionTarget<D> {
             .cloned()
             .map(|p| p.map(|p| p.public_inputs))
             .collect::<Vec<_>>();
-        let approval_block = ApprovalBlockProduction {
-            current_block_number: block_number,
-            world_state_revert_proofs: world_state_revert_proofs.to_vec(),
-            user_transactions,
-            received_signatures,
-            latest_account_tree_process_proofs: latest_account_process_proofs.to_vec(),
-            old_world_state_root: proposed_world_state_digest.into(),
-            old_latest_account_root,
-        };
         let (approved_world_state_digest, latest_account_digest) =
-            self.approval_block_target.set_witness(pw, &approval_block);
+            self.approval_block_target.set_witness(
+                pw,
+                block_number,
+                world_state_revert_proofs,
+                &user_transactions,
+                &received_signatures,
+                latest_account_process_proofs,
+                proposed_world_state_digest,
+                old_latest_account_root,
+            );
 
         assert!(user_tx_proofs.len() <= self.user_tx_proofs.len());
         for (r_t, r) in self.user_tx_proofs.iter().zip(user_tx_proofs.iter()) {
@@ -241,54 +274,60 @@ impl<const D: usize> BlockProductionTarget<D> {
             .iter()
             .zip(block_headers_proof_siblings.iter().cloned())
         {
-            pw.set_hash_target(*sibling_t, sibling);
+            pw.set_hash_target(*sibling_t, *sibling);
         }
 
         let prev_block_number = prev_block_header.block_number;
 
-        // `block_number - 2` までの block header で作られた block headers tree の `block_number - 1` 番目の proof
-        // この時点では, leaf の値は 0 である.
-        let prev_block_headers_digest = get_merkle_root::<_, PoseidonHash, _>(
-            &(prev_block_number as usize),
-            HashOut::ZERO,
+        // The `block_number - 1`th proof of the block headers tree created with block headers up to
+        // `block_number - 2`. At this point, the value of leaf is 0.
+        let prev_block_headers_digest = get_merkle_root(
+            prev_block_number as usize,
+            WrappedHashOut::ZERO,
             block_headers_proof_siblings,
         );
         assert_eq!(
-            prev_block_headers_digest,
+            *prev_block_headers_digest,
             prev_block_header.block_headers_digest,
         );
-        // `block_number - 1` の block hash
-        let prev_block_hash = prev_block_header.get_block_hash();
-        // `block_number - 1` までの block header で作られた block headers tree の `block_number - 1` 番目の proof
-        let block_headers_digest = get_merkle_root::<_, PoseidonHash, _>(
-            &(prev_block_number as usize),
-            prev_block_hash,
+        // block hash of `block_number - 1`
+        let prev_block_hash = get_block_hash(&prev_block_header);
+        // The `block_number - 1`th proof in the block headers tree created with block headers up to `block_number - 1`.
+        let block_headers_digest = get_merkle_root(
+            prev_block_number as usize,
+            prev_block_hash.into(),
             block_headers_proof_siblings,
         );
 
-        let log_n_txs = log2_strict(n_txs);
-        // let log_n_txs = log2_ceil(n_txs);
-        // assert_eq!(2usize.pow(log_n_txs as u32), n_txs);
-        let deposit_digest =
-            get_merkle_proof::<_, PoseidonHash>(&[interior_deposit_digest], 0, log_n_txs).root;
+        let log_n_txs = log2_ceil(n_txs);
+        assert_eq!(2usize.pow(log_n_txs as u32), n_txs);
+        let deposit_digest = get_merkle_proof(
+            &[
+                interior_deposit_digest,
+                interior_scroll_digest,
+                interior_polygon_digest,
+            ],
+            0,
+            log_n_txs,
+        )
+        .root;
 
         let block_header = BlockHeader {
             block_number,
             prev_block_hash,
-            transactions_digest,
-            deposit_digest,
-            proposed_world_state_digest,
+            transactions_digest: *transactions_digest,
+            deposit_digest: *deposit_digest,
+            proposed_world_state_digest: *proposed_world_state_digest,
             approved_world_state_digest: *approved_world_state_digest,
             latest_account_digest: *latest_account_digest,
-            block_headers_digest,
+            block_headers_digest: *block_headers_digest,
         };
 
-        let block_hash = block_header.get_block_hash();
+        let block_hash = get_block_hash(&block_header);
 
-        let mut address_list = approval_block
-            .user_transactions
+        let mut address_list = user_transactions
             .iter()
-            .zip(approval_block.received_signatures.iter())
+            .zip(received_signatures.iter())
             .map(
                 |(user_tx_proof, received_signature_proof)| TransactionSenderWithValidity {
                     sender_address: user_tx_proof.sender_address,
@@ -299,15 +338,43 @@ impl<const D: usize> BlockProductionTarget<D> {
         address_list.resize(n_txs, TransactionSenderWithValidity::default());
 
         let mut deposit_list = deposit_process_proofs
-            .deposit_process_proofs
             .iter()
-            .map(|proof_t| proof_t.new_leaf_data)
+            .map(|proof_t| DepositInfo {
+                receiver_address: Address::from_hash_out(*proof_t.0.new_key),
+                contract_address: Address::from_hash_out(*proof_t.1.new_key),
+                variable_index: VariableIndex::from_hash_out(*proof_t.2.new_key),
+                amount: proof_t.2.new_value.elements[0],
+            })
             .collect::<Vec<_>>();
-        deposit_list.resize(n_deposits, ContributedAsset::default());
+        deposit_list.resize(n_deposits, DepositInfo::default());
+
+        let mut scroll_flag_list = scroll_process_proofs
+            .iter()
+            .map(|proof_t| DepositInfo {
+                receiver_address: Address::from_hash_out(*proof_t.0.new_key),
+                contract_address: Address::from_hash_out(*proof_t.1.new_key),
+                variable_index: VariableIndex::from_hash_out(*proof_t.2.new_key),
+                amount: proof_t.2.new_value.elements[0],
+            })
+            .collect::<Vec<_>>();
+        scroll_flag_list.resize(n_scroll_flags, DepositInfo::default());
+
+        let mut polygon_flag_list = polygon_process_proofs
+            .iter()
+            .map(|proof_t| DepositInfo {
+                receiver_address: Address::from_hash_out(*proof_t.0.new_key),
+                contract_address: Address::from_hash_out(*proof_t.1.new_key),
+                variable_index: VariableIndex::from_hash_out(*proof_t.2.new_key),
+                amount: proof_t.2.new_value.elements[0],
+            })
+            .collect::<Vec<_>>();
+        polygon_flag_list.resize(n_polygon_flags, DepositInfo::default());
 
         BlockProductionPublicInputs {
             address_list,
             deposit_list,
+            scroll_flag_list,
+            polygon_flag_list,
             old_account_tree_root: prev_block_header.latest_account_digest,
             new_account_tree_root: block_header.latest_account_digest,
             old_world_state_root: prev_block_header.approved_world_state_digest,
@@ -341,7 +408,29 @@ where
         DepositBlockProductionTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher, D>(
             &mut builder,
             rollup_constants.log_n_recipients,
-            rollup_constants.log_n_contracts + rollup_constants.log_n_variables,
+            rollup_constants.log_n_contracts,
+            rollup_constants.log_n_variables,
+            rollup_constants.n_deposits,
+        );
+
+    // scroll block
+    let scroll_block_target =
+        DepositBlockProductionTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher, D>(
+            &mut builder,
+            rollup_constants.log_n_recipients,
+            rollup_constants.log_n_contracts,
+            rollup_constants.log_n_variables,
+            rollup_constants.n_deposits,
+        );
+
+    // polygon block
+    let polygon_block_target =
+        DepositBlockProductionTarget::add_virtual_to::<F, <C as GenericConfig<D>>::Hasher, D>(
+            &mut builder,
+            rollup_constants.log_n_recipients,
+            rollup_constants.log_n_contracts,
+            rollup_constants.log_n_variables,
+            rollup_constants.n_deposits,
         );
 
     // proposal block
@@ -404,7 +493,7 @@ where
         .iter()
         .zip(approval_block_target.world_state_revert_transitions.iter())
         .map(|(p, a)| TransactionSenderWithValidityTarget {
-            sender_address: p.user_transaction.sender_address,
+            sender_address: p.user_transaction.sender_address.0,
             is_valid: a.received_signature.1,
         })
         .collect::<Vec<_>>();
@@ -412,7 +501,34 @@ where
     let deposit_list = deposit_block_target
         .deposit_process_proofs
         .iter()
-        .map(|proof_t| proof_t.new_leaf_data)
+        .map(|proof_t| DepositInfoTarget {
+            receiver_address: AddressTarget(proof_t.0.new_key),
+            contract_address: AddressTarget(proof_t.1.new_key),
+            variable_index: proof_t.2.new_key,
+            amount: proof_t.2.new_value.elements[0],
+        })
+        .collect::<Vec<_>>();
+
+    let scroll_flag_list = scroll_block_target
+        .deposit_process_proofs
+        .iter()
+        .map(|proof_t| DepositInfoTarget {
+            receiver_address: AddressTarget(proof_t.0.new_key),
+            contract_address: AddressTarget(proof_t.1.new_key),
+            variable_index: proof_t.2.new_key,
+            amount: proof_t.2.new_value.elements[0],
+        })
+        .collect::<Vec<_>>();
+
+    let polygon_flag_list = polygon_block_target
+        .deposit_process_proofs
+        .iter()
+        .map(|proof_t| DepositInfoTarget {
+            receiver_address: AddressTarget(proof_t.0.new_key),
+            contract_address: AddressTarget(proof_t.1.new_key),
+            variable_index: proof_t.2.new_key,
+            amount: proof_t.2.new_value.elements[0],
+        })
         .collect::<Vec<_>>();
 
     // block header
@@ -424,6 +540,7 @@ where
 
     let transactions_digest = proposal_block_target.transactions_digest;
     let interior_deposit_digest = deposit_block_target.interior_deposit_digest;
+    let interior_scroll_digest = scroll_block_target.interior_deposit_digest;
     let prev_world_state_digest = proposal_block_target.old_world_state_root;
     let proposed_world_state_digest = proposal_block_target.new_world_state_root;
     let approved_world_state_digest = approval_block_target.new_world_state_root;
@@ -453,7 +570,7 @@ where
     let zero = builder.zero();
     let default_hash = HashOutTarget::from_partial(&[], zero);
     let deposit_digest = {
-        let mut deposit_tree_leaves = vec![interior_deposit_digest];
+        let mut deposit_tree_leaves = vec![interior_deposit_digest, interior_scroll_digest];
         deposit_tree_leaves.resize(n_txs, default_hash);
 
         get_merkle_root_target_from_leaves::<F, C::Hasher, D>(&mut builder, deposit_tree_leaves)
@@ -473,6 +590,8 @@ where
     let public_inputs = BlockProductionPublicInputsTarget {
         address_list,
         deposit_list,
+        scroll_flag_list,
+        polygon_flag_list,
         old_account_tree_root: approval_block_target.old_latest_account_root,
         new_account_tree_root: approval_block_target.new_latest_account_root,
         old_world_state_root: proposal_block_target.old_world_state_root,
@@ -489,6 +608,8 @@ where
         proposal_block_target,
         approval_block_target,
         deposit_block_target,
+        scroll_block_target,
+        polygon_block_target,
         user_tx_proofs,
         received_signature_proofs,
         block_headers_proof,
@@ -519,7 +640,9 @@ pub struct BlockProductionCircuit<
 )]
 pub struct BlockProductionPublicInputs<F: RichField> {
     pub address_list: Vec<TransactionSenderWithValidity<F>>,
-    pub deposit_list: Vec<ContributedAsset<F>>,
+    pub deposit_list: Vec<DepositInfo<F>>,
+    pub scroll_flag_list: Vec<DepositInfo<F>>,
+    pub polygon_flag_list: Vec<DepositInfo<F>>,
     pub old_account_tree_root: HashOut<F>,
     pub new_account_tree_root: HashOut<F>,
     pub old_world_state_root: HashOut<F>,
@@ -533,7 +656,9 @@ pub struct BlockProductionPublicInputs<F: RichField> {
 #[serde(bound = "F: RichField")]
 pub struct SerializableBlockProductionPublicInputs<F: RichField> {
     pub address_list: Vec<TransactionSenderWithValidity<F>>,
-    pub deposit_list: Vec<ContributedAsset<F>>,
+    pub deposit_list: Vec<DepositInfo<F>>,
+    pub scroll_flag_list: Vec<DepositInfo<F>>,
+    pub polygon_flag_list: Vec<DepositInfo<F>>,
     pub old_account_tree_root: WrappedHashOut<F>,
     pub new_account_tree_root: WrappedHashOut<F>,
     pub old_world_state_root: WrappedHashOut<F>,
@@ -550,6 +675,8 @@ impl<F: RichField> From<SerializableBlockProductionPublicInputs<F>>
         Self {
             address_list: value.address_list,
             deposit_list: value.deposit_list,
+            scroll_flag_list: value.scroll_flag_list,
+            polygon_flag_list: value.polygon_flag_list,
             old_account_tree_root: value.old_account_tree_root.0,
             new_account_tree_root: value.new_account_tree_root.0,
             old_world_state_root: value.old_world_state_root.0,
@@ -568,6 +695,8 @@ impl<F: RichField> From<BlockProductionPublicInputs<F>>
         Self {
             address_list: value.address_list,
             deposit_list: value.deposit_list,
+            scroll_flag_list: value.scroll_flag_list,
+            polygon_flag_list: value.polygon_flag_list,
             old_account_tree_root: value.old_account_tree_root.into(),
             new_account_tree_root: value.new_account_tree_root.into(),
             old_world_state_root: value.old_world_state_root.into(),
@@ -598,20 +727,43 @@ impl<F: RichField> BlockProductionPublicInputs<F> {
         //     public_inputs.push(F::from_bool(false));
         // }
 
-        for ContributedAsset {
+        for DepositInfo {
             receiver_address,
-            kind:
-                TokenKind {
-                    contract_address,
-                    variable_index,
-                },
+            contract_address,
+            variable_index,
             amount,
         } in self.deposit_list.iter()
         {
             receiver_address.write(&mut public_inputs);
             contract_address.write(&mut public_inputs);
             variable_index.write(&mut public_inputs);
-            public_inputs.push(F::from_canonical_u64(*amount));
+            public_inputs.push(*amount);
+        }
+
+        for DepositInfo {
+            receiver_address,
+            contract_address,
+            variable_index,
+            amount,
+        } in self.scroll_flag_list.iter()
+        {
+            receiver_address.write(&mut public_inputs);
+            contract_address.write(&mut public_inputs);
+            variable_index.write(&mut public_inputs);
+            public_inputs.push(*amount);
+        }
+
+        for DepositInfo {
+            receiver_address,
+            contract_address,
+            variable_index,
+            amount,
+        } in self.polygon_flag_list.iter()
+        {
+            receiver_address.write(&mut public_inputs);
+            contract_address.write(&mut public_inputs);
+            variable_index.write(&mut public_inputs);
+            public_inputs.push(*amount);
         }
 
         // for _ in (0..N_DEPOSITS).skip(self.deposit_list.len()) {
@@ -633,8 +785,17 @@ impl<F: RichField> BlockProductionPublicInputs<F> {
         public_inputs
     }
 
-    pub fn decode(public_inputs: &[F], n_txs: usize, n_deposits: usize) -> Self {
-        assert_eq!(public_inputs.len(), 5 * n_txs + 13 * n_deposits + 28);
+    pub fn decode(
+        public_inputs: &[F],
+        n_txs: usize,
+        n_deposits: usize,
+        n_scroll_flags: usize,
+        n_polygon_flags: usize,
+    ) -> Self {
+        assert_eq!(
+            public_inputs.len(),
+            5 * n_txs + 13 * (n_deposits + n_scroll_flags + n_polygon_flags) + 28
+        );
 
         let mut public_inputs = public_inputs.iter();
 
@@ -645,13 +806,27 @@ impl<F: RichField> BlockProductionPublicInputs<F> {
             })
             .collect::<Vec<_>>();
         let deposit_list = (0..n_deposits)
-            .map(|_| ContributedAsset {
+            .map(|_| DepositInfo {
                 receiver_address: Address::read(&mut public_inputs),
-                kind: TokenKind {
-                    contract_address: Address::read(&mut public_inputs),
-                    variable_index: VariableIndex::read(&mut public_inputs),
-                },
-                amount: public_inputs.next().unwrap().to_canonical_u64(),
+                contract_address: Address::read(&mut public_inputs),
+                variable_index: VariableIndex::read(&mut public_inputs),
+                amount: *public_inputs.next().unwrap(),
+            })
+            .collect::<Vec<_>>();
+        let scroll_flag_list = (0..n_scroll_flags)
+            .map(|_| DepositInfo {
+                receiver_address: Address::read(&mut public_inputs),
+                contract_address: Address::read(&mut public_inputs),
+                variable_index: VariableIndex::read(&mut public_inputs),
+                amount: *public_inputs.next().unwrap(),
+            })
+            .collect::<Vec<_>>();
+        let polygon_flag_list = (0..n_polygon_flags)
+            .map(|_| DepositInfo {
+                receiver_address: Address::read(&mut public_inputs),
+                contract_address: Address::read(&mut public_inputs),
+                variable_index: VariableIndex::read(&mut public_inputs),
+                amount: *public_inputs.next().unwrap(),
             })
             .collect::<Vec<_>>();
         let old_account_tree_root = *WrappedHashOut::read(&mut public_inputs);
@@ -668,6 +843,8 @@ impl<F: RichField> BlockProductionPublicInputs<F> {
         Self {
             address_list,
             deposit_list,
+            scroll_flag_list,
+            polygon_flag_list,
             old_account_tree_root,
             new_account_tree_root,
             old_world_state_root,
@@ -686,7 +863,9 @@ impl<F: RichField> BlockProductionPublicInputs<F> {
 #[derive(Clone, Debug)]
 pub struct BlockProductionPublicInputsTarget {
     pub address_list: Vec<TransactionSenderWithValidityTarget>,
-    pub deposit_list: Vec<ContributedAssetTarget>,
+    pub deposit_list: Vec<DepositInfoTarget>,
+    pub scroll_flag_list: Vec<DepositInfoTarget>,
+    pub polygon_flag_list: Vec<DepositInfoTarget>,
     pub old_account_tree_root: HashOutTarget,
     pub new_account_tree_root: HashOutTarget,
     pub old_world_state_root: HashOutTarget,
@@ -734,12 +913,48 @@ impl BlockProductionPublicInputsTarget {
         let flatten_deposit_list_t = self
             .deposit_list
             .iter()
-            .flat_map(|v| v.encode())
+            .flat_map(|v| {
+                vec![
+                    v.receiver_address.0.elements.to_vec(),
+                    v.contract_address.0.elements.to_vec(),
+                    v.variable_index.elements.to_vec(),
+                    vec![v.amount],
+                ]
+                .concat()
+            })
+            .collect::<Vec<Target>>();
+        let flatten_scroll_flag_list_t = self
+            .scroll_flag_list
+            .iter()
+            .flat_map(|v| {
+                vec![
+                    v.receiver_address.0.elements.to_vec(),
+                    v.contract_address.0.elements.to_vec(),
+                    v.variable_index.elements.to_vec(),
+                    vec![v.amount],
+                ]
+                .concat()
+            })
+            .collect::<Vec<Target>>();
+        let flatten_polygon_flag_list_t = self
+            .polygon_flag_list
+            .iter()
+            .flat_map(|v| {
+                vec![
+                    v.receiver_address.0.elements.to_vec(),
+                    v.contract_address.0.elements.to_vec(),
+                    v.variable_index.elements.to_vec(),
+                    vec![v.amount],
+                ]
+                .concat()
+            })
             .collect::<Vec<Target>>();
 
         vec![
             flatten_address_list_t,
             flatten_deposit_list_t,
+            flatten_scroll_flag_list_t,
+            flatten_polygon_flag_list_t,
             self.old_account_tree_root.elements.to_vec(),
             self.new_account_tree_root.elements.to_vec(),
             self.old_world_state_root.elements.to_vec(),
@@ -753,8 +968,17 @@ impl BlockProductionPublicInputsTarget {
         // assert_eq!(public_inputs_t.len(), 5 * N_TXS + 13 * N_DEPOSITS + 28);
     }
 
-    pub fn decode(public_inputs_t: &[Target], n_txs: usize, n_deposits: usize) -> Self {
-        assert_eq!(public_inputs_t.len(), 5 * n_txs + 13 * n_deposits + 28);
+    pub fn decode(
+        public_inputs_t: &[Target],
+        n_txs: usize,
+        n_deposits: usize,
+        n_scroll_flags: usize,
+        n_polygon_flags: usize,
+    ) -> Self {
+        assert_eq!(
+            public_inputs_t.len(),
+            5 * n_txs + 13 * (n_deposits + n_scroll_flags + n_polygon_flags) + 28
+        );
 
         let mut public_inputs_t = public_inputs_t.iter();
         let address_list = (0..n_txs)
@@ -773,10 +997,42 @@ impl BlockProductionPublicInputsTarget {
             .collect::<Vec<_>>();
 
         let deposit_list = (0..n_deposits)
-            .map(|_| ContributedAssetTarget {
-                recipient: AddressTarget::read(&mut public_inputs_t),
+            .map(|_| DepositInfoTarget {
+                receiver_address: AddressTarget::read(&mut public_inputs_t),
                 contract_address: AddressTarget::read(&mut public_inputs_t),
-                token_id: HashOutTarget {
+                variable_index: HashOutTarget {
+                    elements: [
+                        *public_inputs_t.next().unwrap(),
+                        *public_inputs_t.next().unwrap(),
+                        *public_inputs_t.next().unwrap(),
+                        *public_inputs_t.next().unwrap(),
+                    ],
+                },
+                amount: *public_inputs_t.next().unwrap(),
+            })
+            .collect::<Vec<_>>();
+
+        let scroll_flag_list = (0..n_scroll_flags)
+            .map(|_| DepositInfoTarget {
+                receiver_address: AddressTarget::read(&mut public_inputs_t),
+                contract_address: AddressTarget::read(&mut public_inputs_t),
+                variable_index: HashOutTarget {
+                    elements: [
+                        *public_inputs_t.next().unwrap(),
+                        *public_inputs_t.next().unwrap(),
+                        *public_inputs_t.next().unwrap(),
+                        *public_inputs_t.next().unwrap(),
+                    ],
+                },
+                amount: *public_inputs_t.next().unwrap(),
+            })
+            .collect::<Vec<_>>();
+
+        let polygon_flag_list = (0..n_polygon_flags)
+            .map(|_| DepositInfoTarget {
+                receiver_address: AddressTarget::read(&mut public_inputs_t),
+                contract_address: AddressTarget::read(&mut public_inputs_t),
+                variable_index: HashOutTarget {
                     elements: [
                         *public_inputs_t.next().unwrap(),
                         *public_inputs_t.next().unwrap(),
@@ -851,6 +1107,8 @@ impl BlockProductionPublicInputsTarget {
         BlockProductionPublicInputsTarget {
             address_list,
             deposit_list,
+            scroll_flag_list,
+            polygon_flag_list,
             old_account_tree_root,
             new_account_tree_root,
             old_world_state_root,
@@ -869,6 +1127,69 @@ impl BlockProductionPublicInputsTarget {
     }
 }
 
+#[test]
+fn test_encode_block_production_public_inputs() {
+    use plonky2::{field::types::Sample, plonk::config::PoseidonGoldilocksConfig};
+    use rand::random;
+
+    const D: usize = 2;
+    type C = PoseidonGoldilocksConfig;
+    type F = <C as GenericConfig<D>>::F;
+    const N_TXS: usize = 4;
+    const N_DEPOSITS: usize = 2;
+    const N_SCROLL_FLAGS: usize = 2;
+    const N_POLYGON_FLAGS: usize = 2;
+
+    let public_inputs = BlockProductionPublicInputs {
+        address_list: (0..N_TXS)
+            .map(|_| TransactionSenderWithValidity {
+                sender_address: Address::rand(),
+                is_valid: random(),
+            })
+            .collect::<Vec<_>>(),
+        deposit_list: (0..N_DEPOSITS)
+            .map(|_| DepositInfo {
+                receiver_address: Address::rand(),
+                contract_address: Address::rand(),
+                variable_index: VariableIndex::from(random::<u8>()),
+                amount: F::rand(),
+            })
+            .collect::<Vec<_>>(),
+        scroll_flag_list: (0..N_SCROLL_FLAGS)
+            .map(|_| DepositInfo {
+                receiver_address: Address::rand(),
+                contract_address: Address::rand(),
+                variable_index: VariableIndex::from(random::<u8>()),
+                amount: F::rand(),
+            })
+            .collect::<Vec<_>>(),
+        polygon_flag_list: (0..N_POLYGON_FLAGS)
+            .map(|_| DepositInfo {
+                receiver_address: Address::rand(),
+                contract_address: Address::rand(),
+                variable_index: VariableIndex::from(random::<u8>()),
+                amount: F::rand(),
+            })
+            .collect::<Vec<_>>(),
+        old_account_tree_root: *WrappedHashOut::rand(),
+        new_account_tree_root: *WrappedHashOut::rand(),
+        old_world_state_root: *WrappedHashOut::rand(),
+        new_world_state_root: *WrappedHashOut::rand(),
+        old_prev_block_header_digest: *WrappedHashOut::rand(),
+        new_prev_block_header_digest: *WrappedHashOut::rand(),
+        block_hash: *WrappedHashOut::rand(),
+    };
+    let encoded_public_inputs = public_inputs.encode();
+    let decoded_public_inputs = BlockProductionPublicInputs::decode(
+        &encoded_public_inputs,
+        N_TXS,
+        N_DEPOSITS,
+        N_SCROLL_FLAGS,
+        N_POLYGON_FLAGS,
+    );
+    assert_eq!(decoded_public_inputs, public_inputs, "invalid entry hash");
+}
+
 impl<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>
     BlockProductionCircuit<F, C, D>
 where
@@ -878,10 +1199,18 @@ where
         &self,
         n_txs: usize,
         n_deposits: usize,
+        n_scroll_flags: usize,
+        n_polygon_flags: usize,
     ) -> BlockProductionPublicInputsTarget {
         let public_inputs_t = self.data.prover_only.public_inputs.clone();
 
-        BlockProductionPublicInputsTarget::decode(&public_inputs_t, n_txs, n_deposits)
+        BlockProductionPublicInputsTarget::decode(
+            &public_inputs_t,
+            n_txs,
+            n_deposits,
+            n_scroll_flags,
+            n_polygon_flags,
+        )
     }
 
     // pub fn prove(
@@ -904,6 +1233,8 @@ where
             &input.user_tx_proofs,
             default_user_tx_proof,
             &input.deposit_process_proofs,
+            &input.scroll_process_proofs,
+            &input.polygon_process_proofs,
             &input.world_state_process_proofs,
             &input.world_state_revert_proofs,
             &input.received_signature_proofs,
@@ -937,7 +1268,7 @@ where
     }
 }
 
-/// witness を入力にとり、 block_production_proof を返す関数
+/// Function that takes witness as input and returns block_production_proof
 pub fn prove_block_production<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F = F>,
@@ -953,23 +1284,22 @@ where
     let config = CircuitConfig::standard_recursion_config();
     let merge_and_purge_circuit = make_user_proof_circuit::<F, C, D>(config, rollup_constants);
     let default_user_transaction = MergeAndPurgeTransition::default();
-    let witness = MergeAndPurgeTransition {
-        sender_address: default_user_transaction.sender_address,
-        merge_witnesses: default_user_transaction.merge_witnesses,
-        purge_input_witnesses: default_user_transaction.purge_input_witnesses,
-        purge_output_witnesses: default_user_transaction.purge_output_witnesses,
-        nonce: default_user_transaction.nonce,
-        old_user_asset_root: default_user_transaction.old_user_asset_root,
-    };
     let default_user_tx_proof = merge_and_purge_circuit
-        .set_witness_and_prove(&witness)
+        .set_witness_and_prove(
+            default_user_transaction.sender_address,
+            &default_user_transaction.merge_witnesses,
+            &default_user_transaction.purge_input_witnesses,
+            &default_user_transaction.purge_output_witnesses,
+            default_user_transaction.nonce,
+            default_user_transaction.old_user_asset_root,
+        )
         .map_err(|err| anyhow::anyhow!("fail to prove user transaction: {}", err))?;
 
     // let config = CircuitConfig::standard_recursion_zk_config(); // TODO
     let config = CircuitConfig::standard_recursion_config();
     let simple_signature_circuit = make_simple_signature_circuit::<F, C, D>(config);
     let default_simple_signature_proof = simple_signature_circuit
-        .set_witness_and_prove(&Default::default())
+        .set_witness_and_prove(Default::default(), Default::default())
         .map_err(|err| anyhow::anyhow!("fail to prove simple signature: {}", err))?;
 
     let config = CircuitConfig::standard_recursion_config();
@@ -995,92 +1325,33 @@ where
     Ok(block_production_proof)
 }
 
-#[cfg(test)]
-mod tests {
-    use plonky2::{
-        field::types::Sample,
-        hash::hash_types::HashOut,
-        plonk::config::{GenericConfig, PoseidonGoldilocksConfig},
+#[test]
+fn test_prove_block_production() {
+    use plonky2::plonk::config::PoseidonGoldilocksConfig;
+
+    const D: usize = 2;
+    type C = PoseidonGoldilocksConfig;
+    type F = <C as GenericConfig<D>>::F;
+    const ROLLUP_CONSTANTS: RollupConstants = RollupConstants {
+        log_max_n_users: 3,
+        log_max_n_txs: 3,
+        log_max_n_contracts: 3,
+        log_max_n_variables: 3,
+        log_n_txs: 2,
+        log_n_recipients: 3,
+        log_n_contracts: 3,
+        log_n_variables: 3,
+        n_registrations: 2,
+        n_diffs: 2,
+        n_merges: 2,
+        n_deposits: 2,
+        n_scroll_flags: 2,
+        n_polygon_flags: 2,
+        n_blocks: 2,
     };
-    use rand::random;
 
-    use crate::{
-        config::RollupConstants,
-        rollup::{
-            address_list::TransactionSenderWithValidity,
-            circuits::{prove_block_production, BlockDetail, BlockProductionPublicInputs},
-        },
-        transaction::asset::{ContributedAsset, TokenKind, VariableIndex},
-        zkdsa::account::Address,
-    };
-
-    #[test]
-    fn test_encode_block_production_public_inputs() {
-        const D: usize = 2;
-        type C = PoseidonGoldilocksConfig;
-        type F = <C as GenericConfig<D>>::F;
-        const N_TXS: usize = 4;
-        const N_DEPOSITS: usize = 2;
-
-        let public_inputs = BlockProductionPublicInputs::<F> {
-            address_list: (0..N_TXS)
-                .map(|_| TransactionSenderWithValidity {
-                    sender_address: Address::rand(),
-                    is_valid: random(),
-                })
-                .collect::<Vec<_>>(),
-            deposit_list: (0..N_DEPOSITS)
-                .map(|_| ContributedAsset {
-                    receiver_address: Address::rand(),
-                    kind: TokenKind {
-                        contract_address: Address::rand(),
-                        variable_index: VariableIndex::from(random::<u8>()),
-                    },
-                    amount: random::<u64>(),
-                })
-                .collect::<Vec<_>>(),
-            old_account_tree_root: HashOut::rand(),
-            new_account_tree_root: HashOut::rand(),
-            old_world_state_root: HashOut::rand(),
-            new_world_state_root: HashOut::rand(),
-            old_prev_block_header_digest: HashOut::rand(),
-            new_prev_block_header_digest: HashOut::rand(),
-            block_hash: HashOut::rand(),
-        };
-        let encoded_public_inputs = public_inputs.encode();
-        let decoded_public_inputs =
-            BlockProductionPublicInputs::decode(&encoded_public_inputs, N_TXS, N_DEPOSITS);
-        assert_eq!(decoded_public_inputs, public_inputs, "invalid entry hash");
-    }
-
-    #[test]
-    fn test_prove_block_production() {
-        const D: usize = 2;
-        type C = PoseidonGoldilocksConfig;
-        type F = <C as GenericConfig<D>>::F;
-        let rollup_constants = RollupConstants {
-            log_max_n_users: 3,
-            log_max_n_txs: 3,
-            log_max_n_contracts: 3,
-            log_max_n_variables: 3,
-            log_n_txs: 2,
-            log_n_recipients: 3,
-            log_n_contracts: 3,
-            log_n_variables: 3,
-            n_registrations: 2,
-            n_diffs: 2,
-            n_merges: 2,
-            n_deposits: 2,
-            n_blocks: 2,
-        };
-
-        let n_txs = 1 << rollup_constants.log_n_txs;
-        let default_block_details = BlockDetail::new(
-            n_txs,
-            rollup_constants.log_n_recipients,
-            rollup_constants.log_max_n_contracts + rollup_constants.log_max_n_variables,
-        );
-        let _default_block_production_proof =
-            prove_block_production::<F, C, D>(rollup_constants, &default_block_details).unwrap();
-    }
+    let n_txs = 1 << ROLLUP_CONSTANTS.log_n_txs;
+    let default_block_details: BlockDetail<F, C, D> = BlockDetail::new(n_txs);
+    let _default_block_production_proof =
+        prove_block_production::<F, C, D>(ROLLUP_CONSTANTS, &default_block_details).unwrap();
 }

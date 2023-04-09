@@ -5,10 +5,11 @@ use super::{
     node_hash::NodeHash,
     proof::{SparseMerkleInclusionProof, SparseMerkleProcessProof},
     root_data::RootData,
-    tree::{calc_inclusion_proof, calc_process_proof, get, SparseMerkleTree},
+    tree::{
+        calc_inclusion_proof, calc_process_proof, get, HashLike, KeyLike, SparseMerkleTree,
+        ValueLike,
+    },
 };
-
-use crate::merkle_tree::tree::{HashLike, KeyLike, ValueLike};
 
 pub type LayeredLayeredSparseMerkleInclusionProof<K, V, I> = (
     SparseMerkleInclusionProof<K, V, I>,

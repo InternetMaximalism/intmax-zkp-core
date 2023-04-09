@@ -1,6 +1,5 @@
-use intmax_zkp_core::{
-    sparse_merkle_tree::goldilocks_poseidon::PoseidonSparseMerkleTreeMemory,
-    utils::hash::GoldilocksHashOut,
+use intmax_zkp_core::sparse_merkle_tree::goldilocks_poseidon::{
+    GoldilocksHashOut, PoseidonSparseMerkleTreeMemory,
 };
 use plonky2::{field::types::Sample, hash::hash_types::HashOut};
 

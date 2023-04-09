@@ -1,41 +1,47 @@
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct RollupConstants {
-    /// world state tree における user 層の tree の深さ
+    /// The depth of the user layer tree in the world state tree
     pub log_max_n_users: usize,
 
-    /// world state tree における transaction 層の tree の深さ
+    /// The depth of the transaction layer tree in the world state tree
     pub log_max_n_txs: usize,
 
-    /// world state tree における contract address 層の tree の深さ
+    /// The depth of the contract address layer tree in the world state tree
     pub log_max_n_contracts: usize,
 
-    /// world state tree における variable index 層の tree の深さ
+    /// The depth of the variable index layer tree in the world state tree
     pub log_max_n_variables: usize,
 
-    /// diff tree における transaction 層の tree の深さ
+    /// The depth of the transaction layer tree in the diff tree
     pub log_n_txs: usize,
 
-    /// diff tree における recipient 層の tree の深さ
+    /// The depth of the recipient layer tree in the diff tree
     pub log_n_recipients: usize,
 
-    /// diff tree における contract address 層の tree の深さ
+    /// The depth of the contract address layer tree in the diff tree
     pub log_n_contracts: usize,
 
-    /// diff tree における variable index 層の tree の深さ
+    /// The depth of the variable index layer tree in the diff tree
     pub log_n_variables: usize,
 
-    /// 1 つの block に含める新規 account の数
+    /// The number of new accounts included in one block
     pub n_registrations: usize,
 
-    /// 1 つの block に含める purge の数
+    /// The number of purges included in one block
     pub n_diffs: usize,
 
-    /// 1 つの block に含める merge の数
+    /// The number of merges included in one block
     pub n_merges: usize,
 
-    /// 1 つの block に含める deposit の数
+    /// The number of deposits included in one block
     pub n_deposits: usize,
 
-    /// 1 つの batch でまとめる block の数
+    /// The number of scroll flags included in one block
+    pub n_scroll_flags: usize,
+
+    /// The number of polygon flags included in one block
+    pub n_polygon_flags: usize,
+
+    /// The number of blocks included in one batch
     pub n_blocks: usize,
 }

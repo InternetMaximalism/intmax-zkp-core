@@ -11,14 +11,13 @@ use plonky2::{
 use crate::sparse_merkle_tree::root_data::RootData;
 
 use super::super::{
+    goldilocks_poseidon::{GoldilocksHashOut, Wrapper},
     node_data::NodeData,
     node_hash::NodeHash,
     proof::{SparseMerkleInclusionProof, SparseMerkleProcessProof},
     tree::SparseMerkleTree,
 };
 use super::types::StorageLayout;
-
-use crate::utils::hash::{GoldilocksHashOut, Wrapper};
 
 type F = GoldilocksField;
 type K = GoldilocksHashOut;

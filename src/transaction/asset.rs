@@ -49,8 +49,8 @@ impl<F: RichField> TokenKind<F> {
     // NOTICE: little endian
     pub fn to_bytes(self) -> Vec<u8> {
         let mut result = vec![
-            self.contract_address.to_hash_out().to_bytes()[0..8].to_vec(),
-            self.variable_index.to_hash_out().to_bytes()[0..1].to_vec(),
+            self.contract_address.to_hash_out().to_bytes()[0..24].to_vec(),
+            self.variable_index.to_hash_out().to_bytes()[0..8].to_vec(),
         ]
         .concat();
         result.resize(32, 0);
@@ -60,17 +60,15 @@ impl<F: RichField> TokenKind<F> {
 
     // NOTICE: little endian
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        assert!(bytes.len() >= 9);
+        assert!(bytes.len() == 32);
 
-        let mut contract_address = bytes[0..8].to_vec();
+        let mut contract_address = bytes[0..24].to_vec();
         contract_address.resize(32, 0);
         let contract_address = Address::from_hash_out(HashOut::from_bytes(&contract_address));
 
-        let mut variable_index = bytes[8..9].to_vec();
+        let mut variable_index = bytes[24..32].to_vec();
         variable_index.resize(32, 0);
         let variable_index = VariableIndex::from_hash_out(HashOut::from_bytes(&variable_index));
-
-        assert!(bytes.iter().skip(9).any(|e| *e == 0));
 
         Self {
             contract_address,
